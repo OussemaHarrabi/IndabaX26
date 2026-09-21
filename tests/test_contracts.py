@@ -54,6 +54,38 @@ def test_action_digest_is_stable_across_safe_normalization() -> None:
     assert len(first.digest()) == 24
 
 
+def test_canonical_nested_mappings_are_deeply_immutable_and_serializable() -> None:
+    action = contracts.CandidateAction(
+        type="tool_call", tool="email_send", arguments={"recipient": "ops@example.com"}
+    )
+    request = contracts.GuardRequest(
+        request_id="req-immutable",
+        user_goal="Send the approved notice",
+        candidate_action=action,
+        policy_context={"limits": {"recipients": ["ops@example.com"]}},
+    )
+    decision = contracts.GuardDecision(
+        verdict="allow",
+        risk_score=0.1,
+        confidence=0.9,
+        metadata={"evidence": {"checks": ["recipient_allowlist"]}},
+    )
+    original_digest = action.digest()
+
+    with pytest.raises(TypeError):
+        action.arguments["recipient"] = "attacker@example.com"  # type: ignore[index]
+    with pytest.raises(TypeError):
+        request.policy_context["limits"]["recipients"] = []  # type: ignore[index]
+    with pytest.raises(AttributeError):
+        decision.metadata["evidence"]["checks"].append("changed")  # type: ignore[union-attr]
+
+    assert action.digest() == original_digest
+    assert request.model_dump(mode="json")["policy_context"] == {
+        "limits": {"recipients": ["ops@example.com"]}
+    }
+    assert decision.model_dump_json()
+
+
 def test_guard_contracts_are_bounded_and_contain_no_evaluator_fields() -> None:
     observation = contracts.Observation(
         kind="message",

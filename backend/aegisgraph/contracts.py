@@ -5,11 +5,21 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Iterator, Mapping
 from enum import StrEnum
 from functools import total_ordering
-from typing import Any, Self
+from types import MappingProxyType
+from typing import Any, Self, cast
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 MAX_ARGUMENT_CHARS = 8_000
 MAX_CONTENT_CHARS = 16_000
@@ -18,6 +28,30 @@ MAX_METADATA_BYTES = 4_096
 REASON_CODE_PATTERN = r"^[A-Z][A-Z0-9_]{1,63}$"
 
 ArgumentValue = str | int | float | bool | None
+
+class FrozenDict[Key, Value](Mapping[Key, Value]):
+    """Small immutable mapping used for security-sensitive nested model state."""
+
+    __slots__ = ("_data",)
+    _data: Mapping[Key, Value]
+
+    def __init__(self, source: Mapping[Key, Value] | None = None) -> None:
+        object.__setattr__(self, "_data", MappingProxyType(dict(source or {})))
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise TypeError("FrozenDict is immutable")
+
+    def __getitem__(self, key: Key) -> Value:
+        return self._data[key]
+
+    def __iter__(self) -> Iterator[Key]:
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __repr__(self) -> str:
+        return f"FrozenDict({dict(self._data)!r})"
 
 
 @total_ordering
@@ -78,14 +112,16 @@ class CandidateAction(_FrozenModel):
 
     type: ActionKind
     tool: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{1,63}$")
-    arguments: dict[str, ArgumentValue] = Field(default_factory=dict)
+    arguments: Mapping[str, ArgumentValue] = Field(default_factory=FrozenDict)
     content: str | None = Field(default=None, max_length=MAX_CONTENT_CHARS)
     final: bool = False
     confirmation_for: CandidateAction | None = None
 
     @field_validator("arguments")
     @classmethod
-    def _bounded_arguments(cls, value: dict[str, ArgumentValue]) -> dict[str, ArgumentValue]:
+    def _bounded_arguments(
+        cls, value: Mapping[str, ArgumentValue]
+    ) -> Mapping[str, ArgumentValue]:
         if len(value) > 32:
             raise ValueError("at most 32 arguments are allowed")
         for key, item in value.items():
@@ -93,7 +129,11 @@ class CandidateAction(_FrozenModel):
                 raise ValueError(f"invalid argument name: {key!r}")
             if isinstance(item, str) and len(item) > MAX_ARGUMENT_CHARS:
                 raise ValueError(f"argument {key!r} exceeds {MAX_ARGUMENT_CHARS} characters")
-        return value
+        return FrozenDict(value)
+
+    @field_serializer("arguments")
+    def _serialize_arguments(self, value: Mapping[str, ArgumentValue]) -> dict[str, ArgumentValue]:
+        return dict(value)
 
     @model_validator(mode="after")
     def _shape_matches_type(self) -> Self:
@@ -132,13 +172,19 @@ class GuardRequest(_FrozenModel):
     user_goal: str = Field(min_length=1, max_length=MAX_CONTENT_CHARS)
     observations: tuple[Observation, ...] = Field(default_factory=tuple, max_length=128)
     candidate_action: CandidateAction
-    policy_context: dict[str, JsonValue] = Field(default_factory=dict)
+    policy_context: Mapping[str, JsonValue] = Field(default_factory=FrozenDict)
 
     @field_validator("policy_context")
     @classmethod
-    def _bounded_policy_context(cls, value: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    def _bounded_policy_context(
+        cls, value: Mapping[str, JsonValue]
+    ) -> Mapping[str, JsonValue]:
         _require_json_size(value, MAX_CONTEXT_BYTES, "policy_context")
-        return value
+        return _freeze_json_mapping(value)
+
+    @field_serializer("policy_context")
+    def _serialize_policy_context(self, value: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+        return cast(dict[str, JsonValue], _thaw_json(value))
 
 
 class GuardDecision(_FrozenModel):
@@ -150,7 +196,7 @@ class GuardDecision(_FrozenModel):
     reason_codes: tuple[str, ...] = Field(default_factory=tuple, max_length=16)
     explanation: str | None = Field(default=None, max_length=500)
     rewritten_action: CandidateAction | None = None
-    metadata: dict[str, JsonValue] = Field(default_factory=dict)
+    metadata: Mapping[str, JsonValue] = Field(default_factory=FrozenDict)
 
     @field_validator("reason_codes")
     @classmethod
@@ -162,9 +208,13 @@ class GuardDecision(_FrozenModel):
 
     @field_validator("metadata")
     @classmethod
-    def _bounded_metadata(cls, value: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    def _bounded_metadata(cls, value: Mapping[str, JsonValue]) -> Mapping[str, JsonValue]:
         _require_json_size(value, MAX_METADATA_BYTES, "metadata")
-        return value
+        return _freeze_json_mapping(value)
+
+    @field_serializer("metadata")
+    def _serialize_metadata(self, value: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+        return cast(dict[str, JsonValue], _thaw_json(value))
 
     @model_validator(mode="after")
     def _rewrite_consistency(self) -> Self:
@@ -209,6 +259,27 @@ def _canonical_argument(value: ArgumentValue) -> ArgumentValue:
     if isinstance(value, float) and value.is_integer():
         return int(value)
     return value
+
+
+def _freeze_json_mapping(value: Mapping[str, JsonValue]) -> Mapping[str, JsonValue]:
+    frozen = {key: _freeze_json(item) for key, item in value.items()}
+    return cast(Mapping[str, JsonValue], FrozenDict(frozen))
+
+
+def _freeze_json(value: JsonValue) -> object:
+    if isinstance(value, dict):
+        return FrozenDict({key: _freeze_json(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return tuple(_freeze_json(item) for item in value)
+    return value
+
+
+def _thaw_json(value: object) -> JsonValue:
+    if isinstance(value, Mapping):
+        return {str(key): _thaw_json(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw_json(item) for item in value]
+    return cast(JsonValue, value)
 
 
 def _require_json_size(value: object, limit: int, field_name: str) -> None:
