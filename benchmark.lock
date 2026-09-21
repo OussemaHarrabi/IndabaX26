@@ -3,3 +3,9 @@ commit = "dd2e5fe0979d0781a4bfe6d0849cd80cf69ef4a2"
 expected_scenarios = 40
 attacks = 31
 benign = 9
+hard_negatives = 3
+
+[domains]
+enterprise = 15
+finance = 12
+soc = 13
