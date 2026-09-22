@@ -1,5 +1,6 @@
 """Translate the wire contract into inert, provenance-aware evaluation facts."""
 
+import hashlib
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -17,6 +18,8 @@ from aegisgraph.contracts import (
 )
 from aegisgraph.sentinel import SentinelCandidateAction, SentinelProvenanceRecord, SentinelRequest
 
+_MAX_CANONICAL_OBSERVATIONS = 128
+
 
 @dataclass(frozen=True)
 class AdaptedRequest:
@@ -26,6 +29,7 @@ class AdaptedRequest:
     max_sensitivity: Sensitivity
     provenance_complete: bool
     referenced_provenance: tuple[SentinelProvenanceRecord, ...]
+    evidence_truncated: bool
 
 
 def adapt_request(request: SentinelRequest) -> AdaptedRequest:
@@ -82,7 +86,9 @@ def adapt_request(request: SentinelRequest) -> AdaptedRequest:
                 Observation(
                     kind=_safe_kind(kind),
                     content=content,
-                    source=(f"{identifier}:{provenance.source_type}:{provenance.source_id}"),
+                    source=_compact_source(
+                        f"{identifier}:{provenance.source_type}:{provenance.source_id}"
+                    ),
                     trust_level=TrustLevel(provenance.trust_level),
                     sensitivity=Sensitivity(provenance.sensitivity),
                 )
@@ -108,11 +114,12 @@ def adapt_request(request: SentinelRequest) -> AdaptedRequest:
         key=lambda item: list(Sensitivity).index(item),
         default=Sensitivity.INTERNAL,
     )
+    bounded_observations = _select_security_relevant_observations(observations)
     dumped_context = cast(dict[str, JsonValue], request.model_dump(mode="json")["policy_context"])
     canonical = GuardRequest(
-        request_id=f"{request.run_id}:{request.step_id}",
+        request_id=_canonical_request_id(request),
         user_goal=request.user_goal or "Unspecified user goal",
-        observations=tuple(observations),
+        observations=bounded_observations,
         candidate_action=_canonical_action(request.candidate_action),
         policy_context=dumped_context,
     )
@@ -123,6 +130,7 @@ def adapt_request(request: SentinelRequest) -> AdaptedRequest:
         max_sensitivity=max_sensitivity,
         provenance_complete=complete,
         referenced_provenance=tuple(referenced_records),
+        evidence_truncated=len(observations) > _MAX_CANONICAL_OBSERVATIONS,
     )
 
 
@@ -144,7 +152,7 @@ def _unknown_observation(kind: str, content: str, identifier: str) -> Observatio
     return Observation(
         kind=_safe_kind(kind),
         content=content,
-        source=f"unresolved:{identifier}",
+        source=_compact_source(f"unresolved:{identifier}"),
         trust_level=TrustLevel.ADVERSARY_CONTROLLED,
         sensitivity=Sensitivity.RESTRICTED,
     )
@@ -155,3 +163,34 @@ def _safe_kind(kind: str) -> str:
     if not normalized or not normalized[0].isalpha():
         normalized = f"event_{normalized}" if normalized else "event"
     return normalized[:64]
+
+
+def _canonical_request_id(request: SentinelRequest) -> str:
+    material = f"{request.run_id}\x00{request.step_id}".encode()
+    return f"request:{hashlib.sha256(material).hexdigest()[:32]}"
+
+
+def _compact_source(source: str) -> str:
+    if len(source) <= 256:
+        return source
+    digest = hashlib.sha256(source.encode()).hexdigest()
+    return f"source:{digest}"
+
+
+def _select_security_relevant_observations(
+    observations: list[Observation],
+) -> tuple[Observation, ...]:
+    """Bound expansion while keeping the least-trusted, most-sensitive evidence."""
+
+    if len(observations) <= _MAX_CANONICAL_OBSERVATIONS:
+        return tuple(observations)
+    ranked = sorted(
+        enumerate(observations),
+        key=lambda pair: (
+            -list(TrustLevel).index(pair[1].trust_level),
+            -list(Sensitivity).index(pair[1].sensitivity),
+            pair[0],
+        ),
+    )
+    selected = sorted(index for index, _ in ranked[:_MAX_CANONICAL_OBSERVATIONS])
+    return tuple(observations[index] for index in selected)
