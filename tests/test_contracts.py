@@ -31,7 +31,31 @@ def test_candidate_action_enforces_shape_and_is_frozen() -> None:
         action.tool = "other"  # type: ignore[misc]
 
 
-def test_action_digest_binds_exact_top_level_and_nested_action_semantics() -> None:
+def test_action_digest_matches_official_golden_vector_and_canonicalization() -> None:
+    first = contracts.CandidateAction(
+        type="tool_call",
+        tool="payment_confirm",
+        arguments={"note": "a   b\n c", "amount": 12.0},
+    )
+    second = contracts.CandidateAction(
+        type="tool_call",
+        tool="payment_confirm",
+        arguments={"amount": 12, "note": "a b c"},
+    )
+    first_confirmation = contracts.CandidateAction(
+        type="request_confirmation", confirmation_for=first, content="Approve?"
+    )
+    second_confirmation = contracts.CandidateAction(
+        type="request_confirmation", confirmation_for=second, content="Approve?"
+    )
+
+    assert first.digest() == "2ce0b8de5d0b516fd176a716"
+    assert first.digest() == second.digest()
+    assert first_confirmation.digest() == second_confirmation.digest()
+    assert len(first.digest()) == 24
+
+
+def test_exact_action_digest_binds_top_level_and_nested_execution_semantics() -> None:
     first = contracts.CandidateAction(
         type="tool_call",
         tool="payment_confirm",
@@ -50,11 +74,31 @@ def test_action_digest_binds_exact_top_level_and_nested_action_semantics() -> No
     )
     non_final = contracts.CandidateAction(type="respond", content="Done", final=False)
     final = contracts.CandidateAction(type="respond", content="Done", final=True)
+    decision = contracts.GuardDecision(verdict="allow", risk_score=0.0, confidence=1.0)
 
-    assert first.digest() != second.digest()
-    assert first_confirmation.digest() != second_confirmation.digest()
-    assert non_final.digest() != final.digest()
-    assert len(first.digest()) == 24
+    def receipt(action: contracts.CandidateAction) -> contracts.DecisionReceipt:
+        return contracts.DecisionReceipt(
+            request_id="req-digest",
+            action_digest=action.digest(),
+            execution_digest=action.execution_digest(),
+            decision=decision,
+        )
+
+    assert contracts.exact_action_digest(first) != contracts.exact_action_digest(second)
+    assert contracts.exact_action_digest(first_confirmation) != contracts.exact_action_digest(
+        second_confirmation
+    )
+    assert non_final.digest() == final.digest()
+    assert non_final.execution_digest() != final.execution_digest()
+    assert receipt(first).action_digest == receipt(second).action_digest
+    assert receipt(first).execution_digest != receipt(second).execution_digest
+    assert receipt(non_final).action_digest == receipt(final).action_digest
+    assert receipt(non_final).execution_digest != receipt(final).execution_digest
+
+    backward_compatible = contracts.DecisionReceipt(
+        request_id="req-legacy", action_digest=first.digest(), decision=decision
+    )
+    assert backward_compatible.execution_digest is None
 
 
 def test_action_digest_is_stable_across_argument_key_order_and_json_round_trip() -> None:
@@ -71,6 +115,11 @@ def test_action_digest_is_stable_across_argument_key_order_and_json_round_trip()
     )
 
     assert first.digest() == second.digest() == reordered.digest()
+    assert (
+        first.execution_digest()
+        == second.execution_digest()
+        == reordered.execution_digest()
+    )
 
 
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
@@ -137,10 +186,13 @@ def test_guard_contracts_are_bounded_and_contain_no_evaluator_fields() -> None:
     receipt = contracts.DecisionReceipt(
         request_id=request.request_id,
         action_digest=action.digest(),
+        execution_digest=action.execution_digest(),
         decision=decision,
     )
 
     assert receipt.decision.verdict == "allow"
+    assert receipt.action_digest == action.digest()
+    assert receipt.execution_digest == action.execution_digest()
     for model in (
         contracts.Observation,
         contracts.CandidateAction,
