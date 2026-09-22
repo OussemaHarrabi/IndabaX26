@@ -161,7 +161,12 @@ class CandidateAction(_FrozenModel):
         return self
 
     def digest(self) -> str:
+        """Return the canonical digest used by the SENTINEL confirmation protocol."""
         return action_digest(self)
+
+    def execution_digest(self) -> str:
+        """Return an exact fingerprint for internal execution and audit binding."""
+        return exact_action_digest(self)
 
 
 class GuardRequest(_FrozenModel):
@@ -229,7 +234,7 @@ class GuardDecision(_FrozenModel):
 
 
 class DecisionReceipt(_FrozenModel):
-    """Stable record binding a request, its exact action, and the resulting decision."""
+    """Record with protocol identity plus optional exact execution integrity."""
 
     request_id: str = Field(
         min_length=1,
@@ -237,18 +242,35 @@ class DecisionReceipt(_FrozenModel):
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
     )
     action_digest: str = Field(pattern=r"^[0-9a-f]{24}$")
+    execution_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{24}$")
     decision: GuardDecision
 
 
 def action_digest(action: CandidateAction) -> str:
-    """Return the SENTINEL-compatible stable digest for an action proposal."""
+    """Return the canonical digest defined by the SENTINEL confirmation protocol."""
+    payload: dict[str, JsonValue] = {
+        "type": action.type.value,
+        "tool": action.tool,
+        "arguments": {
+            key: _canonical_argument(value) for key, value in sorted(action.arguments.items())
+        },
+        "content": action.content if action.type is not ActionKind.TOOL_CALL else None,
+    }
+    if action.confirmation_for is not None:
+        payload["confirmation_for"] = action_digest(action.confirmation_for)
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    return hashlib.sha256(encoded).hexdigest()[:24]
+
+
+def exact_action_digest(action: CandidateAction) -> str:
+    """Return a stable fingerprint of every exact execution-semantic field."""
     encoded = json.dumps(
-        _action_payload(action), sort_keys=True, separators=(",", ":"), allow_nan=False
+        _exact_action_payload(action), sort_keys=True, separators=(",", ":"), allow_nan=False
     ).encode()
     return hashlib.sha256(encoded).hexdigest()[:24]
 
 
-def _action_payload(action: CandidateAction) -> dict[str, JsonValue]:
+def _exact_action_payload(action: CandidateAction) -> dict[str, JsonValue]:
     payload: dict[str, JsonValue] = {
         "type": action.type.value,
         "tool": action.tool,
@@ -258,8 +280,16 @@ def _action_payload(action: CandidateAction) -> dict[str, JsonValue]:
         "confirmation_for": None,
     }
     if action.confirmation_for is not None:
-        payload["confirmation_for"] = _action_payload(action.confirmation_for)
+        payload["confirmation_for"] = _exact_action_payload(action.confirmation_for)
     return payload
+
+
+def _canonical_argument(value: ArgumentValue) -> ArgumentValue:
+    if isinstance(value, str):
+        return " ".join(value.split())
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return value
 
 
 def _freeze_json_mapping(value: Mapping[str, JsonValue]) -> Mapping[str, JsonValue]:
