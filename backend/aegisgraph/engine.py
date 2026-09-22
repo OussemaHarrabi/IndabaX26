@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import replace
+from typing import Final
 
 from aegisgraph.adapter import AdaptedRequest, adapt_request
 from aegisgraph.contracts import (
@@ -20,27 +21,71 @@ from aegisgraph.policy import (
 )
 from aegisgraph.sentinel import SentinelRequest
 
-_INSTRUCTION_MARKERS = re.compile(
-    r"\b(ignore|disregard|override|bypass|must|immediately|always|never|execute|call|send|"
-    r"transfer|close|remember|store|write)\b",
+_STRONG_INSTRUCTION_MARKERS = re.compile(
+    r"\b(ignore|disregard|override|bypass)\b|"
+    r"\b(?:you|the agent|the assistant|agent|assistant)\s+"
+    r"(?:must|should|need(?:s)? to|has to|is required to)\b",
+    re.IGNORECASE,
+)
+_IMPERATIVE_START = re.compile(
+    r"(?:^|[.!?]\s+)[\"']?\s*(?:please\s+|kindly\s+)?"
+    r"(?:send|email|message|mail|close|resolve|update|pay|transfer|confirm|execute|"
+    r"remediate|isolate|block|remember|store|save|call|write)\b",
     re.IGNORECASE,
 )
 _UNTRUSTED_THRESHOLD = TrustLevel.UNTRUSTED_INTERNAL
+_ACTION_ALIASES: Final[dict[str, frozenset[str]]] = {
+    "email_send": frozenset({"send", "email", "message", "mail"}),
+    "ticket_update": frozenset({"close", "resolve", "resolved", "ticket"}),
+    "payment_confirm": frozenset({"pay", "payment", "transfer", "confirm"}),
+    "payment_execute": frozenset({"pay", "payment", "transfer", "execute"}),
+    "remediation_execute": frozenset({"remediate", "isolate", "block", "execute"}),
+    "incident_update": frozenset({"close", "update", "incident"}),
+    "memory_write": frozenset({"remember", "store", "save", "memory"}),
+}
+_SIDE_EFFECTING_TOOLS: Final[frozenset[str]] = frozenset(
+    {
+        "email_draft",
+        "email_send",
+        "ticket_update",
+        "case_note_create",
+        "payment_prepare",
+        "payment_confirm",
+        "payment_execute",
+        "incident_create",
+        "incident_update",
+        "remediation_prepare",
+        "remediation_execute",
+    }
+)
+VERDICT_SEVERITY: Final[dict[str, int]] = {
+    Verdict.ALLOW.value: 0,
+    Verdict.REWRITE.value: 1,
+    Verdict.ESCALATE.value: 2,
+    Verdict.BLOCK.value: 3,
+}
 
 
 def decide(request: SentinelRequest) -> GuardDecision:
     """Evaluate one SENTINEL request without side effects or external calls."""
 
-    adapted = adapt_request(request)
-    facts = parse_policy_facts(adapted.request.policy_context)
-    return _evaluate(adapted, facts, skip_confirmation=False)
+    try:
+        adapted = adapt_request(request)
+        facts = parse_policy_facts(adapted.request.policy_context)
+        return _evaluate(adapted, facts, skip_confirmation=False)
+    except Exception:
+        return _adapter_failure()
 
 
 def validate_rewrite(request: SentinelRequest, rewritten_action: CandidateAction) -> GuardDecision:
     """Close the organizer rewrite trap by revalidating the exact replacement."""
 
-    adapted = adapt_request(request)
-    original = adapted.request.candidate_action
+    try:
+        adapted = adapt_request(request)
+        facts = parse_policy_facts(adapted.request.policy_context)
+        original = adapted.request.candidate_action
+    except Exception:
+        return _adapter_failure()
     if not original.final and rewritten_action.final:
         return _block("REWRITE_FINALITY_ESCALATION", 1.0, adapted)
     if (
@@ -49,9 +94,22 @@ def validate_rewrite(request: SentinelRequest, rewritten_action: CandidateAction
     ):
         return _block("REWRITE_CONFIRMATION_BYPASS", 1.0, adapted)
 
+    original_decision = _evaluate(adapted, facts, skip_confirmation=False)
+    if VERDICT_SEVERITY[original_decision.verdict.value] > VERDICT_SEVERITY[Verdict.ALLOW.value]:
+        return GuardDecision(
+            verdict=Verdict.BLOCK,
+            risk_score=max(0.95, original_decision.risk_score),
+            confidence=original_decision.confidence,
+            reason_codes=(
+                "REWRITE_ENFORCEMENT_DOWNGRADE",
+                *original_decision.reason_codes,
+            )[:16],
+            explanation="A rewrite cannot reduce the original action's enforcement level.",
+            metadata=original_decision.metadata,
+        )
+
     rewritten_request = adapted.request.model_copy(update={"candidate_action": rewritten_action})
     rewritten = replace(adapted, request=rewritten_request)
-    facts = parse_policy_facts(rewritten.request.policy_context)
     evaluated = _evaluate(rewritten, facts, skip_confirmation=False)
     if evaluated.verdict is not Verdict.ALLOW:
         return GuardDecision(
@@ -82,6 +140,8 @@ def _evaluate(
         return _block("PROVENANCE_INCOMPLETE", 0.97, adapted)
 
     action = adapted.request.candidate_action
+    if adapted.evidence_truncated and action.type is not ActionKind.RESPOND:
+        return _block("EVIDENCE_TRUNCATED", 0.96, adapted)
     if action.type is ActionKind.REQUEST_CONFIRMATION:
         target = action.confirmation_for
         if target is None:
@@ -174,7 +234,7 @@ def _coupled_instruction(action: CandidateAction, adapted: AdaptedRequest) -> bo
         if list(TrustLevel).index(observation.trust_level)
         >= list(TrustLevel).index(_UNTRUSTED_THRESHOLD)
     )
-    if not untrusted_text or _INSTRUCTION_MARKERS.search(untrusted_text) is None:
+    if not untrusted_text or not _looks_instructional(untrusted_text):
         return False
     lowered = untrusted_text.lower()
     if action.type is ActionKind.MEMORY_WRITE:
@@ -183,12 +243,24 @@ def _coupled_instruction(action: CandidateAction, adapted: AdaptedRequest) -> bo
         tool_tokens = {action.tool.lower(), action.tool.lower().replace("_", " ")}
         if any(token in lowered for token in tool_tokens):
             return True
+        aliases = _ACTION_ALIASES.get(action.tool, frozenset())
+        if any(re.search(rf"\b{re.escape(alias)}\b", lowered) for alias in aliases):
+            return True
     argument_values = (
         value.strip().lower()
         for value in action.arguments.values()
         if isinstance(value, str) and len(value.strip()) >= 4
     )
-    return any(value in lowered for value in argument_values)
+    if any(value in lowered for value in argument_values):
+        return True
+    return action.tool in _SIDE_EFFECTING_TOOLS
+
+
+def _looks_instructional(content: str) -> bool:
+    return (
+        _STRONG_INSTRUCTION_MARKERS.search(content) is not None
+        or _IMPERATIVE_START.search(content) is not None
+    )
 
 
 def _block(code: str, risk: float, adapted: AdaptedRequest) -> GuardDecision:
@@ -218,4 +290,15 @@ def _decision(
             "least_trust": adapted.least_trust.value,
             "max_sensitivity": adapted.max_sensitivity.value,
         },
+    )
+
+
+def _adapter_failure() -> GuardDecision:
+    return GuardDecision(
+        verdict=Verdict.BLOCK,
+        risk_score=1.0,
+        confidence=1.0,
+        reason_codes=("ADAPTER_VALIDATION_FAILED",),
+        explanation="The request could not be safely normalized for policy evaluation.",
+        metadata={},
     )

@@ -11,6 +11,7 @@ _DOMAIN_PATTERN = re.compile(
     r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*"
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
 )
+_EMAIL_PATTERN = re.compile(r"^[^\s@,;<>]+@[^\s@,;<>]+$")
 STATIC_CONSEQUENTIAL_TOOLS = frozenset(
     {"email_send", "payment_confirm", "payment_execute", "remediation_execute"}
 )
@@ -67,15 +68,31 @@ def requires_confirmation(action: CandidateAction, facts: PolicyFacts) -> bool:
 
 
 def recipient_is_external(action: CandidateAction, facts: PolicyFacts) -> bool:
-    """Return true for an email-like destination outside all declared internal domains."""
+    """Treat external, missing, or ambiguous outbound email destinations as unsafe."""
 
     destinations: list[str] = []
+    destination_field_seen = False
     for key, value in action.arguments.items():
-        if key.lower() in {"to", "recipient", "recipients", "email", "destination"} and isinstance(
-            value, str
-        ):
-            destinations.extend(part.strip() for part in re.split(r"[,;]", value))
-    email_domains = [item.rsplit("@", 1)[1].lower() for item in destinations if "@" in item]
+        if key.lower() not in {
+            "to",
+            "recipient",
+            "recipients",
+            "email",
+            "destination",
+            "cc",
+            "bcc",
+        }:
+            continue
+        destination_field_seen = True
+        if not isinstance(value, str):
+            return True
+        destinations.extend(part.strip() for part in re.split(r"[,;]", value) if part.strip())
+
+    if action.tool == "email_send" and (not destination_field_seen or not destinations):
+        return True
+    if any(_EMAIL_PATTERN.fullmatch(item) is None for item in destinations):
+        return True
+    email_domains = [item.rsplit("@", 1)[1].lower() for item in destinations]
     if not email_domains:
         return False
     return any(
