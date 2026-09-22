@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from collections.abc import Iterator, Mapping
 from enum import StrEnum
@@ -129,6 +130,8 @@ class CandidateAction(_FrozenModel):
                 raise ValueError(f"invalid argument name: {key!r}")
             if isinstance(item, str) and len(item) > MAX_ARGUMENT_CHARS:
                 raise ValueError(f"argument {key!r} exceeds {MAX_ARGUMENT_CHARS} characters")
+            if isinstance(item, float) and not math.isfinite(item):
+                raise ValueError(f"argument {key!r} must be finite")
         return FrozenDict(value)
 
     @field_serializer("arguments")
@@ -239,26 +242,24 @@ class DecisionReceipt(_FrozenModel):
 
 def action_digest(action: CandidateAction) -> str:
     """Return the SENTINEL-compatible stable digest for an action proposal."""
-    payload: dict[str, JsonValue] = {
-        "type": action.type.value,
-        "tool": action.tool,
-        "arguments": {
-            key: _canonical_argument(value) for key, value in sorted(action.arguments.items())
-        },
-        "content": action.content if action.type is not ActionKind.TOOL_CALL else None,
-    }
-    if action.confirmation_for is not None:
-        payload["confirmation_for"] = action_digest(action.confirmation_for)
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    encoded = json.dumps(
+        _action_payload(action), sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode()
     return hashlib.sha256(encoded).hexdigest()[:24]
 
 
-def _canonical_argument(value: ArgumentValue) -> ArgumentValue:
-    if isinstance(value, str):
-        return " ".join(value.split())
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    return value
+def _action_payload(action: CandidateAction) -> dict[str, JsonValue]:
+    payload: dict[str, JsonValue] = {
+        "type": action.type.value,
+        "tool": action.tool,
+        "arguments": dict(action.arguments),
+        "content": action.content,
+        "final": action.final,
+        "confirmation_for": None,
+    }
+    if action.confirmation_for is not None:
+        payload["confirmation_for"] = _action_payload(action.confirmation_for)
+    return payload
 
 
 def _freeze_json_mapping(value: Mapping[str, JsonValue]) -> Mapping[str, JsonValue]:
@@ -284,7 +285,7 @@ def _thaw_json(value: object) -> JsonValue:
 
 def _require_json_size(value: object, limit: int, field_name: str) -> None:
     try:
-        size = len(json.dumps(value))
+        size = len(json.dumps(value, allow_nan=False))
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{field_name} must be JSON-serializable") from exc
     if size > limit:

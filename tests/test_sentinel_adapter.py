@@ -163,6 +163,74 @@ def test_action_argument_boundaries_and_nested_contract_use() -> None:
         )
 
 
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_sentinel_candidate_rejects_non_finite_float_arguments(value: float) -> None:
+    adapter = _adapter()
+
+    with pytest.raises(ValidationError, match="finite"):
+        adapter.SentinelCandidateAction(
+            type="tool_call", tool="payment_confirm", arguments={"amount": value}
+        )
+
+
+def test_sentinel_security_mappings_are_deeply_immutable_and_serializable() -> None:
+    adapter = _adapter()
+    payload = _request_payload()
+    candidate_payload = {
+        "type": "tool_call",
+        "tool": "email_send",
+        "arguments": {"recipient": "ops@example.com"},
+    }
+    policy_payload = {"limits": {"recipients": ["ops@example.com"]}}
+    payload["candidate_action"] = candidate_payload
+    payload["policy_context"] = policy_payload
+    request = adapter.SentinelRequest.model_validate(payload)
+    metadata_payload = {"evidence": {"checks": ["recipient_allowlist"]}}
+    response = adapter.SentinelResponse(
+        decision="allow",
+        risk_score=0.1,
+        confidence=0.9,
+        metadata=metadata_payload,
+    )
+
+    with pytest.raises(TypeError):
+        request.candidate_action.arguments["recipient"] = "attacker@example.com"
+    with pytest.raises(TypeError):
+        request.policy_context["limits"]["recipients"] = []
+    with pytest.raises(AttributeError):
+        response.metadata["evidence"]["checks"].append("changed")
+
+    candidate_payload["arguments"]["recipient"] = "attacker@example.com"
+    policy_payload["limits"]["recipients"].append("attacker@example.com")
+    metadata_payload["evidence"]["checks"].append("changed")
+    assert request.candidate_action.arguments["recipient"] == "ops@example.com"
+    assert request.policy_context["limits"]["recipients"] == ("ops@example.com",)
+    assert response.metadata["evidence"]["checks"] == ("recipient_allowlist",)
+
+    request_json = request.model_dump_json()
+    response_json = response.model_dump_json()
+    assert adapter.SentinelRequest.model_validate_json(request_json) == request
+    assert adapter.SentinelResponse.model_validate_json(response_json) == response
+
+
+def test_sentinel_mapping_size_limits_cannot_be_bypassed_after_validation() -> None:
+    adapter = _adapter()
+    payload = _request_payload()
+    policy_payload = {"blob": "safe"}
+    payload["policy_context"] = policy_payload
+    request = adapter.SentinelRequest.model_validate(payload)
+    metadata_payload = {"data": "safe"}
+    response = adapter.SentinelResponse(
+        decision="allow", risk_score=0.1, confidence=0.9, metadata=metadata_payload
+    )
+
+    policy_payload["blob"] = "x" * 20_000
+    metadata_payload["data"] = "x" * 5_000
+
+    assert request.policy_context["blob"] == "safe"
+    assert response.metadata["data"] == "safe"
+
+
 def test_conversation_provenance_and_history_use_official_types() -> None:
     adapter = _adapter()
     payload = _request_payload()

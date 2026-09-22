@@ -31,7 +31,7 @@ def test_candidate_action_enforces_shape_and_is_frozen() -> None:
         action.tool = "other"  # type: ignore[misc]
 
 
-def test_action_digest_is_stable_across_safe_normalization() -> None:
+def test_action_digest_binds_exact_top_level_and_nested_action_semantics() -> None:
     first = contracts.CandidateAction(
         type="tool_call",
         tool="payment_confirm",
@@ -48,10 +48,37 @@ def test_action_digest_is_stable_across_safe_normalization() -> None:
     second_confirmation = contracts.CandidateAction(
         type="request_confirmation", confirmation_for=second, content="Approve?"
     )
+    non_final = contracts.CandidateAction(type="respond", content="Done", final=False)
+    final = contracts.CandidateAction(type="respond", content="Done", final=True)
 
-    assert first.digest() == second.digest()
-    assert first_confirmation.digest() == second_confirmation.digest()
+    assert first.digest() != second.digest()
+    assert first_confirmation.digest() != second_confirmation.digest()
+    assert non_final.digest() != final.digest()
     assert len(first.digest()) == 24
+
+
+def test_action_digest_is_stable_across_argument_key_order_and_json_round_trip() -> None:
+    first = contracts.CandidateAction(
+        type="tool_call",
+        tool="payment_confirm",
+        arguments={"note": "exact spacing", "amount": 12.0},
+    )
+    second = contracts.CandidateAction.model_validate_json(first.model_dump_json())
+    reordered = contracts.CandidateAction(
+        type="tool_call",
+        tool="payment_confirm",
+        arguments={"amount": 12.0, "note": "exact spacing"},
+    )
+
+    assert first.digest() == second.digest() == reordered.digest()
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_candidate_action_rejects_non_finite_float_arguments(value: float) -> None:
+    with pytest.raises(ValidationError, match="finite"):
+        contracts.CandidateAction(
+            type="tool_call", tool="payment_confirm", arguments={"amount": value}
+        )
 
 
 def test_canonical_nested_mappings_are_deeply_immutable_and_serializable() -> None:
