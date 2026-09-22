@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import replace
+from enum import IntEnum
 from typing import Final
 
 from aegisgraph.adapter import AdaptedRequest, adapt_request
@@ -33,6 +34,26 @@ _IMPERATIVE_START = re.compile(
     r"remediate|isolate|block|remember|store|save|call|write)\b",
     re.IGNORECASE,
 )
+_ACTION_VERBS = (
+    r"send|email|message|mail|close|resolve|update|pay|transfer|confirm|execute|"
+    r"remediate|isolate|block|remember|store|save|call|write"
+)
+_NEGATED_IMPERATIVE = re.compile(
+    rf"^(?:do\s+not|don't|never)\s+(?:please\s+|kindly\s+)?(?:{_ACTION_VERBS})\b",
+    re.IGNORECASE,
+)
+_IGNORE_META_INSTRUCTION = re.compile(
+    r"^ignore\s+(?:the\s+)?(?:instruction|request|command)\s+to\b",
+    re.IGNORECASE,
+)
+_META_DISCUSSION = re.compile(
+    r"\b(?:example|training|quoted?|malicious instruction|prompt[- ]injection|"
+    r"do not follow)\b",
+    re.IGNORECASE,
+)
+_QUOTED_SPAN = re.compile(r'"[^"\n]*"|\'[^\'\n]*\'')
+_CLAUSE_SPLIT = re.compile(r"[.!?;\n]+")
+_CONTRAST_SPLIT = re.compile(r"\b(?:but|instead|then|however)\b", re.IGNORECASE)
 _UNTRUSTED_THRESHOLD = TrustLevel.UNTRUSTED_INTERNAL
 _ACTION_ALIASES: Final[dict[str, frozenset[str]]] = {
     "email_send": frozenset({"send", "email", "message", "mail"}),
@@ -58,6 +79,24 @@ _SIDE_EFFECTING_TOOLS: Final[frozenset[str]] = frozenset(
         "remediation_execute",
     }
 )
+_READ_ONLY_TOOLS: Final[frozenset[str]] = frozenset(
+    {
+        "email_search",
+        "email_read",
+        "document_search",
+        "document_read",
+        "wiki_search",
+        "ticket_read",
+        "customer_lookup",
+        "account_summary",
+        "case_document_read",
+        "policy_search",
+        "alert_search",
+        "alert_read",
+        "asset_lookup",
+        "intel_search",
+    }
+)
 VERDICT_SEVERITY: Final[dict[str, int]] = {
     Verdict.ALLOW.value: 0,
     Verdict.REWRITE.value: 1,
@@ -66,15 +105,37 @@ VERDICT_SEVERITY: Final[dict[str, int]] = {
 }
 
 
+class ActionEffect(IntEnum):
+    INERT = 0
+    READ_OR_CONFIRM = 1
+    WRITE = 2
+    PERSISTENT_OR_CONSEQUENTIAL = 3
+
+
 def decide(request: SentinelRequest) -> GuardDecision:
     """Evaluate one SENTINEL request without side effects or external calls."""
 
     try:
         adapted = adapt_request(request)
+    except Exception:
+        return _failure_decision(
+            "ADAPTER_VALIDATION_FAILED",
+            "The request could not be safely normalized for policy evaluation.",
+        )
+    try:
         facts = parse_policy_facts(adapted.request.policy_context)
+    except Exception:
+        return _failure_decision(
+            "POLICY_VALIDATION_FAILED",
+            "The policy context could not be safely validated.",
+        )
+    try:
         return _evaluate(adapted, facts, skip_confirmation=False)
     except Exception:
-        return _adapter_failure()
+        return _failure_decision(
+            "INTERNAL_EVALUATION_FAILED",
+            "The request could not be safely evaluated.",
+        )
 
 
 def validate_rewrite(request: SentinelRequest, rewritten_action: CandidateAction) -> GuardDecision:
@@ -82,10 +143,31 @@ def validate_rewrite(request: SentinelRequest, rewritten_action: CandidateAction
 
     try:
         adapted = adapt_request(request)
-        facts = parse_policy_facts(adapted.request.policy_context)
-        original = adapted.request.candidate_action
     except Exception:
-        return _adapter_failure()
+        return _failure_decision(
+            "ADAPTER_VALIDATION_FAILED",
+            "The request could not be safely normalized for policy evaluation.",
+        )
+    try:
+        facts = parse_policy_facts(adapted.request.policy_context)
+    except Exception:
+        return _failure_decision(
+            "POLICY_VALIDATION_FAILED",
+            "The policy context could not be safely validated.",
+        )
+    try:
+        return _validate_rewrite(adapted, facts, rewritten_action)
+    except Exception:
+        return _failure_decision(
+            "INTERNAL_EVALUATION_FAILED",
+            "The rewrite could not be safely evaluated.",
+        )
+
+
+def _validate_rewrite(
+    adapted: AdaptedRequest, facts: PolicyFacts, rewritten_action: CandidateAction
+) -> GuardDecision:
+    original = adapted.request.candidate_action
     if not original.final and rewritten_action.final:
         return _block("REWRITE_FINALITY_ESCALATION", 1.0, adapted)
     if (
@@ -93,6 +175,12 @@ def validate_rewrite(request: SentinelRequest, rewritten_action: CandidateAction
         and rewritten_action.type is not ActionKind.REQUEST_CONFIRMATION
     ):
         return _block("REWRITE_CONFIRMATION_BYPASS", 1.0, adapted)
+    if (
+        original.type is ActionKind.RESPOND
+        and original.final
+        and (rewritten_action.type is not ActionKind.RESPOND)
+    ):
+        return _block("REWRITE_FINAL_ACTION_CHANGED", 1.0, adapted)
 
     original_decision = _evaluate(adapted, facts, skip_confirmation=False)
     if VERDICT_SEVERITY[original_decision.verdict.value] > VERDICT_SEVERITY[Verdict.ALLOW.value]:
@@ -120,6 +208,16 @@ def validate_rewrite(request: SentinelRequest, rewritten_action: CandidateAction
             explanation="The proposed rewrite failed mandatory policy revalidation.",
             metadata=evaluated.metadata,
         )
+    if original.type is ActionKind.RESPOND and rewritten_action.type is ActionKind.MEMORY_WRITE:
+        return _block("REWRITE_EFFECT_ESCALATION", 1.0, adapted)
+    original_effect = _action_effect(original, facts)
+    rewritten_effect = _action_effect(rewritten_action, facts)
+    if (
+        rewritten_effect > original_effect
+        and rewritten_effect >= ActionEffect.WRITE
+        and rewritten_action.digest() not in adapted.confirmations_granted
+    ):
+        return _block("REWRITE_EFFECT_ESCALATION", 0.98, adapted)
     return GuardDecision(
         verdict=Verdict.REWRITE,
         risk_score=max(0.2, evaluated.risk_score),
@@ -228,15 +326,18 @@ def _has_untrusted_evidence(adapted: AdaptedRequest) -> bool:
 
 
 def _coupled_instruction(action: CandidateAction, adapted: AdaptedRequest) -> bool:
-    untrusted_text = "\n".join(
-        observation.content
+    return any(
+        _observation_couples(action, observation.content)
         for observation in adapted.request.observations
         if list(TrustLevel).index(observation.trust_level)
         >= list(TrustLevel).index(_UNTRUSTED_THRESHOLD)
     )
-    if not untrusted_text or not _looks_instructional(untrusted_text):
+
+
+def _observation_couples(action: CandidateAction, content: str) -> bool:
+    if not content or not _looks_instructional(content):
         return False
-    lowered = untrusted_text.lower()
+    lowered = content.lower()
     if action.type is ActionKind.MEMORY_WRITE:
         return True
     if action.tool is not None:
@@ -257,10 +358,46 @@ def _coupled_instruction(action: CandidateAction, adapted: AdaptedRequest) -> bo
 
 
 def _looks_instructional(content: str) -> bool:
+    normalized = content.strip()
+    if _META_DISCUSSION.search(normalized) is not None:
+        normalized = _QUOTED_SPAN.sub(" ", normalized)
+    for clause in _CLAUSE_SPLIT.split(normalized):
+        cleaned = clause.strip(" \t\r\n\"'")
+        if not cleaned:
+            continue
+        contrast_parts = [part.strip() for part in _CONTRAST_SPLIT.split(cleaned)]
+        first = contrast_parts[0]
+        if (
+            _NEGATED_IMPERATIVE.search(first) is not None
+            or _IGNORE_META_INSTRUCTION.search(first) is not None
+        ):
+            if any(_clause_is_active(part) for part in contrast_parts[1:]):
+                return True
+            continue
+        if _clause_is_active(cleaned):
+            return True
+    return False
+
+
+def _clause_is_active(clause: str) -> bool:
     return (
-        _STRONG_INSTRUCTION_MARKERS.search(content) is not None
-        or _IMPERATIVE_START.search(content) is not None
+        _STRONG_INSTRUCTION_MARKERS.search(clause) is not None
+        or _IMPERATIVE_START.search(clause) is not None
     )
+
+
+def _action_effect(action: CandidateAction, facts: PolicyFacts) -> ActionEffect:
+    if action.type is ActionKind.RESPOND:
+        return ActionEffect.INERT
+    if action.type is ActionKind.REQUEST_CONFIRMATION:
+        return ActionEffect.READ_OR_CONFIRM
+    if action.type is ActionKind.MEMORY_WRITE:
+        return ActionEffect.PERSISTENT_OR_CONSEQUENTIAL
+    if requires_confirmation(action, facts):
+        return ActionEffect.PERSISTENT_OR_CONSEQUENTIAL
+    if action.tool in _READ_ONLY_TOOLS:
+        return ActionEffect.READ_OR_CONFIRM
+    return ActionEffect.WRITE
 
 
 def _block(code: str, risk: float, adapted: AdaptedRequest) -> GuardDecision:
@@ -293,12 +430,12 @@ def _decision(
     )
 
 
-def _adapter_failure() -> GuardDecision:
+def _failure_decision(code: str, explanation: str) -> GuardDecision:
     return GuardDecision(
         verdict=Verdict.BLOCK,
         risk_score=1.0,
         confidence=1.0,
-        reason_codes=("ADAPTER_VALIDATION_FAILED",),
-        explanation="The request could not be safely normalized for policy evaluation.",
+        reason_codes=(code,),
+        explanation=explanation,
         metadata={},
     )
