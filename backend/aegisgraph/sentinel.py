@@ -3,11 +3,21 @@
 from __future__ import annotations
 
 import json
+import math
 import re
+from collections.abc import Mapping
 from datetime import datetime
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal, Self, cast
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 from aegisgraph.contracts import (
     MAX_ARGUMENT_CHARS,
@@ -16,6 +26,9 @@ from aegisgraph.contracts import (
     MAX_METADATA_BYTES,
     REASON_CODE_PATTERN,
     ArgumentValue,
+    FrozenDict,
+    _freeze_json_mapping,
+    _thaw_json,
 )
 
 API_VERSION = "v1"
@@ -45,14 +58,16 @@ class SentinelCandidateAction(BaseModel):
 
     type: Literal["respond", "tool_call", "memory_write", "request_confirmation"]
     tool: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{1,63}$")
-    arguments: dict[str, ArgumentValue] = Field(default_factory=dict)
+    arguments: Mapping[str, ArgumentValue] = Field(default_factory=FrozenDict)
     content: str | None = Field(default=None, max_length=MAX_CONTENT_CHARS)
     final: bool = False
     confirmation_for: SentinelCandidateAction | None = None
 
     @field_validator("arguments")
     @classmethod
-    def _bounded_arguments(cls, value: dict[str, ArgumentValue]) -> dict[str, ArgumentValue]:
+    def _bounded_arguments(
+        cls, value: Mapping[str, ArgumentValue]
+    ) -> Mapping[str, ArgumentValue]:
         if len(value) > 32:
             raise ValueError("at most 32 arguments are allowed")
         for key, item in value.items():
@@ -60,7 +75,15 @@ class SentinelCandidateAction(BaseModel):
                 raise ValueError(f"invalid argument name: {key!r}")
             if isinstance(item, str) and len(item) > MAX_ARGUMENT_CHARS:
                 raise ValueError(f"argument {key!r} exceeds {MAX_ARGUMENT_CHARS} characters")
-        return value
+            if isinstance(item, float) and not math.isfinite(item):
+                raise ValueError(f"argument {key!r} must be finite")
+        return FrozenDict(value)
+
+    @field_serializer("arguments")
+    def _serialize_arguments(
+        self, value: Mapping[str, ArgumentValue]
+    ) -> dict[str, ArgumentValue]:
+        return dict(value)
 
     @model_validator(mode="after")
     def _shape_matches_type(self) -> Self:
@@ -144,16 +167,22 @@ class SentinelRequest(_LenientFrozenModel):
     )
     observation: SentinelObservationView | None = None
     candidate_action: SentinelCandidateAction
-    policy_context: dict[str, JsonValue] = Field(default_factory=dict)
+    policy_context: Mapping[str, JsonValue] = Field(default_factory=FrozenDict)
     provenance: tuple[SentinelProvenanceRecord, ...] = Field(default_factory=tuple, max_length=256)
     history_digest: SentinelHistoryDigest = Field(default_factory=SentinelHistoryDigest)
 
     @field_validator("policy_context")
     @classmethod
-    def _bounded_policy_context(cls, value: dict[str, JsonValue]) -> dict[str, JsonValue]:
-        if len(json.dumps(value)) > MAX_CONTEXT_BYTES:
+    def _bounded_policy_context(
+        cls, value: Mapping[str, JsonValue]
+    ) -> Mapping[str, JsonValue]:
+        if len(json.dumps(value, allow_nan=False)) > MAX_CONTEXT_BYTES:
             raise ValueError(f"policy_context exceeds {MAX_CONTEXT_BYTES} bytes")
-        return value
+        return _freeze_json_mapping(value)
+
+    @field_serializer("policy_context")
+    def _serialize_policy_context(self, value: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+        return cast(dict[str, JsonValue], _thaw_json(value))
 
 
 class SentinelResponse(BaseModel):
@@ -167,7 +196,7 @@ class SentinelResponse(BaseModel):
     reason_codes: tuple[str, ...] = Field(default_factory=tuple, max_length=16)
     explanation: str | None = Field(default=None, max_length=500)
     rewritten_action: SentinelCandidateAction | None = None
-    metadata: dict[str, JsonValue] = Field(default_factory=dict)
+    metadata: Mapping[str, JsonValue] = Field(default_factory=FrozenDict)
 
     @field_validator("reason_codes")
     @classmethod
@@ -179,11 +208,15 @@ class SentinelResponse(BaseModel):
 
     @field_validator("metadata")
     @classmethod
-    def _bounded_metadata(cls, metadata: dict[str, JsonValue]) -> dict[str, JsonValue]:
-        size = len(json.dumps(metadata))
+    def _bounded_metadata(cls, metadata: Mapping[str, JsonValue]) -> Mapping[str, JsonValue]:
+        size = len(json.dumps(metadata, allow_nan=False))
         if size > MAX_METADATA_BYTES:
             raise ValueError(f"metadata exceeds {MAX_METADATA_BYTES} bytes")
-        return metadata
+        return _freeze_json_mapping(metadata)
+
+    @field_serializer("metadata")
+    def _serialize_metadata(self, value: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+        return cast(dict[str, JsonValue], _thaw_json(value))
 
     @model_validator(mode="after")
     def _rewrite_needs_action(self) -> Self:
