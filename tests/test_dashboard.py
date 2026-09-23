@@ -66,8 +66,15 @@ def test_dashboard_distinguishes_reachability_from_attack_outcome_and_presence()
     assert 'attackReached: typeof merged.attack_reached === "boolean"' in run_data
     assert 'attackSuccess: typeof merged.attack_success === "boolean"' in run_data
     assert 'attackPresent: typeof merged.attack_present === "boolean"' in run_data
-    assert 'if (labels.includes("trusted")) return "trusted"' in trust
-    assert 'if (labels.includes("untrusted")) return "untrusted"' in trust
+    assert '"trusted", "trusted_internal", "authenticated_user", "system_policy"' in trust
+    assert 'return "trusted"' in trust
+    assert (
+        '"untrusted", "untrusted_internal", "untrusted_external", "adversary_controlled"'
+        in trust
+    )
+    assert 'return "untrusted"' in trust
+    assert 'labels.some((label) => ["untrusted"' in trust
+    assert 'includes(label))) return "untrusted"' in trust
     assert 'return "unknown"' in trust
 
 
@@ -83,5 +90,8 @@ def test_dashboard_requires_matching_step_ids_and_announces_file_progress() -> N
     assert 'byId("import-status").textContent = message' in script
     assert "runtime_config" in comparison
     assert "configuration" in comparison
+    assert "recordedMetadata.length" in comparison
+    assert "Comparison metadata unavailable" in comparison
+    assert "if (!state.visible.includes(event)) resetFilters()" in selection
     assert 'selectedRow?.focus()' in selection
     assert 'selectedRow?.scrollIntoView' in selection

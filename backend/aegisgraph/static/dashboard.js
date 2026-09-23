@@ -49,8 +49,8 @@
       const value = typeof ref === "string" ? ref : ref && typeof ref === "object" ? ref.trust || ref.trust_level : "";
       return typeof value === "string" ? value.trim().toLowerCase() : "";
     });
-    if (labels.includes("untrusted")) return "untrusted";
-    if (labels.includes("trusted")) return "trusted";
+    if (labels.some((label) => ["untrusted", "untrusted_internal", "untrusted_external", "adversary_controlled"].includes(label))) return "untrusted";
+    if (["trusted", "trusted_internal", "authenticated_user", "system_policy"].some((label) => labels.includes(label))) return "trusted";
     return "unknown";
   };
   const currentRun = () => state.runs[state.selectedRun];
@@ -267,6 +267,7 @@
   }
 
   function selectEvent(event) {
+    if (!state.visible.includes(event)) resetFilters();
     state.selectedEvent = event; renderEvents(); renderInspector(event);
     const selectedRow = byId("event-rows").querySelector(`[data-event-index="${state.visible.indexOf(event)}"]`);
     selectedRow?.focus(); selectedRow?.scrollIntoView({ block: "nearest" });
@@ -300,14 +301,17 @@
       "runtime_metadata", "runtime_version", "config", "configuration", "config_digest", "metadata",
       "model_config", "execution_config", "evaluation_config", "attack_mode", "split", "run_seed",
     ];
+    const isRecorded = (value) => value !== undefined && value !== null && value !== "";
+    const recordedMetadata = metadataKeys.filter((key) => isRecorded(left.data[key]) || isRecorded(right.data[key]));
     const differentMetadata = metadataKeys.filter((key) => {
       const leftValue = left.data[key]; const rightValue = right.data[key];
-      return leftValue !== undefined || rightValue !== undefined
-        ? canonicalJson(leftValue) !== canonicalJson(rightValue)
-        : false;
+      const leftRecorded = isRecorded(leftValue); const rightRecorded = isRecorded(rightValue);
+      return leftRecorded !== rightRecorded || (leftRecorded && rightRecorded && canonicalJson(leftValue) !== canonicalJson(rightValue));
     });
     if (differentMetadata.length) {
       wrap.append(create("p", "comparison-note", `Comparison metadata differs or is missing (${differentMetadata.join(", ")}). Treat this as an uncontrolled comparison.`));
+    } else if (!recordedMetadata.length) {
+      wrap.append(create("p", "comparison-note", "Comparison metadata unavailable. Treat this as an uncontrolled comparison."));
     }
   }
 
