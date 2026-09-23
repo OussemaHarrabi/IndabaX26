@@ -6,6 +6,7 @@
   const REDACTED_KEY = /(?:reasoning|thought|chain.?of.?thought)/i;
   const state = { runs: [], scorecards: [], selectedRun: 0, selectedEvent: null, visible: [], undo: null, toastTimer: 0 };
   const byId = (id) => document.getElementById(id);
+  const setImportStatus = (message) => { byId("import-status").textContent = message; };
   const text = (value, fallback = "Not recorded") => {
     if (value === undefined || value === null || value === "") return fallback;
     if (typeof value === "boolean") return value ? "Yes" : "No";
@@ -18,6 +19,13 @@
       return Object.fromEntries(Object.entries(value).filter(([key]) => !REDACTED_KEY.test(key)).map(([key, item]) => [key, safeCopy(item)]));
     }
     return value;
+  };
+  const canonicalJson = (value) => {
+    if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+    if (value && typeof value === "object") {
+      return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+    }
+    return JSON.stringify(value);
   };
   const create = (tag, className, value) => {
     const element = document.createElement(tag);
@@ -37,9 +45,13 @@
   const getTrust = (event) => {
     const refs = event.provenance_refs || getPayload(event).provenance_refs;
     const values = Array.isArray(refs) ? refs : refs ? [refs] : [];
-    const trust = values.map((ref) => typeof ref === "object" ? ref.trust || ref.trust_level : "").filter(Boolean).join(" ").toLowerCase();
-    if (!trust) return "unknown";
-    return /untrusted|tainted|external/.test(trust) ? "untrusted" : "trusted";
+    const labels = values.map((ref) => {
+      const value = typeof ref === "string" ? ref : ref && typeof ref === "object" ? ref.trust || ref.trust_level : "";
+      return typeof value === "string" ? value.trim().toLowerCase() : "";
+    });
+    if (labels.includes("untrusted")) return "untrusted";
+    if (labels.includes("trusted")) return "trusted";
+    return "unknown";
   };
   const currentRun = () => state.runs[state.selectedRun];
   const currentEvents = () => currentRun()?.events || [];
@@ -91,15 +103,23 @@
     const scorecard = run.scorecard;
     const outcomes = Array.isArray(scorecard?.outcomes) ? scorecard.outcomes : [];
     const scenario = findValue(["scenario_id", "scenario"]);
-    const outcome = run.events.map((event) => ({ ...getPayload(event), ...event })).find((event) => typeof event.attack_success === "boolean" || typeof event.task_success === "boolean") || {};
+    const outcome = {};
+    for (const event of run.events) {
+      const recorded = { ...getPayload(event), ...event };
+      for (const key of ["attack_present", "attack_reached", "attack_success", "task_success"]) {
+        if (typeof recorded[key] === "boolean") outcome[key] = recorded[key];
+      }
+    }
     const aggregate = outcomes.find((item) => item.scenario_id === scenario) || (outcomes.length === 1 ? outcomes[0] : null);
     const merged = { ...aggregate, ...outcome };
     return {
       scenario: scenario ?? merged.scenario_id,
       model: findValue(["model_id", "model", "model_name"]) ?? scorecard?.model_id,
       runtime: findValue(["runtime", "runtime_name", "backend"]) ?? scorecard?.runtime,
-      attack: merged.attack_success,
-      task: merged.task_success,
+      attackPresent: typeof merged.attack_present === "boolean" ? merged.attack_present : undefined,
+      attackReached: typeof merged.attack_reached === "boolean" ? merged.attack_reached : undefined,
+      attackSuccess: typeof merged.attack_success === "boolean" ? merged.attack_success : undefined,
+      task: typeof merged.task_success === "boolean" ? merged.task_success : undefined,
       metrics: scorecard?.metrics,
       benchmark: scorecard?.benchmark_version,
     };
@@ -114,14 +134,15 @@
     root.replaceChildren();
     const values = [
       ["Scenario", details.scenario], ["Model", details.model], ["Runtime", details.runtime],
-      ["Attack reachability", typeof details.attack === "boolean" ? (details.attack ? "Reached" : "Not reached") : undefined],
+      ["Attack reachability", typeof details.attackReached === "boolean" ? (details.attackReached ? "Reached" : "Not reached") : undefined],
+      ["Attack success", details.attackSuccess], ["Attack present", details.attackPresent],
       ["Task outcome", typeof details.task === "boolean" ? (details.task ? "Succeeded" : "Failed") : undefined],
       ["Trace events", run.events.length],
     ];
     for (const [label, value] of values) {
       const cell = create("div", "summary-item");
       cell.append(create("small", "", label));
-      if (label === "Attack reachability" && typeof details.attack === "boolean") cell.append(statePill(details.attack ? "Attack reached" : "Attack not reached", details.attack ? "reached" : "unreached"));
+      if (label === "Attack reachability" && typeof details.attackReached === "boolean") cell.append(statePill(details.attackReached ? "Attack reached" : "Attack not reached", details.attackReached ? "reached" : "unreached"));
       else if (label === "Task outcome" && typeof details.task === "boolean") cell.append(statePill(details.task ? "Task succeeded" : "Task failed", details.task ? "allow" : "block"));
       else cell.append(create("strong", "", text(value)));
       root.append(cell);
@@ -154,6 +175,7 @@
     }
     for (const event of filtered) {
       const row = create("tr", "event-row");
+      row.dataset.eventIndex = String(filtered.indexOf(event));
       const selected = state.selectedEvent === event;
       row.tabIndex = 0;
       row.setAttribute("aria-selected", String(selected));
@@ -202,10 +224,11 @@
 
   function matchingRelated(event) {
     const eventRun = event.run_id;
-    const step = event.step_id ?? getPayload(event).step_id;
+    const eventStep = event.step_id ?? getPayload(event).step_id;
+    if (eventStep === undefined || eventStep === null || eventStep === "") return [];
     return currentEvents().filter((candidate) => candidate !== event &&
-      (eventRun === undefined || candidate.run_id === undefined || candidate.run_id === eventRun) &&
-      (step === undefined || (candidate.step_id ?? getPayload(candidate).step_id) === step));
+      (candidate.step_id ?? getPayload(candidate).step_id) === eventStep &&
+      (eventRun === undefined || candidate.run_id === undefined || candidate.run_id === eventRun));
   }
 
   function renderInspector(event) {
@@ -236,14 +259,18 @@
     if (!related.length) relatedList.append(create("p", "event-sub", "No matching step references recorded."));
     related.forEach((item) => {
       const button = create("button", "related-button", `#${text(item.seq, "–")} · ${text(item.type, "Event")} · ${getVerdict(item) || "outcome"}`);
-      button.type = "button"; button.addEventListener("click", () => { state.selectedEvent = item; renderEvents(); renderInspector(item); document.querySelector(".event-row[aria-selected='true']")?.scrollIntoView({ block: "nearest" }); }); relatedList.append(button);
+      button.type = "button"; button.addEventListener("click", () => selectEvent(item)); relatedList.append(button);
     });
     relatedSection.append(relatedList); root.append(relatedSection);
     const raw = create("section", "detail-section"); raw.append(create("h3", "", "Recorded event"));
     const pre = create("pre", "detail-json", JSON.stringify(safeCopy(event), null, 2)); raw.append(pre); root.append(raw);
   }
 
-  function selectEvent(event) { state.selectedEvent = event; renderEvents(); renderInspector(event); }
+  function selectEvent(event) {
+    state.selectedEvent = event; renderEvents(); renderInspector(event);
+    const selectedRow = byId("event-rows").querySelector(`[data-event-index="${state.visible.indexOf(event)}"]`);
+    selectedRow?.focus(); selectedRow?.scrollIntoView({ block: "nearest" });
+  }
 
   function renderComparison() {
     const region = byId("comparison"); const cards = state.scorecards;
@@ -268,8 +295,19 @@
     }
     table.append(body);
     const wrap = byId("comparison-table"); wrap.replaceChildren(table);
-    if (left.data.benchmark_version !== right.data.benchmark_version || left.data.model_id !== right.data.model_id) {
-      wrap.append(create("p", "comparison-note", "Comparison metadata differs or is missing. Treat this as an uncontrolled comparison."));
+    const metadataKeys = [
+      "benchmark_version", "model_id", "model", "runtime", "runtime_name", "runtime_config",
+      "runtime_metadata", "runtime_version", "config", "configuration", "config_digest", "metadata",
+      "model_config", "execution_config", "evaluation_config", "attack_mode", "split", "run_seed",
+    ];
+    const differentMetadata = metadataKeys.filter((key) => {
+      const leftValue = left.data[key]; const rightValue = right.data[key];
+      return leftValue !== undefined || rightValue !== undefined
+        ? canonicalJson(leftValue) !== canonicalJson(rightValue)
+        : false;
+    });
+    if (differentMetadata.length) {
+      wrap.append(create("p", "comparison-note", `Comparison metadata differs or is missing (${differentMetadata.join(", ")}). Treat this as an uncontrolled comparison.`));
     }
   }
 
@@ -348,11 +386,18 @@
     if (!files.length) return;
     for (const file of files) {
       try {
+        setImportStatus(`Reading ${file.name} locally; artifact contents are not uploaded.`);
         if (file.size > MAX_FILE_BYTES) throw new Error(`${file.name}: file exceeds the 25 MB limit. Split the artifact or select a smaller run.`);
         const contents = await file.text();
+        setImportStatus(`Parsing ${file.name} locally…`);
         if (/\.(jsonl|ndjson)$/i.test(file.name) || contents.trimStart().startsWith("{") && contents.includes("\n{\"type\"")) addTrace(file, contents);
         else addScorecard(file, contents);
-      } catch (error) { notify(error instanceof Error ? error.message : `${file.name}: could not read this artifact.`); }
+        setImportStatus(`${file.name}: loaded and parsed locally.`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : `${file.name}: could not read this artifact.`;
+        setImportStatus(message);
+        notify(message);
+      }
     }
     if (state.runs.length) { state.selectedRun = Math.min(state.selectedRun, state.runs.length - 1); fillTypes(); render(); }
   }
