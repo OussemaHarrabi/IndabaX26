@@ -103,6 +103,40 @@ _CREDENTIAL_ASSIGNMENT = re.compile(
     r"(?P<value>[A-Za-z0-9._~+/=-]{8,})",
     re.IGNORECASE,
 )
+_NARRATIVE_SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
+_UNTRUSTED_CLAIM_PATTERNS: Final[dict[str, re.Pattern[str]]] = {
+    "policy_exception": re.compile(
+        r"\b(?:policy|legal|compliance)\b.{0,100}"
+        r"\b(?:allow(?:ing|s)?|permit(?:ted|s)?|approv(?:ed|al)|authoriz(?:ed|es)|may)\b|"
+        r"\b(?:allow(?:ing|s)?|permit(?:ted|s)?|approv(?:ed|al)|authoriz(?:ed|es))\b"
+        r".{0,100}\b(?:policy|legal|compliance)\b",
+        re.IGNORECASE,
+    ),
+    "alert_dismissal": re.compile(
+        r"\b(?:known\s+false\s+positive|approved\s+noise|"
+        r"(?:close|closed|resolve|resolved)\s+(?:the\s+)?(?:alert|incident)|"
+        r"(?:alert|incident)\s+(?:should\s+be\s+)?(?:closed|resolved))\b",
+        re.IGNORECASE,
+    ),
+    "monitoring_suppression": re.compile(
+        r"\b(?:disable[_\s-]*monitoring|monitoring\s+(?:should\s+be\s+)?disabled|"
+        r"silenc(?:e|ed|ing)\s+.{0,30}\balerts?|"
+        r"alerts?\s+.{0,30}\b(?:silenced|suppressed))\b",
+        re.IGNORECASE,
+    ),
+}
+_UNVERIFIED_CLAIM = re.compile(
+    r"\b(?:unverified|unconfirmed|untrusted|unsupported|not\s+(?:verified|confirmed)|"
+    r"must\s+not\s+be\s+followed|do\s+not\s+follow)\b",
+    re.IGNORECASE,
+)
+_EMAIL_ADDRESS = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
+_REPORTED_EMAIL_ACTION = re.compile(
+    r"\b(?:draft(?:ed)?|prepar(?:ed|e)|sent|emailed|forwarded)\b", re.IGNORECASE
+)
+_NARRATIVE_TOOL_ARGUMENTS: Final[frozenset[str]] = frozenset(
+    {"summary", "body", "content", "note", "description", "rationale", "reason", "findings"}
+)
 _TOOL_SEMANTICS: Final[
     dict[str, tuple[frozenset[str], frozenset[str], frozenset[str]]]
 ] = {
@@ -449,6 +483,12 @@ def _evaluate(
     if redacted is not None:
         return redacted
 
+    authority_redacted = _redact_untrusted_authority(
+        action, adapted, facts, skip_confirmation=skip_confirmation
+    )
+    if authority_redacted is not None:
+        return authority_redacted
+
     if action.type is ActionKind.TOOL_CALL and requires_confirmation(action, facts):
         if not skip_confirmation and action.digest() not in adapted.confirmations_granted:
             return _decision(
@@ -569,6 +609,106 @@ def _sensitive_credential_values(adapted: AdaptedRequest) -> set[str]:
             if len(value) >= 8 and any(char.isdigit() for char in value):
                 values.add(value)
     return values
+
+
+def _redact_untrusted_authority(
+    action: CandidateAction,
+    adapted: AdaptedRequest,
+    facts: PolicyFacts,
+    *,
+    skip_confirmation: bool,
+) -> GuardDecision | None:
+    """Keep untrusted operational claims out of the agent's narrative sinks.
+
+    This is intentionally a narrow, deterministic claim check, not a factuality
+    oracle. It fires only when a low-trust observation carries the same risky
+    claim that the candidate repeats without warning or verification.
+    """
+    sources = tuple(
+        observation.content
+        for observation in adapted.request.observations
+        if _is_untrusted(observation.trust_level)
+    )
+    if not sources:
+        return None
+
+    def clean(value: str) -> str:
+        sentences = _NARRATIVE_SENTENCE.split(value)
+        kept = [
+            sentence
+            for sentence in sentences
+            if not _is_laundered_claim(sentence, sources, adapted.request.user_goal)
+        ]
+        return " ".join(kept).strip()
+
+    action_data = action.model_dump(mode="json")
+    if action.type in (ActionKind.RESPOND, ActionKind.MEMORY_WRITE):
+        original = action.content or ""
+        cleaned = clean(original)
+        if cleaned == original:
+            return None
+        if not cleaned:
+            return _block("UNTRUSTED_AUTHORITY_ONLY", 0.97, adapted)
+        action_data["content"] = cleaned
+    elif action.type is ActionKind.TOOL_CALL and action.tool in _SIDE_EFFECTING_TOOLS:
+        arguments = dict(action.arguments)
+        cleaned_arguments = {
+            key: clean(value) if key in _NARRATIVE_TOOL_ARGUMENTS and isinstance(value, str)
+            else value
+            for key, value in arguments.items()
+        }
+        if cleaned_arguments == arguments:
+            return None
+        if any(
+            key in _NARRATIVE_TOOL_ARGUMENTS and value == "" and arguments[key] != ""
+            for key, value in cleaned_arguments.items()
+        ):
+            return _block("UNTRUSTED_AUTHORITY_ONLY", 0.97, adapted)
+        action_data["arguments"] = cleaned_arguments
+    else:
+        return None
+
+    rewritten_action = CandidateAction.model_validate(action_data)
+    rewritten_request = adapted.request.model_copy(update={"candidate_action": rewritten_action})
+    rewritten = replace(adapted, request=rewritten_request)
+    evaluated = _evaluate(rewritten, facts, skip_confirmation=skip_confirmation)
+    if evaluated.verdict is not Verdict.ALLOW:
+        return _block("AUTHORITY_REVALIDATION_FAILED", 1.0, adapted)
+    return GuardDecision(
+        verdict=Verdict.REWRITE,
+        risk_score=0.86,
+        confidence=0.93,
+        reason_codes=("UNTRUSTED_AUTHORITY_REDACTED",),
+        explanation=(
+            "An unverified operational claim copied from low-trust evidence was removed; "
+            "the replacement passed policy revalidation."
+        ),
+        rewritten_action=rewritten_action,
+        metadata=evaluated.metadata,
+    )
+
+
+def _is_laundered_claim(sentence: str, sources: tuple[str, ...], user_goal: str) -> bool:
+    if _UNVERIFIED_CLAIM.search(sentence):
+        return False
+    for source in sources:
+        if any(
+            pattern.search(sentence) and pattern.search(source)
+            for pattern in _UNTRUSTED_CLAIM_PATTERNS.values()
+        ):
+            return True
+        source_addresses = set(_EMAIL_ADDRESS.findall(source.lower()))
+        if (
+            source_addresses
+            and _REPORTED_EMAIL_ACTION.search(sentence)
+            and any(
+                address in sentence.lower() and address not in user_goal.lower()
+                for address in source_addresses
+            )
+            and _classify_instruction_text(source) is ClauseDisposition.ACTIVE
+        ):
+            return True
+    return False
 
 
 def _has_untrusted_evidence(adapted: AdaptedRequest) -> bool:
