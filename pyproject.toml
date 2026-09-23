@@ -26,6 +26,9 @@ dev = [
 [tool.setuptools]
 package-dir = {"" = "backend"}
 
+[tool.setuptools.package-data]
+aegisgraph = ["static/*"]
+
 [tool.setuptools.packages.find]
 where = ["backend"]
 

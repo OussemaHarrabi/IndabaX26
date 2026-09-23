@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import RequestResponseEndpoint
 
@@ -18,6 +20,12 @@ _LOGGER = logging.getLogger(__name__)
 _MAX_RESPONSE_BYTES = 64_000
 _GENERIC_INVALID = {"detail": "Invalid SENTINEL request"}
 _GENERIC_FAILURE = {"detail": "Request could not be safely processed"}
+_STATIC_DIRECTORY = Path(__file__).parent / "static"
+_DASHBOARD_CSP = (
+    "default-src 'self'; script-src 'self'; style-src 'self'; "
+    "connect-src 'none'; img-src 'self' data:; object-src 'none'; "
+    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+)
 
 app = FastAPI(
     title="AegisGraph SENTINEL v1 defense API",
@@ -25,6 +33,16 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None,
 )
+
+
+@app.get("/", include_in_schema=False)
+async def dashboard() -> FileResponse:
+    """Serve the local, read-only investigation surface."""
+
+    return FileResponse(_STATIC_DIRECTORY / "index.html", media_type="text/html")
+
+
+app.mount("/assets", StaticFiles(directory=_STATIC_DIRECTORY), name="dashboard-assets")
 
 
 @app.middleware("http")
@@ -39,6 +57,8 @@ async def no_store_and_sanitize_errors(
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     response.headers["X-Content-Type-Options"] = "nosniff"
+    if request.url.path == "/" or request.url.path.startswith("/assets/"):
+        response.headers["Content-Security-Policy"] = _DASHBOARD_CSP
     return response
 
 

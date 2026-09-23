@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f4f6f4">
+    <title>AegisGraph | Run investigation</title>
+    <link rel="stylesheet" href="/assets/dashboard.css">
+    <script src="/assets/dashboard.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#main" aria-label="AegisGraph investigation dashboard">
+        <span class="brand-mark" aria-hidden="true">A</span>
+        <span>AegisGraph <small>INVESTIGATION</small></span>
+      </a>
+      <label class="global-search">
+        <span aria-hidden="true">⌕</span><span class="sr-only">Search runs and events</span>
+        <input id="global-search" type="search" placeholder="Search runs, scenarios, reason codes…" autocomplete="off"><kbd>/</kbd>
+      </label>
+      <div class="top-actions">
+        <button class="quiet-button" id="export-button" type="button" disabled>Export view</button>
+        <button class="quiet-button" id="print-button" type="button" disabled>Print</button>
+        <button class="quiet-button" id="clear-button" type="button" disabled>Clear</button>
+        <label class="load-button" for="artifact-files">Load run files</label>
+        <input id="artifact-files" class="visually-hidden" type="file" accept=".jsonl,.ndjson,.json,application/json,text/plain" multiple aria-label="Load SENTINEL artifacts">
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="welcome" id="welcome" aria-labelledby="welcome-title">
+        <div class="welcome-copy">
+          <p class="eyebrow">LOCAL EVIDENCE WORKSPACE</p>
+          <h1 id="welcome-title">Follow the decision.<br><span>Verify what happened next.</span></h1>
+          <p>Load SENTINEL JSONL traces and evaluator scorecards from this device. Artifacts are parsed in your browser and are not uploaded.</p>
+          <label class="load-button load-primary" for="artifact-files">Choose local files <span aria-hidden="true">→</span></label>
+          <p class="file-guidance">JSONL traces · evaluator JSON · up to 25 MB per file</p>
+        </div>
+        <div class="welcome-steps" aria-label="Investigation sequence">
+          <div><span>01</span><b>Candidate action</b><small>What was proposed</small></div>
+          <div><span>02</span><b>Defense decision</b><small>Verdict, risk, confidence, reasons</small></div>
+          <div><span>03</span><b>Observed outcome</b><small>Tool effect and scenario result</small></div>
+        </div>
+      </section>
+
+      <div class="workspace hidden" id="workspace">
+        <section class="run-overview" aria-label="Run summary">
+          <div class="run-heading">
+            <div><p class="eyebrow">SELECTED RUN</p><h1 id="run-title">Run details</h1></div>
+            <div class="run-tabs" id="run-tabs" role="tablist" aria-label="Loaded runs"></div>
+          </div>
+          <div class="summary-grid" id="summary-grid"></div>
+          <section class="comparison hidden" id="comparison" aria-labelledby="comparison-title">
+            <div class="comparison-heading"><div><p class="eyebrow">EVALUATOR SCORECARDS</p><h2 id="comparison-title">Compare recorded metrics</h2></div><p class="comparison-note">Aggregate metrics do not prove that a specific attack reached the agent.</p></div>
+            <div class="comparison-controls"><label>Baseline <select id="compare-left"></select></label><span aria-hidden="true">vs</span><label>Comparison <select id="compare-right"></select></label></div>
+            <div class="comparison-table-wrap" id="comparison-table"></div>
+          </section>
+        </section>
+
+        <section class="investigation" aria-label="Trace investigation">
+          <div class="trace-column">
+            <div class="trace-heading"><div><p class="eyebrow">EVENT CHRONOLOGY</p><h2>Trace events <span id="event-count" class="count">0</span></h2></div><span class="planned-tag">Simulation launch · planned</span></div>
+            <div class="filters" aria-label="Filter events">
+              <label class="event-search"><span aria-hidden="true">⌕</span><span class="sr-only">Search events</span><input type="search" id="event-search" placeholder="Search events, fields, reasons…"></label>
+              <label><span class="sr-only">Filter by event type</span><select id="type-filter"><option value="">All event types</option></select></label>
+              <label><span class="sr-only">Filter by verdict</span><select id="verdict-filter"><option value="">All verdicts</option><option>allow</option><option>block</option><option>escalate</option><option>rewrite</option></select></label>
+              <label><span class="sr-only">Filter by provenance trust</span><select id="trust-filter"><option value="">All trust labels</option><option value="untrusted">Untrusted</option><option value="trusted">Trusted</option><option value="unknown">Not recorded</option></select></label>
+              <button id="reset-filters" class="text-button" type="button">Reset</button>
+            </div>
+            <p class="live-status" id="live-status" role="status" aria-live="polite">Load a trace to begin.</p>
+            <div class="event-list-wrap">
+              <table class="event-table">
+                <caption class="sr-only">Chronological SENTINEL run events. Use up and down arrow keys to move between rows.</caption>
+                <thead><tr><th scope="col">STEP / TIME</th><th scope="col">EVENT</th><th scope="col">DECISION</th><th scope="col">RISK / CONF.</th></tr></thead>
+                <tbody id="event-rows"><tr><td colspan="4" class="empty-row">Load a JSONL trace to inspect its events.</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+          <aside class="inspector" id="inspector" aria-labelledby="inspector-title" aria-live="polite">
+            <div class="inspector-empty"><span class="inspector-icon" aria-hidden="true">◎</span><p class="eyebrow">EVIDENCE INSPECTOR</p><h2 id="inspector-title">Select an event</h2><p>Choose a trace row to inspect its recorded decision, provenance and related effects.</p></div>
+          </aside>
+        </section>
+      </div>
+    </main>
+
+    <div class="toast hidden" id="toast" role="status"><span id="toast-message"></span><button id="undo-clear" class="text-button hidden" type="button">Undo</button><button id="dismiss-toast" class="icon-button" type="button" aria-label="Dismiss message">×</button></div>
+    <footer><span>Local read-only evidence view</span><span>No action execution · No policy editing · No persistence</span></footer>
+  </body>
+</html>
