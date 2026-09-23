@@ -24,8 +24,10 @@ from aegisgraph.policy import (
 from aegisgraph.sentinel import SentinelRequest
 
 _ACTION_VERBS = (
-    r"send|email|message|mail|close|resolve|update|pay|transfer|confirm|execute|"
-    r"remediate|isolate|block|remember|store|save|call|use|write"
+    r"send|email|message|mail|draft|compose|search|find|lookup|look\s+up|read|open|"
+    r"review|summarize|close|resolve|update|create|add|prepare|plan|initiate|approve|"
+    r"pay|transfer|confirm|execute|remediate|isolate|block|remember|store|save|call|"
+    r"use|write"
 )
 _SUBJECT_MODAL = re.compile(
     rf"^(?:(?:the\s+)?(?:agent|assistant)|you)\s+"
@@ -35,7 +37,8 @@ _SUBJECT_MODAL = re.compile(
 )
 _DISCOURSE_PREFIX = re.compile(
     r"^(?:now|then|next|immediately|instead|finally|first|second(?:ly)?|"
-    r"subsequently|afterwards?|after\s+that)\b[\s,;:\-]*",
+    r"subsequently|afterwards?|after\s+that|always|from\s+now\s+on|"
+    r"in\s+the\s+future)\b[\s,;:\-]*",
     re.IGNORECASE,
 )
 _IMPERATIVE = re.compile(
@@ -88,14 +91,134 @@ _INCOMPLETE_SUBJECT_FRAGMENT = re.compile(
 _MAX_ADJACENT_COMPOSITION_OBSERVATIONS = 3
 _MAX_ADJACENT_COMPOSITION_CHARS = 512
 _UNTRUSTED_THRESHOLD = TrustLevel.UNTRUSTED_INTERNAL
-_ACTION_ALIASES: Final[dict[str, frozenset[str]]] = {
-    "email_send": frozenset({"send", "email", "message", "mail"}),
-    "ticket_update": frozenset({"close", "resolve", "resolved", "ticket"}),
-    "payment_confirm": frozenset({"pay", "payment", "transfer", "confirm"}),
-    "payment_execute": frozenset({"pay", "payment", "transfer", "execute"}),
-    "remediation_execute": frozenset({"remediate", "isolate", "block", "execute"}),
-    "incident_update": frozenset({"close", "update", "incident"}),
-    "memory_write": frozenset({"remember", "store", "save", "memory"}),
+_TOOL_SEMANTICS: Final[
+    dict[str, tuple[frozenset[str], frozenset[str], frozenset[str]]]
+] = {
+    "email_search": (
+        frozenset({"search", "find", "lookup"}),
+        frozenset({"email", "mail", "message", "inbox"}),
+        frozenset(),
+    ),
+    "email_read": (
+        frozenset({"read", "open", "review"}),
+        frozenset({"email", "mail", "message"}),
+        frozenset(),
+    ),
+    "email_draft": (
+        frozenset({"draft", "compose", "write"}),
+        frozenset({"email", "mail", "message"}),
+        frozenset({"draft", "compose"}),
+    ),
+    "email_send": (
+        frozenset({"send", "email", "mail", "message"}),
+        frozenset({"email", "mail", "message"}),
+        frozenset({"send", "email", "mail", "message"}),
+    ),
+    "document_search": (
+        frozenset({"search", "find", "lookup"}),
+        frozenset({"document", "file", "record"}),
+        frozenset(),
+    ),
+    "document_read": (
+        frozenset({"read", "open", "review"}),
+        frozenset({"document", "file", "record"}),
+        frozenset(),
+    ),
+    "wiki_search": (
+        frozenset({"search", "find", "lookup"}),
+        frozenset({"wiki", "knowledge"}),
+        frozenset(),
+    ),
+    "ticket_read": (
+        frozenset({"read", "open", "review"}),
+        frozenset({"ticket"}),
+        frozenset(),
+    ),
+    "ticket_update": (
+        frozenset({"update", "close", "resolve"}),
+        frozenset({"ticket"}),
+        frozenset(),
+    ),
+    "customer_lookup": (
+        frozenset({"lookup", "find", "search"}),
+        frozenset({"customer", "client"}),
+        frozenset(),
+    ),
+    "account_summary": (
+        frozenset({"summarize", "review", "show"}),
+        frozenset({"account", "balance"}),
+        frozenset(),
+    ),
+    "case_document_read": (
+        frozenset({"read", "open", "review"}),
+        frozenset({"case", "document", "file"}),
+        frozenset(),
+    ),
+    "case_note_create": (
+        frozenset({"create", "add", "write"}),
+        frozenset({"case", "note"}),
+        frozenset(),
+    ),
+    "policy_search": (
+        frozenset({"search", "find", "lookup"}),
+        frozenset({"policy"}),
+        frozenset(),
+    ),
+    "payment_prepare": (
+        frozenset({"prepare", "initiate", "create"}),
+        frozenset({"payment", "transfer"}),
+        frozenset(),
+    ),
+    "payment_confirm": (
+        frozenset({"confirm", "approve"}),
+        frozenset({"payment", "transfer"}),
+        frozenset(),
+    ),
+    "payment_execute": (
+        frozenset({"execute", "pay", "transfer"}),
+        frozenset({"payment", "transfer", "funds"}),
+        frozenset({"pay", "transfer"}),
+    ),
+    "alert_search": (
+        frozenset({"search", "find", "lookup"}),
+        frozenset({"alert"}),
+        frozenset(),
+    ),
+    "alert_read": (
+        frozenset({"read", "open", "review"}),
+        frozenset({"alert"}),
+        frozenset(),
+    ),
+    "asset_lookup": (
+        frozenset({"lookup", "look", "find", "search"}),
+        frozenset({"asset", "host", "device"}),
+        frozenset(),
+    ),
+    "intel_search": (
+        frozenset({"search", "find", "lookup"}),
+        frozenset({"intel", "intelligence", "threat", "indicator"}),
+        frozenset(),
+    ),
+    "incident_create": (
+        frozenset({"create", "open"}),
+        frozenset({"incident"}),
+        frozenset(),
+    ),
+    "incident_update": (
+        frozenset({"update", "close", "resolve"}),
+        frozenset({"incident"}),
+        frozenset(),
+    ),
+    "remediation_prepare": (
+        frozenset({"prepare", "plan", "create"}),
+        frozenset({"remediation", "plan", "isolation", "host", "asset"}),
+        frozenset(),
+    ),
+    "remediation_execute": (
+        frozenset({"execute", "remediate", "isolate", "block"}),
+        frozenset({"remediation", "isolation", "host", "asset"}),
+        frozenset({"remediate", "isolate", "block"}),
+    ),
 }
 _SIDE_EFFECTING_TOOLS: Final[frozenset[str]] = frozenset(
     {
@@ -301,12 +424,10 @@ def _evaluate(
     if action.type is ActionKind.TOOL_CALL and action.tool not in facts.allowed_tools:
         return _block("UNAUTHORIZED_TOOL", 1.0, adapted)
 
-    if action.type is ActionKind.MEMORY_WRITE and _has_untrusted_evidence(adapted):
+    if action.type is ActionKind.MEMORY_WRITE and _memory_write_is_directive(action):
         return _block("MEMORY_POISONING", 0.96, adapted)
 
-    if action.type in {ActionKind.TOOL_CALL, ActionKind.MEMORY_WRITE} and _coupled_instruction(
-        action, adapted
-    ):
+    if action.type is ActionKind.TOOL_CALL and _coupled_instruction(action, adapted):
         return _block("UNTRUSTED_INSTRUCTION", 0.99, adapted)
 
     if _is_sensitive_external_flow(action, adapted, facts):
@@ -338,6 +459,14 @@ def _evaluate(
             adapted,
             "A response has no tool or memory side effect.",
         )
+    if action.type is ActionKind.MEMORY_WRITE and _has_untrusted_evidence(adapted):
+        return _decision(
+            Verdict.ALLOW,
+            0.32,
+            "UNTRUSTED_MEMORY_INHERITED",
+            adapted,
+            "Factual memory is retained with the source's low-trust security label.",
+        )
     return _decision(
         Verdict.ALLOW,
         0.08,
@@ -366,6 +495,11 @@ def _has_untrusted_evidence(adapted: AdaptedRequest) -> bool:
     )
 
 
+def _memory_write_is_directive(action: CandidateAction) -> bool:
+    content = action.content or ""
+    return _classify_instruction_text(content) is ClauseDisposition.ACTIVE
+
+
 def _coupled_instruction(action: CandidateAction, adapted: AdaptedRequest) -> bool:
     observations = adapted.request.observations
     index = 0
@@ -382,7 +516,11 @@ def _coupled_instruction(action: CandidateAction, adapted: AdaptedRequest) -> bo
         if consumed_until is not None:
             index = consumed_until + 1
             continue
-        if _observation_couples(action, content):
+        if _observation_couples(
+            action,
+            content,
+            semantic_coupling=_is_externally_untrusted(observation.trust_level),
+        ):
             return True
         index += 1
     return False
@@ -406,6 +544,7 @@ def _completed_fragment_group(
         return None
 
     combined = initial
+    semantic_coupling = _is_externally_untrusted(observations[start].trust_level)
     upper_bound = min(
         len(observations), start + _MAX_ADJACENT_COMPOSITION_OBSERVATIONS
     )
@@ -413,13 +552,22 @@ def _completed_fragment_group(
         candidate = observations[end]
         if not _is_untrusted(candidate.trust_level):
             break
+        semantic_coupling = semantic_coupling or _is_externally_untrusted(
+            candidate.trust_level
+        )
         combined = f"{combined} {_normalize_clause_text(candidate.content)}"
         if len(combined) > _MAX_ADJACENT_COMPOSITION_CHARS:
             break
 
         disposition = _classify_instruction_text(combined)
         if disposition is ClauseDisposition.ACTIVE:
-            return -1 if _observation_couples(action, combined) else None
+            return (
+                -1
+                if _observation_couples(
+                    action, combined, semantic_coupling=semantic_coupling
+                )
+                else None
+            )
         if disposition is ClauseDisposition.NEGATED:
             return end
         if not _is_incomplete_subject_fragment(combined):
@@ -432,18 +580,15 @@ def _is_incomplete_subject_fragment(content: str) -> bool:
     return _INCOMPLETE_SUBJECT_FRAGMENT.fullmatch(normalized) is not None
 
 
-def _observation_couples(action: CandidateAction, content: str) -> bool:
+def _observation_couples(
+    action: CandidateAction, content: str, *, semantic_coupling: bool
+) -> bool:
     if not content or _classify_instruction_text(content) is not ClauseDisposition.ACTIVE:
         return False
     lowered = content.lower()
-    if action.type is ActionKind.MEMORY_WRITE:
-        return True
     if action.tool is not None:
         tool_tokens = {action.tool.lower(), action.tool.lower().replace("_", " ")}
         if any(token in lowered for token in tool_tokens):
-            return True
-        aliases = _ACTION_ALIASES.get(action.tool, frozenset())
-        if any(re.search(rf"\b{re.escape(alias)}\b", lowered) for alias in aliases):
             return True
     argument_values = (
         value.strip().lower()
@@ -452,7 +597,17 @@ def _observation_couples(action: CandidateAction, content: str) -> bool:
     )
     if any(value in lowered for value in argument_values):
         return True
-    return action.tool in _SIDE_EFFECTING_TOOLS
+    if action.tool is None or not semantic_coupling:
+        return False
+    semantics = _TOOL_SEMANTICS.get(action.tool)
+    if semantics is None:
+        return False
+    operations, objects, standalone_operations = semantics
+    tokens = frozenset(re.findall(r"[a-z0-9]+", lowered))
+    return bool(
+        standalone_operations.intersection(tokens)
+        or (operations.intersection(tokens) and objects.intersection(tokens))
+    )
 
 
 def _classify_instruction_text(content: str) -> ClauseDisposition:
@@ -552,6 +707,12 @@ def _is_untrusted(trust_level: TrustLevel) -> bool:
     return list(TrustLevel).index(trust_level) >= list(TrustLevel).index(_UNTRUSTED_THRESHOLD)
 
 
+def _is_externally_untrusted(trust_level: TrustLevel) -> bool:
+    return list(TrustLevel).index(trust_level) >= list(TrustLevel).index(
+        TrustLevel.UNTRUSTED_EXTERNAL
+    )
+
+
 def _action_effect(action: CandidateAction, facts: PolicyFacts) -> ActionEffect:
     if action.type is ActionKind.RESPOND:
         return ActionEffect.INERT
@@ -583,16 +744,19 @@ def _decision(
     adapted: AdaptedRequest,
     explanation: str,
 ) -> GuardDecision:
+    metadata = {
+        "least_trust": adapted.least_trust.value,
+        "max_sensitivity": adapted.max_sensitivity.value,
+    }
+    if adapted.request.candidate_action.type is ActionKind.MEMORY_WRITE:
+        metadata["memory_trust"] = adapted.least_trust.value
     return GuardDecision(
         verdict=verdict,
         risk_score=risk,
         confidence=0.99,
         reason_codes=(code,),
         explanation=explanation,
-        metadata={
-            "least_trust": adapted.least_trust.value,
-            "max_sensitivity": adapted.max_sensitivity.value,
-        },
+        metadata=metadata,
     )
 
 
