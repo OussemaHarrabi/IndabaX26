@@ -2,7 +2,7 @@ name: aegisgraph
 kind: defense
 api_version: v1
 port: 8080
-team: "TODO: replace with your registered hackathon team name"
+team: "9ahwa mahrou9a"
 description: >-
   A local SENTINEL-compatible decision gateway that evaluates proposed agent
   actions against deterministic authorization, provenance, confirmation, and
