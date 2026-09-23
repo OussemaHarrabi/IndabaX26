@@ -56,6 +56,13 @@ uv run sentinel eval public --defense allow_all --model qwen3-8b --json \
   --output /content/aegisgraph-results/allow-all-qwen3-8b.json
 ```
 
+Run the AegisGraph reachability gate against that raw artifact; it prints every attack scenario and exits nonzero if any is unreachable:
+
+```bash
+python /content/aegisgraph/scripts/validate_attack_reachability.py \
+  /content/aegisgraph-results/allow-all-qwen3-8b.json
+```
+
 Inspect all 31 attack outcomes in the resulting artifact, not just the aggregate ASR. If the CLI's JSON envelope changes, use its emitted per-scenario outcomes and explicitly record any attacks with `attack_success != true`. For a scenario planned for the video, the condition is mandatory individually. Only interpret defense outcomes for scenarios that passed their reachability check under the same fixed configuration. Save the raw evaluator artifact; never hand-edit it.
 
 ## 4. Baselines, defense, and repeatability
