@@ -4,13 +4,13 @@ This is an execution checklist, not evidence that a Colab run has happened. The 
 
 ## 0. Freeze the artifacts first
 
-Before starting a notebook, record the AegisGraph Git commit (or archive SHA-256 if using an upload), and retain `benchmark.lock` unchanged. The benchmark source is `Skan22/Sentinel_Starter_Kit` at `dd2e5fe0979d0781a4bfe6d0849cd80cf69ef4a2`; it declares 40 scenarios: 31 attacks and 9 benign. The challenge PDF has an earlier count; the pinned starter kit is the operational evaluation source and the discrepancy must be noted in the report.
+Before starting a notebook, retain `benchmark.lock` unchanged and record the AegisGraph source commit. The currently pushed dashboard-ready source is `b791f79eacfe99ab9c4765d0db910eba8ab44bfd` on `feature/aegisgraph`; pin the exact full commit in Colab rather than following a moving branch. The benchmark source is `Skan22/Sentinel_Starter_Kit` at `dd2e5fe0979d0781a4bfe6d0849cd80cf69ef4a2`; it declares 40 scenarios: 31 attacks and 9 benign. The challenge PDF has an earlier count; the pinned starter kit is the operational evaluation source and the discrepancy must be noted in the report.
 
 Use a fresh Colab notebook with a GPU runtime. Record the date, runtime type, GPU model and memory, Python version, package/commit versions, model identifier, precision/quantization, token budget, thinking mode, and random seed (if configurable). Do not put Hugging Face tokens, private repository credentials, or other secrets in notebook outputs or submitted artifacts. Qwen is open-weight and can be downloaded from Hugging Face; inference must not go through an external inference API.
 
 ## 1. Install pinned benchmark and defense
 
-In the notebook, clone and pin the organizer kit:
+In the notebook, clone and pin both the organizer kit and the public AegisGraph branch:
 
 ```bash
 git clone https://github.com/Skan22/Sentinel_Starter_Kit.git
@@ -20,7 +20,17 @@ git rev-parse HEAD
 uv sync --extra hf
 ```
 
-Make the AegisGraph source snapshot for the exact commit available in the notebook (for example, a GitHub archive of that commit if the repository is pushed, or a zip upload). Extract it to a sibling directory named `aegisgraph`; verify its recorded commit/archive SHA-256 against the one frozen above. Do not silently use a different working tree.
+In a separate cell, fetch the exact AegisGraph commit into a sibling directory:
+
+```bash
+cd /content
+git clone --branch feature/aegisgraph --single-branch https://github.com/OussemaHarrabi/IndabaX26.git aegisgraph
+cd aegisgraph
+git checkout --detach b791f79eacfe99ab9c4765d0db910eba8ab44bfd
+git rev-parse HEAD
+```
+
+Verify the printed source SHA equals the one frozen above. Do not silently use a different working tree or a later branch head.
 
 ```bash
 cd /content/aegisgraph
