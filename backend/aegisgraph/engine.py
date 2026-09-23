@@ -96,6 +96,13 @@ _MEMORY_PERSISTENCE_DIRECTIVE = re.compile(
     r"permanent(?:ly)?|remember\s+to)\b",
     re.IGNORECASE,
 )
+_CREDENTIAL_ASSIGNMENT = re.compile(
+    r"\b(?:(?:[a-z][a-z0-9]*[_-]){0,4}(?:key|secret|token|code|password|passphrase)|"
+    r"(?:api|service|client|private|access|refresh|shared|bootstrap)\s+"
+    r"(?:key|secret|token|code)|credential)\b\s*['\"]?\s*[:=]\s*['\"]?\s*"
+    r"(?P<value>[A-Za-z0-9._~+/=-]{8,})",
+    re.IGNORECASE,
+)
 _TOOL_SEMANTICS: Final[
     dict[str, tuple[frozenset[str], frozenset[str], frozenset[str]]]
 ] = {
@@ -438,6 +445,12 @@ def _evaluate(
     if _is_sensitive_external_flow(action, adapted, facts):
         return _block("SENSITIVE_DATA_EXFILTRATION", 1.0, adapted)
 
+    if _is_sensitive_action_disclosure(action, adapted):
+        return _block("SENSITIVE_ACTION_DISCLOSURE", 1.0, adapted)
+
+    if _is_sensitive_response_disclosure(action, adapted):
+        return _block("SENSITIVE_RESPONSE_DISCLOSURE", 1.0, adapted)
+
     if action.type is ActionKind.TOOL_CALL and requires_confirmation(action, facts):
         if not skip_confirmation and action.digest() not in adapted.confirmations_granted:
             return _decision(
@@ -490,6 +503,39 @@ def _is_sensitive_external_flow(
         >= list(Sensitivity).index(Sensitivity.CONFIDENTIAL)
         and recipient_is_external(action, facts)
     )
+
+
+def _is_sensitive_response_disclosure(
+    action: CandidateAction, adapted: AdaptedRequest
+) -> bool:
+    if action.type is not ActionKind.RESPOND or not action.content:
+        return False
+    return any(value in action.content for value in _sensitive_credential_values(adapted))
+
+
+def _is_sensitive_action_disclosure(
+    action: CandidateAction, adapted: AdaptedRequest
+) -> bool:
+    if action.type is not ActionKind.TOOL_CALL or action.tool not in _SIDE_EFFECTING_TOOLS:
+        return False
+    arguments = tuple(value for value in action.arguments.values() if isinstance(value, str))
+    return any(
+        credential in argument
+        for credential in _sensitive_credential_values(adapted)
+        for argument in arguments
+    )
+
+
+def _sensitive_credential_values(adapted: AdaptedRequest) -> set[str]:
+    values: set[str] = set()
+    for observation in adapted.request.observations:
+        if observation.sensitivity < Sensitivity.CONFIDENTIAL:
+            continue
+        for match in _CREDENTIAL_ASSIGNMENT.finditer(observation.content):
+            value = match.group("value").rstrip(".")
+            if len(value) >= 8 and any(char.isdigit() for char in value):
+                values.add(value)
+    return values
 
 
 def _has_untrusted_evidence(adapted: AdaptedRequest) -> bool:
