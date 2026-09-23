@@ -3,7 +3,6 @@
 import re
 from dataclasses import replace
 from enum import IntEnum
-from itertools import pairwise
 from typing import Final
 
 from aegisgraph.adapter import AdaptedRequest, adapt_request
@@ -11,6 +10,7 @@ from aegisgraph.contracts import (
     ActionKind,
     CandidateAction,
     GuardDecision,
+    Observation,
     Sensitivity,
     TrustLevel,
     Verdict,
@@ -34,7 +34,8 @@ _SUBJECT_MODAL = re.compile(
     re.IGNORECASE,
 )
 _DISCOURSE_PREFIX = re.compile(
-    r"^(?:now|then|next|immediately|instead)\b[\s,;:\-]*",
+    r"^(?:now|then|next|immediately|instead|finally|first|second(?:ly)?|"
+    r"subsequently|afterwards?|after\s+that)\b[\s,;:\-]*",
     re.IGNORECASE,
 )
 _IMPERATIVE = re.compile(
@@ -76,9 +77,15 @@ _CLAUSE_SPLIT = re.compile(r"[.!?;:\n]+")
 _CONTRAST_SPLIT = re.compile(r"\b(?:but|instead|then|however)\b", re.IGNORECASE)
 _INCOMPLETE_SUBJECT_FRAGMENT = re.compile(
     r"^(?:(?:the\s+)?(?:agent|assistant)|you)"
-    r"(?:\s+(?:must|should|need(?:s)?\s+to|has\s+to|is\s+required\s+to))?$",
+    r"(?:\s+(?:"
+    r"(?:must|should)(?:\s+(?:not|never))?|"
+    r"need(?:s)?(?:\s+to)?(?:\s+(?:not|never))?|"
+    r"has(?:\s+to)?(?:\s+(?:not|never))?|"
+    r"is(?:\s+required)?(?:\s+to)?(?:\s+(?:not|never))?"
+    r"))?$",
     re.IGNORECASE,
 )
+_MAX_ADJACENT_COMPOSITION_OBSERVATIONS = 3
 _MAX_ADJACENT_COMPOSITION_CHARS = 512
 _UNTRUSTED_THRESHOLD = TrustLevel.UNTRUSTED_INTERNAL
 _ACTION_ALIASES: Final[dict[str, frozenset[str]]] = {
@@ -361,27 +368,68 @@ def _has_untrusted_evidence(adapted: AdaptedRequest) -> bool:
 
 def _coupled_instruction(action: CandidateAction, adapted: AdaptedRequest) -> bool:
     observations = adapted.request.observations
-    for observation in observations:
-        if _is_untrusted(observation.trust_level) and _observation_couples(
-            action, observation.content
-        ):
-            return True
+    index = 0
+    while index < len(observations):
+        observation = observations[index]
+        if not _is_untrusted(observation.trust_level):
+            index += 1
+            continue
 
-    # Only adjacent provenance-bearing fragments are composed, and only when the
-    # left fragment is syntactically incomplete. This catches boundary splitting
-    # without recreating the unsafe global join that merged unrelated evidence.
-    for left, right in pairwise(observations):
-        if not (_is_untrusted(left.trust_level) and _is_untrusted(right.trust_level)):
-            continue
-        left_text = _normalize_clause_text(left.content)
-        if _INCOMPLETE_SUBJECT_FRAGMENT.fullmatch(left_text) is None:
-            continue
-        combined = f"{left_text} {_normalize_clause_text(right.content)}"
-        if len(combined) > _MAX_ADJACENT_COMPOSITION_CHARS:
-            continue
-        if _observation_couples(action, combined):
+        content = _normalize_clause_text(observation.content)
+        consumed_until = _completed_fragment_group(observations, index, action, content)
+        if consumed_until == -1:
             return True
+        if consumed_until is not None:
+            index = consumed_until + 1
+            continue
+        if _observation_couples(action, content):
+            return True
+        index += 1
     return False
+
+
+def _completed_fragment_group(
+    observations: tuple[Observation, ...],
+    start: int,
+    action: CandidateAction,
+    initial: str,
+) -> int | None:
+    """Evaluate at most three adjacent untrusted fragments from an incomplete prefix.
+
+    ``-1`` signals an active instruction coupled to the candidate action. A
+    non-negative index signals a completed negated instruction whose fragments
+    must not be reinterpreted independently. ``None`` means no complete bounded
+    group was found, so normal per-observation evaluation should continue.
+    """
+
+    if not _is_incomplete_subject_fragment(initial):
+        return None
+
+    combined = initial
+    upper_bound = min(
+        len(observations), start + _MAX_ADJACENT_COMPOSITION_OBSERVATIONS
+    )
+    for end in range(start + 1, upper_bound):
+        candidate = observations[end]
+        if not _is_untrusted(candidate.trust_level):
+            break
+        combined = f"{combined} {_normalize_clause_text(candidate.content)}"
+        if len(combined) > _MAX_ADJACENT_COMPOSITION_CHARS:
+            break
+
+        disposition = _classify_instruction_text(combined)
+        if disposition is ClauseDisposition.ACTIVE:
+            return -1 if _observation_couples(action, combined) else None
+        if disposition is ClauseDisposition.NEGATED:
+            return end
+        if not _is_incomplete_subject_fragment(combined):
+            break
+    return None
+
+
+def _is_incomplete_subject_fragment(content: str) -> bool:
+    normalized = _DISCOURSE_PREFIX.sub("", _normalize_clause_text(content))
+    return _INCOMPLETE_SUBJECT_FRAGMENT.fullmatch(normalized) is not None
 
 
 def _observation_couples(action: CandidateAction, content: str) -> bool:
