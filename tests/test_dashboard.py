@@ -95,3 +95,20 @@ def test_dashboard_requires_matching_step_ids_and_announces_file_progress() -> N
     assert "if (!state.visible.includes(event)) resetFilters()" in selection
     assert 'selectedRow?.focus()' in selection
     assert 'selectedRow?.scrollIntoView' in selection
+
+
+def test_dashboard_joins_real_scorecard_outcomes_to_trace_by_exact_run_id() -> None:
+    script = files("aegisgraph").joinpath("static/dashboard.js").read_text(encoding="utf-8")
+    importer = _section(script, "function addScorecard(file, contents)", "async function loadFiles")
+
+    assert "outcome.run_id" in importer
+    assert "run.id === outcome.run_id" in importer
+    assert "run.id === scenarioId" in importer
+
+
+def test_dashboard_does_not_silently_attribute_duplicate_run_ids_to_one_trace() -> None:
+    script = files("aegisgraph").joinpath("static/dashboard.js").read_text(encoding="utf-8")
+
+    assert "function reconcileTraceScorecards()" in script
+    assert "run.scorecardConflict = matches.length > 1" in script
+    assert "Multiple scorecards match this trace run ID" in script

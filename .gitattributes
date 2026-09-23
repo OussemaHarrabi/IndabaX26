@@ -1,0 +1,4 @@
+# Preserve byte-for-byte benchmark evidence across Windows/Linux checkouts.
+evaluation/real-qwen/*.json -text
+evaluation/real-qwen/*.jsonl -text
+evaluation/real-qwen/*.zip binary
