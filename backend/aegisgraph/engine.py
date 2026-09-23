@@ -445,11 +445,9 @@ def _evaluate(
     if _is_sensitive_external_flow(action, adapted, facts):
         return _block("SENSITIVE_DATA_EXFILTRATION", 1.0, adapted)
 
-    if _is_sensitive_action_disclosure(action, adapted):
-        return _block("SENSITIVE_ACTION_DISCLOSURE", 1.0, adapted)
-
-    if _is_sensitive_response_disclosure(action, adapted):
-        return _block("SENSITIVE_RESPONSE_DISCLOSURE", 1.0, adapted)
+    redacted = _redact_sensitive_flow(action, adapted, facts, skip_confirmation=skip_confirmation)
+    if redacted is not None:
+        return redacted
 
     if action.type is ActionKind.TOOL_CALL and requires_confirmation(action, facts):
         if not skip_confirmation and action.digest() not in adapted.confirmations_granted:
@@ -505,24 +503,59 @@ def _is_sensitive_external_flow(
     )
 
 
-def _is_sensitive_response_disclosure(
-    action: CandidateAction, adapted: AdaptedRequest
-) -> bool:
-    if action.type is not ActionKind.RESPOND or not action.content:
-        return False
-    return any(value in action.content for value in _sensitive_credential_values(adapted))
+def _redact_sensitive_flow(
+    action: CandidateAction,
+    adapted: AdaptedRequest,
+    facts: PolicyFacts,
+    *,
+    skip_confirmation: bool,
+) -> GuardDecision | None:
+    if action.type is ActionKind.RESPOND and action.content is not None:
+        surface = "response"
+    elif action.type is ActionKind.TOOL_CALL and action.tool in _SIDE_EFFECTING_TOOLS:
+        surface = "action"
+    else:
+        return None
 
+    credentials = sorted(_sensitive_credential_values(adapted), key=len, reverse=True)
+    if not credentials:
+        return None
 
-def _is_sensitive_action_disclosure(
-    action: CandidateAction, adapted: AdaptedRequest
-) -> bool:
-    if action.type is not ActionKind.TOOL_CALL or action.tool not in _SIDE_EFFECTING_TOOLS:
-        return False
-    arguments = tuple(value for value in action.arguments.values() if isinstance(value, str))
-    return any(
-        credential in argument
-        for credential in _sensitive_credential_values(adapted)
-        for argument in arguments
+    def redact(value: str) -> str:
+        for credential in credentials:
+            value = value.replace(credential, "[REDACTED]")
+        return value
+
+    action_data = action.model_dump(mode="json")
+    if surface == "response":
+        original_content = action.content or ""
+        action_data["content"] = redact(original_content)
+        changed = action_data["content"] != original_content
+    else:
+        original_arguments = dict(action.arguments)
+        redacted_arguments = {
+            key: redact(value) if isinstance(value, str) else value
+            for key, value in original_arguments.items()
+        }
+        action_data["arguments"] = redacted_arguments
+        changed = redacted_arguments != original_arguments
+    if not changed:
+        return None
+
+    rewritten_action = CandidateAction.model_validate(action_data)
+    rewritten_request = adapted.request.model_copy(update={"candidate_action": rewritten_action})
+    rewritten = replace(adapted, request=rewritten_request)
+    evaluated = _evaluate(rewritten, facts, skip_confirmation=skip_confirmation)
+    if evaluated.verdict is not Verdict.ALLOW:
+        return _block("REDACTION_REVALIDATION_FAILED", 1.0, adapted)
+    return GuardDecision(
+        verdict=Verdict.REWRITE,
+        risk_score=0.85,
+        confidence=0.99,
+        reason_codes=(f"SENSITIVE_{surface.upper()}_REDACTED",),
+        explanation="A copied credential was removed; the replacement passed policy revalidation.",
+        rewritten_action=rewritten_action,
+        metadata=evaluated.metadata,
     )
 
 
