@@ -57,9 +57,10 @@ docker run --rm --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m `
 ```
 
 The image installs exact runtime dependency versions from `requirements.lock`, runs as UID 10001,
-and listens on port 8080. `sentinel-submission.yaml` is a starter manifest; replace the team and
-dataset-license placeholders, validate it with the organizer's current validator, and record the
-actual agent model/backend on every evaluation result.
+and listens on port 8080. `sentinel-submission.yaml` is a starter manifest; replace the team
+placeholder, validate it with the organizer's current validator, and record the actual agent
+model/backend on every evaluation result. The pinned public scenario suite is declared under the
+Apache-2.0 license.
 
 ## Evaluation reproducibility
 
