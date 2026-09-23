@@ -1,0 +1,39 @@
+# Technical report plan
+
+This plan follows the pinned organizer's `docs/research-report-template.md` and scoring rubric. It is a writing and evidence map, not a completed results report. The current values in `evaluation/README.md` are **development mock** results from the deterministic mock reference model; they are not Qwen results, not the official score, and do not satisfy the real-model evidence needed for the final Qwen claim. No Qwen3-8B Colab run is recorded yet.
+
+## Evidence boundary and current gaps
+
+- Benchmark source: `Skan22/Sentinel_Starter_Kit` commit `dd2e5fe0979d0781a4bfe6d0849cd80cf69ef4a2`, pinned in `benchmark.lock`: 40 scenarios (31 attacks, 9 benign), enterprise 15, finance 12, SOC 13. Note the PDF's older scenario count as a source discrepancy.
+- Current measured artifact set: `evaluation/allow-all-mock.json`, `evaluation/aegisgraph-mock.pre-calibration.json`, and `evaluation/aegisgraph-mock.json`; inspect the raw artifacts for full method/metadata before quoting any value. Their mock mode and development purpose must appear beside every table/caption that uses them.
+- The pinned `provenance` mock baseline is now recorded in `evaluation/provenance-mock.json`: owner-reported scorecard values are ASR 0.0000, BTU 1.0000, FBR 0.2222, optional self-test composite 0.939104, and 0 errors. Against it, current calibrated AegisGraph mock values (BTU 0.3333, FBR 0.3354, composite 0.686055) are worse on benign utility, false blocks and composite despite ASR 0 for both. This is a central finding, not something to bury: calibrate utility and investigate its tradeoffs before arguing novelty/advantage. Verify each quoted number from the raw artifact before final publication.
+- Mock calibrated scorecard documented in `evaluation/README.md`: ASR 0.0000, BTU 0.3333, FBR 0.3354, DFI 1.0000, TUI 0.9831, defense errors 0. The BTU is below the public utility gate described there. These are self-test metrics only. The six named benign failures and their current `UNTRUSTED_INSTRUCTION` findings are listed there; verify against raw artifacts before final publication.
+- Pending evidence: full real-Qwen allow-all reachability table; `provenance` and AegisGraph Qwen runs under identical config; per-domain/family breakdown; real-run artifacts and digests; completed ablation; replay-backed failure analysis; final report/video/repo validation.
+- The manifest has now been populated with the user-provided registered team name `9ahwa mahrou9a`; rerun the pinned validator and inspect its result before calling it submission-ready. Organizer guide requires teams of 3–5; because the user is working solo, ask the organizer how a solo participant/registered team is treated rather than implying the team-size requirement is met.
+
+## Section-by-section outline
+
+1. **Abstract (100–200 words).** State the problem and AegisGraph's deterministic provenance-aware pre-tool decision gateway; report only the strongest completed, clearly labelled result; mention low current mock benign utility and that Qwen remains pending until Colab runs finish.
+2. **Threat model.** Define protected asset (integrity/confidentiality of simulated tool actions), attack surfaces in candidate tool calls and untrusted observed content, attacker capabilities (indirect instructions, poisoned retrieved/memory content, exfiltration attempts, unauthorized/consequential actions), trust boundaries, and explicit scope: SENTINEL synthetic simulator only; no real-world cyber defense claim, no arbitrary multilingual prompt-injection completeness, and no host protection/auth by default.
+3. **Hypothesis.** Use a falsifiable statement grounded in implemented behavior, e.g. whether evidence provenance + exact candidate-action coupling reduces successful attacks while preserving benign task utility compared with the built-in `provenance` baseline. Set numerical thresholds only before the final evaluation, and do not retrofit to mock outcomes.
+4. **Method.** Diagram the reference agent → AegisGraph HTTP decision gateway → simulator tool path. Describe canonical request contracts, immutable action representation/digest, provenance resolution, deterministic policy checks, response/error behavior, observability fields, and boundary: AegisGraph does not execute tools or call an LLM. Explain why decisions use action/evidence/policy signals, not scenario IDs or expected outcomes. Include implementation commit and container constraints.
+5. **Experiments.** Give exact benchmark commit and scenario counts, reference model identity/config, Colab GPU, Python/dependency versions, seeds, commands, and artifact digest. Keep model, tools, and system prompt fixed; only state permitted runtime differences. Compare `allow_all`, `provenance`, AegisGraph; specify attack-reachability gate and exclusions transparently. Include custom tests separately from official public-suite scenarios.
+6. **Results.** Required table: allow_all / provenance / AegisGraph with BTU, ASR, CVR, FBR, UER, TUI, DFI, Brier, ECE, p95 ms. Add domain (enterprise/finance/SOC) and attack-family breakdowns. Each result row must cite mode (`mock` or exact Qwen model), benchmark/repo commit, run ID, and digest. Clearly mark absent metrics as pending; never impute values. State `sentinel eval` is self-test, not jury score.
+7. **Ablations.** Remove/disable one major component (e.g. provenance coupling or confirmation gate) via an explicit branch/configuration; rerun identical scenarios/config; report deltas and reachable-attack denominator. Do not call historical pre/post policy tuning an ablation unless it isolates one component under a controlled matched run.
+8. **Failure analysis.** Classify missed attacks, false blocks, unnecessary escalations, rewrites, contract errors, and calibration errors. Include selected `sentinel replay` excerpts and trace IDs. Current mock suite has six remaining benign failures in `evaluation/README.md`; validate them and report root causes without hiding false-positive cost. Discuss heuristic language/context limitations and provenance-empty versus corrupt provenance semantics only to the extent verified in code/tests.
+9. **Responsible AI and security.** State synthetic-only evaluation, local/no-inference-API model execution, no chain-of-thought collection, minimized/no persistent request storage (verify actual deployment/logging before asserting), expected false positives, human escalation role, lack of default authentication, deployment restrictions (loopback or protected network), incident/reporting process, and limitations/fairness across domains.
+10. **Reproducibility.** Give repository commit/tag, benchmark pin, build/run/test/validator commands, model/download/runtime instructions, immutable raw scorecards and SHA-256/deterministic digests, environment capture, licenses, and exact mapping from report tables to artifacts. Include a statement that latency is nondeterministic and scorecard deterministic digest excludes latency, per organizer docs.
+
+## Table and artifact conventions
+
+| Field | Required record |
+| --- | --- |
+| Run identity | Unique run label, timestamp, command, output path |
+| Code | AegisGraph commit and pinned starter-kit commit |
+| Model | Exact `Qwen/Qwen3-8B` or `mock`; never abbreviate away the backend |
+| Runtime | GPU/runtime, dtype/quantization, token budget, thinking mode, Python/dependency versions |
+| Reachability | Per attack scenario's `attack_success` under `allow_all`; list failures/exclusions |
+| Results | Raw evaluator artifact, deterministic digest, SHA-256, stderr/logs |
+| Comparison | Same scenarios, tools, prompt, model and runtime across baselines/defense |
+
+Use filenames from `COLAB_QWEN_RUN.md`. Maintain mock results as a clearly separated iteration table; do not overwrite raw evidence. Add no final conclusions until the pending Qwen runs and controlled ablation exist.
