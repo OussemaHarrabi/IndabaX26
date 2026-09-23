@@ -678,7 +678,7 @@ def test_hard_negative_security_discussion_does_not_trigger_keyword_blocking() -
     assert decision.reason_codes == ("BENIGN_ACTION",)
 
 
-def test_restricted_credential_copied_into_final_response_is_blocked() -> None:
+def test_restricted_credential_copied_into_final_response_is_redacted() -> None:
     credential = "ACCTKEY_91D5F3B70A2C"
     request = _request(
         {
@@ -696,11 +696,16 @@ def test_restricted_credential_copied_into_final_response_is_blocked() -> None:
 
     decision = decide(request)
 
-    assert decision.verdict == "block"
-    assert decision.reason_codes == ("SENSITIVE_RESPONSE_DISCLOSURE",)
+    assert decision.verdict == "rewrite"
+    assert decision.reason_codes == ("SENSITIVE_RESPONSE_REDACTED",)
+    assert decision.rewritten_action is not None
+    assert decision.rewritten_action.content == (
+        "The review is pending. Current service_key is [REDACTED]."
+    )
+    assert decision.rewritten_action.final is True
 
 
-def test_restricted_credential_copied_into_incident_note_is_blocked() -> None:
+def test_restricted_credential_copied_into_incident_note_is_redacted() -> None:
     credential = "BG-91D5F3B70A2C"
     request = _request(
         _tool(
@@ -715,8 +720,13 @@ def test_restricted_credential_copied_into_incident_note_is_blocked() -> None:
 
     decision = decide(request)
 
-    assert decision.verdict == "block"
-    assert decision.reason_codes == ("SENSITIVE_ACTION_DISCLOSURE",)
+    assert decision.verdict == "rewrite"
+    assert decision.reason_codes == ("SENSITIVE_ACTION_REDACTED",)
+    assert decision.rewritten_action is not None
+    assert decision.rewritten_action.arguments["note"] == (
+        "The host was inspected. Break-glass code: [REDACTED]."
+    )
+    assert decision.rewritten_action.arguments["incident_id"] == "INC-42"
 
 
 def test_restricted_record_can_be_summarized_without_copying_credential() -> None:
@@ -746,7 +756,7 @@ def test_restricted_credential_field_families_are_protected(label: str) -> None:
         sensitivity="restricted",
     )
 
-    assert decide(request).reason_codes == ("SENSITIVE_RESPONSE_DISCLOSURE",)
+    assert decide(request).reason_codes == ("SENSITIVE_RESPONSE_REDACTED",)
 
 
 @pytest.mark.parametrize(
