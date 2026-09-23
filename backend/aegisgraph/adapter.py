@@ -36,9 +36,10 @@ def adapt_request(request: SentinelRequest) -> AdaptedRequest:
     """Resolve wire provenance into bounded canonical observations.
 
     Every referenced source becomes its own observation so a high-trust source can
-    never hide a low-trust co-source. Missing or ambiguous references are represented
-    explicitly with adversary-controlled/restricted labels and make the adapter
-    incomplete, which the engine fails closed.
+    never hide a low-trust co-source. Explicit missing or ambiguous references are
+    represented with adversary-controlled/restricted labels and fail closed. Evidence
+    supplied without provenance identifiers remains usable but is marked unattributed
+    and untrusted rather than being confused with a broken integrity reference.
     """
 
     records: dict[str, SentinelProvenanceRecord | None] = {}
@@ -68,8 +69,7 @@ def adapt_request(request: SentinelRequest) -> AdaptedRequest:
                     )
                 )
                 return
-            complete = False
-            observations.append(_unknown_observation(kind, content, "missing"))
+            observations.append(_unattributed_observation(kind, content, role))
             return
 
         for identifier in identifiers:
@@ -155,6 +155,16 @@ def _unknown_observation(kind: str, content: str, identifier: str) -> Observatio
         source=_compact_source(f"unresolved:{identifier}"),
         trust_level=TrustLevel.ADVERSARY_CONTROLLED,
         sensitivity=Sensitivity.RESTRICTED,
+    )
+
+
+def _unattributed_observation(kind: str, content: str, role: str) -> Observation:
+    return Observation(
+        kind=_safe_kind(kind),
+        content=content,
+        source=_compact_source(f"unattributed:{role}"),
+        trust_level=TrustLevel.UNTRUSTED_INTERNAL,
+        sensitivity=Sensitivity.INTERNAL,
     )
 
 
