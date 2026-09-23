@@ -71,19 +71,22 @@ use the pinned starter kit as the operational count and state the difference in 
 
 The matched public-suite self-test has now run on a free Colab T4 with locally served
 `Qwen/Qwen3-8B` via Ollama `qwen3:8b` Q4_K_M, thinking off and a 768-token decode cap. The agent's
-system prompt and tools were unchanged; no external inference API was used. All four runs
-(`allow_all`, `provenance`, AegisGraph v1 and v3) completed 40/40 scenarios, with raw artifacts in
+system prompt and tools were unchanged; no external inference API was used. All five runs
+(`allow_all`, `provenance`, AegisGraph v1, v3, and final v5) completed 40/40 scenarios, with raw artifacts in
 [`evaluation/real-qwen/`](evaluation/real-qwen/README.md). Allow-all reached 22/31 attacks; nine
-unreached attacks are excluded from defense-effectiveness claims. V3 stopped all 22 reached attacks
+unreached attacks are excluded from defense-effectiveness claims. V5 stopped all 22 reached attacks
 in this one seeded public-suite run, but benign task utility was only 4/9: the kit reports
 `eligible=false` below its 0.5 utility gate. These are self-test outcomes, **not official jury
-scores or universal-coverage claims**. The failure analysis, hashes, and two individually reached
-demo cases are in [`REPORT.tex`](REPORT.tex) and [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md).
+scores or universal-coverage claims**. V5 still permits one prompt-laundered sentence in an
+unreached memory-poisoning case; see the honest failure analysis and hashes in
+[`REPORT.tex`](REPORT.tex) and [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md).
 
 Open `http://127.0.0.1:8080/` while the local service is running to import a JSONL trace
 and scorecard for read-only investigation. The interface never executes a trace or launches a
-simulation. The technical report is LaTeX source; report rendering, manual import of the real
-artifacts at narrow width, final video, live validator, Docker check, and human-team eligibility are pending.
+simulation. The technical report is [`REPORT.tex`](REPORT.tex). The final video, live validator,
+Docker check, and human-team eligibility are pending. The owner reports being registered solo;
+the form asks for 3–5 human members, so do not fabricate names. Submission handoff is in
+[`SUBMISSION_HANDOFF.md`](SUBMISSION_HANDOFF.md).
 
 ## Development checks
 
