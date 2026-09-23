@@ -91,6 +91,11 @@ _INCOMPLETE_SUBJECT_FRAGMENT = re.compile(
 _MAX_ADJACENT_COMPOSITION_OBSERVATIONS = 3
 _MAX_ADJACENT_COMPOSITION_CHARS = 512
 _UNTRUSTED_THRESHOLD = TrustLevel.UNTRUSTED_INTERNAL
+_MEMORY_PERSISTENCE_DIRECTIVE = re.compile(
+    r"\b(?:always|never|from\s+now\s+on|in\s+the\s+future|standing\s+instruction|"
+    r"permanent(?:ly)?|remember\s+to)\b",
+    re.IGNORECASE,
+)
 _TOOL_SEMANTICS: Final[
     dict[str, tuple[frozenset[str], frozenset[str], frozenset[str]]]
 ] = {
@@ -135,8 +140,8 @@ _TOOL_SEMANTICS: Final[
         frozenset(),
     ),
     "ticket_update": (
-        frozenset({"update", "close", "resolve"}),
-        frozenset({"ticket"}),
+        frozenset({"update", "close", "resolve", "add", "log", "note"}),
+        frozenset({"ticket", "note"}),
         frozenset(),
     ),
     "customer_lookup": (
@@ -155,7 +160,7 @@ _TOOL_SEMANTICS: Final[
         frozenset(),
     ),
     "case_note_create": (
-        frozenset({"create", "add", "write"}),
+        frozenset({"create", "add", "write", "log"}),
         frozenset({"case", "note"}),
         frozenset(),
     ),
@@ -191,11 +196,11 @@ _TOOL_SEMANTICS: Final[
     ),
     "asset_lookup": (
         frozenset({"lookup", "look", "find", "search"}),
-        frozenset({"asset", "host", "device"}),
+        frozenset({"asset", "host", "device", "workstation"}),
         frozenset(),
     ),
     "intel_search": (
-        frozenset({"search", "find", "lookup"}),
+        frozenset({"search", "find", "lookup", "correlate"}),
         frozenset({"intel", "intelligence", "threat", "indicator"}),
         frozenset(),
     ),
@@ -497,10 +502,25 @@ def _has_untrusted_evidence(adapted: AdaptedRequest) -> bool:
 
 def _memory_write_is_directive(action: CandidateAction) -> bool:
     content = action.content or ""
-    return _classify_instruction_text(content) is ClauseDisposition.ACTIVE
+    normalized = _normalize_clause_text(content)
+    if _classify_instruction_text(normalized) is not ClauseDisposition.ACTIVE:
+        return False
+    if _MEMORY_PERSISTENCE_DIRECTIVE.search(normalized) is not None:
+        return True
+    if _IMPERATIVE.match(_DISCOURSE_PREFIX.sub("", normalized)) is not None:
+        return True
+    if _SUBJECT_MODAL.match(_DISCOURSE_PREFIX.sub("", normalized)) is not None:
+        return True
+    lowered = normalized.lower()
+    return any(
+        tool in lowered or tool.replace("_", " ") in lowered
+        for tool in _TOOL_SEMANTICS
+    )
 
 
 def _coupled_instruction(action: CandidateAction, adapted: AdaptedRequest) -> bool:
+    if _trusted_goal_supports(action, adapted.request.user_goal):
+        return False
     observations = adapted.request.observations
     index = 0
     while index < len(observations):
@@ -524,6 +544,94 @@ def _coupled_instruction(action: CandidateAction, adapted: AdaptedRequest) -> bo
             return True
         index += 1
     return False
+
+
+def _trusted_goal_supports(action: CandidateAction, user_goal: str) -> bool:
+    """Return whether authenticated intent independently authorizes the action shape.
+
+    Retrieved text may supply facts and identifiers, but it must not be the only
+    authority for an operation. Conversely, a tainted field cannot veto the same
+    operation when the authenticated goal already asks for it. High-impact target
+    arguments stay bound to values explicitly present in the goal.
+    """
+
+    target = action.confirmation_for if action.type is ActionKind.REQUEST_CONFIRMATION else action
+    if target is None or target.type is not ActionKind.TOOL_CALL or target.tool is None:
+        return False
+    if not _goal_semantically_supports_tool(target.tool, user_goal):
+        return False
+    return _goal_binds_high_impact_arguments(target, user_goal)
+
+
+def _goal_semantically_supports_tool(tool: str, user_goal: str) -> bool:
+    semantics = _TOOL_SEMANTICS.get(tool)
+    if semantics is None:
+        return False
+    operations, objects, standalone_operations = semantics
+    goal_tokens = frozenset(re.findall(r"[a-z0-9]+", user_goal.lower()))
+    for clause in re.split(r"[,;.!?]|\b(?:but|however|instead)\b", user_goal.lower()):
+        tokens = re.findall(r"[a-z0-9]+", clause)
+        token_set = frozenset(tokens)
+        exact_tool = tool in clause or tool.replace("_", " ") in clause
+        matching_operations = operations.intersection(token_set)
+        semantic_match = bool(
+            standalone_operations.intersection(token_set)
+            or (matching_operations and objects.intersection(goal_tokens))
+        )
+        if not (exact_tool or semantic_match):
+            continue
+        operation_indexes = [
+            index for index, token in enumerate(tokens) if token in operations
+        ]
+        if operation_indexes and all(
+            _goal_token_is_negated(tokens, index) for index in operation_indexes
+        ):
+            continue
+        if exact_tool:
+            tool_index = tokens.index(tool) if tool in tokens else -1
+            if tool_index >= 0 and _goal_token_is_negated(tokens, tool_index):
+                continue
+        return True
+    return False
+
+
+def _goal_token_is_negated(tokens: list[str], index: int) -> bool:
+    window = tokens[max(0, index - 4) : index]
+    return "never" in window or "not" in window
+
+
+def _goal_binds_high_impact_arguments(action: CandidateAction, user_goal: str) -> bool:
+    required_by_tool: dict[str, frozenset[str]] = {
+        "email_draft": frozenset({"to"}),
+        "email_send": frozenset({"to"}),
+        "ticket_update": frozenset({"ticket_id"}),
+        "case_note_create": frozenset({"case_id"}),
+        "payment_prepare": frozenset({"account_id", "beneficiary_id", "amount"}),
+        "incident_create": frozenset({"alert_id"}),
+        "incident_update": frozenset({"incident_id"}),
+        "remediation_prepare": frozenset({"asset_id"}),
+    }
+    normalized_goal = re.sub(r"[^a-z0-9]+", "", user_goal.lower())
+    for key in required_by_tool.get(action.tool or "", frozenset()):
+        value = action.arguments.get(key)
+        if value is None:
+            continue
+        normalized_value = re.sub(r"[^a-z0-9]+", "", str(value).lower())
+        if normalized_value and normalized_value not in normalized_goal:
+            return False
+    if action.tool in {"ticket_update", "incident_update"}:
+        status = str(action.arguments.get("status", "")).lower()
+        if status in {"closed", "resolved"} and not any(
+            word in user_goal.lower() for word in ("close", "closed", "resolve", "resolved")
+        ):
+            return False
+    if action.tool == "remediation_prepare":
+        requested = str(action.arguments.get("action", "")).lower()
+        if requested == "disable_monitoring" and not (
+            "disable" in user_goal.lower() and "monitor" in user_goal.lower()
+        ):
+            return False
+    return True
 
 
 def _completed_fragment_group(
