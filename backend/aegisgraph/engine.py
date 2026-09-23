@@ -503,7 +503,7 @@ def _evaluate(
     if redacted is not None:
         return redacted
 
-    authority_redacted = _redact_untrusted_narrative(
+    authority_redacted = _redact_untrusted_authority(
         action, adapted, facts, skip_confirmation=skip_confirmation
     )
     if authority_redacted is not None:
@@ -631,18 +631,18 @@ def _sensitive_credential_values(adapted: AdaptedRequest) -> set[str]:
     return values
 
 
-def _redact_untrusted_narrative(
+def _redact_untrusted_authority(
     action: CandidateAction,
     adapted: AdaptedRequest,
     facts: PolicyFacts,
     *,
     skip_confirmation: bool,
 ) -> GuardDecision | None:
-    """Keep untrusted operational claims and instructions out of narrative sinks.
+    """Keep untrusted operational claims out of the agent's narrative sinks.
 
     This is intentionally a narrow, deterministic claim check, not a factuality
     oracle. It fires only when a low-trust observation carries the same risky
-    claim or tool prompt that the candidate repeats without independent authority.
+    claim that the candidate repeats without warning or verification.
     """
     sources = tuple(
         observation.content
@@ -651,21 +651,13 @@ def _redact_untrusted_narrative(
     )
     if not sources:
         return None
-    reasons: set[str] = set()
 
     def clean(value: str) -> str:
         sentences = _NARRATIVE_SENTENCE.split(value)
-        tainted = []
-        for sentence in sentences:
-            authority = _is_laundered_claim(sentence, sources, adapted.request.user_goal)
-            action_prompt = _is_untrusted_action_prompt(
-                sentence, sources, adapted.request.user_goal
-            )
-            if authority:
-                reasons.add("UNTRUSTED_AUTHORITY_REDACTED")
-            if action_prompt:
-                reasons.add("UNTRUSTED_ACTION_PROMPT_REDACTED")
-            tainted.append(authority or action_prompt)
+        tainted = [
+            _is_laundered_claim(sentence, sources, adapted.request.user_goal)
+            for sentence in sentences
+        ]
         removed = any(tainted)
         kept = [
             sentence
@@ -707,15 +699,14 @@ def _redact_untrusted_narrative(
     rewritten = replace(adapted, request=rewritten_request)
     evaluated = _evaluate(rewritten, facts, skip_confirmation=skip_confirmation)
     if evaluated.verdict is not Verdict.ALLOW:
-        return _block("NARRATIVE_REVALIDATION_FAILED", 1.0, adapted)
+        return _block("AUTHORITY_REVALIDATION_FAILED", 1.0, adapted)
     return GuardDecision(
         verdict=Verdict.REWRITE,
         risk_score=0.86,
         confidence=0.93,
-        reason_codes=tuple(sorted(reasons)),
+        reason_codes=("UNTRUSTED_AUTHORITY_REDACTED",),
         explanation=(
-            "An unverified operational claim or tool prompt copied from low-trust "
-            "evidence was removed; "
+            "An unverified operational claim copied from low-trust evidence was removed; "
             "the replacement passed policy revalidation."
         ),
         rewritten_action=rewritten_action,
@@ -751,26 +742,6 @@ def _is_laundered_claim(sentence: str, sources: tuple[str, ...], user_goal: str)
                 for address in source_addresses
             )
             and _classify_instruction_text(source) is ClauseDisposition.ACTIVE
-        ):
-            return True
-    return False
-
-
-def _is_untrusted_action_prompt(
-    sentence: str, sources: tuple[str, ...], user_goal: str
-) -> bool:
-    if _classify_instruction_text(sentence) is not ClauseDisposition.ACTIVE:
-        return False
-    mentioned = set(re.findall(r"[a-z][a-z0-9_]+", sentence.lower())).intersection(
-        _TOOL_SEMANTICS
-    )
-    for tool in mentioned:
-        if _goal_semantically_supports_tool(tool, user_goal):
-            continue
-        if any(
-            tool in re.findall(r"[a-z][a-z0-9_]+", source.lower())
-            and _classify_instruction_text(source) is ClauseDisposition.ACTIVE
-            for source in sources
         ):
             return True
     return False
