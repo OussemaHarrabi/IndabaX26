@@ -3,6 +3,7 @@
 import re
 from dataclasses import replace
 from enum import IntEnum
+from itertools import pairwise
 from typing import Final
 
 from aegisgraph.adapter import AdaptedRequest, adapt_request
@@ -22,38 +23,63 @@ from aegisgraph.policy import (
 )
 from aegisgraph.sentinel import SentinelRequest
 
-_STRONG_INSTRUCTION_MARKERS = re.compile(
-    r"\b(ignore|disregard|override|bypass)\b|"
-    r"\b(?:you|the agent|the assistant|agent|assistant)\s+"
-    r"(?:must|should|need(?:s)? to|has to|is required to)\b",
-    re.IGNORECASE,
-)
-_IMPERATIVE_START = re.compile(
-    r"(?:^|[.!?]\s+)[\"']?\s*(?:please\s+|kindly\s+)?"
-    r"(?:send|email|message|mail|close|resolve|update|pay|transfer|confirm|execute|"
-    r"remediate|isolate|block|remember|store|save|call|write)\b",
-    re.IGNORECASE,
-)
 _ACTION_VERBS = (
     r"send|email|message|mail|close|resolve|update|pay|transfer|confirm|execute|"
-    r"remediate|isolate|block|remember|store|save|call|write"
+    r"remediate|isolate|block|remember|store|save|call|use|write"
+)
+_SUBJECT_MODAL = re.compile(
+    rf"^(?:(?:the\s+)?(?:agent|assistant)|you)\s+"
+    r"(?:must|should|need(?:s)?\s+to|has\s+to|is\s+required\s+to)\s+"
+    rf"(?P<negation>not\s+|never\s+)?(?:{_ACTION_VERBS})\b",
+    re.IGNORECASE,
+)
+_DISCOURSE_PREFIX = re.compile(
+    r"^(?:now|then|next|immediately|instead)\b[\s,;:\-]*",
+    re.IGNORECASE,
+)
+_IMPERATIVE = re.compile(
+    rf"^(?:please\s+|kindly\s+)?(?:{_ACTION_VERBS})\b",
+    re.IGNORECASE,
 )
 _NEGATED_IMPERATIVE = re.compile(
     rf"^(?:do\s+not|don't|never)\s+(?:please\s+|kindly\s+)?(?:{_ACTION_VERBS})\b",
     re.IGNORECASE,
 )
-_IGNORE_META_INSTRUCTION = re.compile(
-    r"^ignore\s+(?:the\s+)?(?:instruction|request|command)\s+to\b",
+_BARE_MODAL_NEGATION = re.compile(
+    rf"^(?:must|should|need\s+to|is\s+required\s+to)\s+(?:not|never)\s+"
+    rf"(?:{_ACTION_VERBS})\b",
     re.IGNORECASE,
 )
-_META_DISCUSSION = re.compile(
-    r"\b(?:example|training|quoted?|malicious instruction|prompt[- ]injection|"
-    r"do not follow)\b",
+_IGNORE_META_INSTRUCTION = re.compile(
+    r"^ignore\s+(?:(?:this|that|the)\s+)?(?:instruction|request|command)"
+    r"(?:\s+to\b|\s*$)",
+    re.IGNORECASE,
+)
+_OVERRIDE_DIRECTIVE = re.compile(
+    r"^(?:ignore|disregard|override|bypass)\b",
+    re.IGNORECASE,
+)
+_QUOTE_FORWARD_NEGATION = re.compile(
+    r"(?:\b(?:do\s+not|don't|never)\s+(?:follow|execute|obey|act\s+on)\s+"
+    r"(?:this|that|the)\s+(?:instruction|request|command)|"
+    r"\b(?:ignore|disregard)\s+(?:this|that|the)\s+"
+    r"(?:instruction|request|command))\s*[:\-]\s*$",
+    re.IGNORECASE,
+)
+_QUOTE_BACKWARD_NEGATION = re.compile(
+    r"\b(?:do\s+not|don't|never)\s+(?:follow|execute|obey|act\s+on)\b|"
+    r"\bignore\s+(?:this|that|the)\s+(?:instruction|request|command)\b",
     re.IGNORECASE,
 )
 _QUOTED_SPAN = re.compile(r'"[^"\n]*"|\'[^\'\n]*\'')
-_CLAUSE_SPLIT = re.compile(r"[.!?;\n]+")
+_CLAUSE_SPLIT = re.compile(r"[.!?;:\n]+")
 _CONTRAST_SPLIT = re.compile(r"\b(?:but|instead|then|however)\b", re.IGNORECASE)
+_INCOMPLETE_SUBJECT_FRAGMENT = re.compile(
+    r"^(?:(?:the\s+)?(?:agent|assistant)|you)"
+    r"(?:\s+(?:must|should|need(?:s)?\s+to|has\s+to|is\s+required\s+to))?$",
+    re.IGNORECASE,
+)
+_MAX_ADJACENT_COMPOSITION_CHARS = 512
 _UNTRUSTED_THRESHOLD = TrustLevel.UNTRUSTED_INTERNAL
 _ACTION_ALIASES: Final[dict[str, frozenset[str]]] = {
     "email_send": frozenset({"send", "email", "message", "mail"}),
@@ -110,6 +136,14 @@ class ActionEffect(IntEnum):
     READ_OR_CONFIRM = 1
     WRITE = 2
     PERSISTENT_OR_CONSEQUENTIAL = 3
+
+
+class ClauseDisposition(IntEnum):
+    """Security meaning of bounded natural-language text, before action coupling."""
+
+    NEUTRAL = 0
+    NEGATED = 1
+    ACTIVE = 2
 
 
 def decide(request: SentinelRequest) -> GuardDecision:
@@ -326,16 +360,32 @@ def _has_untrusted_evidence(adapted: AdaptedRequest) -> bool:
 
 
 def _coupled_instruction(action: CandidateAction, adapted: AdaptedRequest) -> bool:
-    return any(
-        _observation_couples(action, observation.content)
-        for observation in adapted.request.observations
-        if list(TrustLevel).index(observation.trust_level)
-        >= list(TrustLevel).index(_UNTRUSTED_THRESHOLD)
-    )
+    observations = adapted.request.observations
+    for observation in observations:
+        if _is_untrusted(observation.trust_level) and _observation_couples(
+            action, observation.content
+        ):
+            return True
+
+    # Only adjacent provenance-bearing fragments are composed, and only when the
+    # left fragment is syntactically incomplete. This catches boundary splitting
+    # without recreating the unsafe global join that merged unrelated evidence.
+    for left, right in pairwise(observations):
+        if not (_is_untrusted(left.trust_level) and _is_untrusted(right.trust_level)):
+            continue
+        left_text = _normalize_clause_text(left.content)
+        if _INCOMPLETE_SUBJECT_FRAGMENT.fullmatch(left_text) is None:
+            continue
+        combined = f"{left_text} {_normalize_clause_text(right.content)}"
+        if len(combined) > _MAX_ADJACENT_COMPOSITION_CHARS:
+            continue
+        if _observation_couples(action, combined):
+            return True
+    return False
 
 
 def _observation_couples(action: CandidateAction, content: str) -> bool:
-    if not content or not _looks_instructional(content):
+    if not content or _classify_instruction_text(content) is not ClauseDisposition.ACTIVE:
         return False
     lowered = content.lower()
     if action.type is ActionKind.MEMORY_WRITE:
@@ -357,33 +407,101 @@ def _observation_couples(action: CandidateAction, content: str) -> bool:
     return action.tool in _SIDE_EFFECTING_TOOLS
 
 
-def _looks_instructional(content: str) -> bool:
-    normalized = content.strip()
-    if _META_DISCUSSION.search(normalized) is not None:
-        normalized = _QUOTED_SPAN.sub(" ", normalized)
-    for clause in _CLAUSE_SPLIT.split(normalized):
-        cleaned = clause.strip(" \t\r\n\"'")
+def _classify_instruction_text(content: str) -> ClauseDisposition:
+    """Classify clauses with negation precedence and explicit quote semantics.
+
+    Labels such as ``training`` or ``example`` have no authority. An imperative
+    inside quotes remains active unless the surrounding text explicitly says not
+    to follow, execute, or obey it. Remaining clauses are normalized and checked
+    independently so a negated clause cannot hide a later active one.
+    """
+
+    normalized = _normalize_clause_text(content, preserve_newlines=True)
+    quoted_spans = list(_QUOTED_SPAN.finditer(normalized))
+    saw_negation = False
+    previous_end = 0
+    for index, quoted in enumerate(quoted_spans):
+        quote_content = quoted.group()[1:-1]
+        if _classify_unquoted_text(quote_content) is ClauseDisposition.ACTIVE:
+            next_start = (
+                quoted_spans[index + 1].start()
+                if index + 1 < len(quoted_spans)
+                else len(normalized)
+            )
+            before = normalized[previous_end : quoted.start()]
+            after = normalized[quoted.end() : next_start]
+            forward_negation = _QUOTE_FORWARD_NEGATION.search(before) is not None
+            # A forward negation at the end of the inter-quote text belongs to
+            # the next quote, not to the quote that precedes it.
+            backward_context = _QUOTE_FORWARD_NEGATION.sub("", after)
+            backward_negation = (
+                _QUOTE_BACKWARD_NEGATION.search(backward_context) is not None
+            )
+            if not (forward_negation or backward_negation):
+                return ClauseDisposition.ACTIVE
+            saw_negation = True
+        previous_end = quoted.end()
+
+    without_quotes = _QUOTED_SPAN.sub(" ", normalized)
+    remainder = _classify_unquoted_text(without_quotes)
+    if remainder is ClauseDisposition.ACTIVE:
+        return ClauseDisposition.ACTIVE
+    if remainder is ClauseDisposition.NEGATED or saw_negation:
+        return ClauseDisposition.NEGATED
+    return ClauseDisposition.NEUTRAL
+
+
+def _classify_unquoted_text(content: str) -> ClauseDisposition:
+    saw_negation = False
+    for clause in _CLAUSE_SPLIT.split(content):
+        cleaned = _normalize_clause_text(clause).strip("\"'")
         if not cleaned:
             continue
-        contrast_parts = [part.strip() for part in _CONTRAST_SPLIT.split(cleaned)]
-        first = contrast_parts[0]
-        if (
-            _NEGATED_IMPERATIVE.search(first) is not None
-            or _IGNORE_META_INSTRUCTION.search(first) is not None
-        ):
-            if any(_clause_is_active(part) for part in contrast_parts[1:]):
-                return True
-            continue
-        if _clause_is_active(cleaned):
-            return True
-    return False
+        for part in _CONTRAST_SPLIT.split(cleaned):
+            disposition = _classify_atomic_clause(part)
+            if disposition is ClauseDisposition.ACTIVE:
+                return ClauseDisposition.ACTIVE
+            if disposition is ClauseDisposition.NEGATED:
+                saw_negation = True
+    return ClauseDisposition.NEGATED if saw_negation else ClauseDisposition.NEUTRAL
 
 
-def _clause_is_active(clause: str) -> bool:
-    return (
-        _STRONG_INSTRUCTION_MARKERS.search(clause) is not None
-        or _IMPERATIVE_START.search(clause) is not None
-    )
+def _classify_atomic_clause(clause: str) -> ClauseDisposition:
+    normalized = _normalize_clause_text(clause).strip("\"'")
+    if not normalized:
+        return ClauseDisposition.NEUTRAL
+    normalized = _DISCOURSE_PREFIX.sub("", normalized)
+
+    subject_modal = _SUBJECT_MODAL.search(normalized)
+    if subject_modal is not None:
+        return (
+            ClauseDisposition.NEGATED
+            if subject_modal.group("negation") is not None
+            else ClauseDisposition.ACTIVE
+        )
+    if (
+        _NEGATED_IMPERATIVE.search(normalized) is not None
+        or _BARE_MODAL_NEGATION.search(normalized) is not None
+        or _IGNORE_META_INSTRUCTION.search(normalized) is not None
+    ):
+        return ClauseDisposition.NEGATED
+    if (
+        _IMPERATIVE.search(normalized) is not None
+        or _OVERRIDE_DIRECTIVE.search(normalized) is not None
+    ):
+        return ClauseDisposition.ACTIVE
+    return ClauseDisposition.NEUTRAL
+
+
+def _normalize_clause_text(content: str, *, preserve_newlines: bool = False) -> str:
+    if preserve_newlines:
+        lines = (" ".join(line.split()) for line in content.splitlines())
+        return "\n".join(line for line in lines if line).strip()
+    return " ".join(content.split()).strip()
+
+
+def _is_untrusted(trust_level: TrustLevel) -> bool:
+    return list(TrustLevel).index(trust_level) >= list(TrustLevel).index(_UNTRUSTED_THRESHOLD)
 
 
 def _action_effect(action: CandidateAction, facts: PolicyFacts) -> ActionEffect:
