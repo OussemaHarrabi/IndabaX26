@@ -1,0 +1,22 @@
+name: aegisgraph
+kind: defense
+api_version: v1
+port: 8080
+team: "TODO: replace with your registered hackathon team name"
+description: >-
+  A local SENTINEL-compatible decision gateway that evaluates proposed agent
+  actions against deterministic authorization, provenance, confirmation, and
+  sensitive-data-flow rules. It returns allow, block, escalate, or rewrite
+  decisions and never executes the proposed action.
+models:
+  - name: deterministic local policy engine
+    source: local AegisGraph implementation
+    license: not applicable; no model weights are used
+datasets:
+  - name: SENTINEL public scenario suite
+    source: Skan22/Sentinel_Starter_Kit@dd2e5fe0979d0781a4bfe6d0849cd80cf69ef4a2
+    license: TODO: verify the scenario suite license before submission
+resources:
+  memory: 512m
+  cpus: 2
+  gpus: 0
