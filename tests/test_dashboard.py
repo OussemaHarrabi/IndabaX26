@@ -1,7 +1,13 @@
+from importlib.resources import files
+
 from aegisgraph.app import app
 from fastapi.testclient import TestClient
 
 client = TestClient(app)
+
+
+def _section(source: str, start: str, end: str) -> str:
+    return source.split(start, maxsplit=1)[1].split(end, maxsplit=1)[0]
 
 
 def test_dashboard_route_serves_product_shell_without_network_uploads() -> None:
@@ -41,10 +47,41 @@ def test_dashboard_artifact_import_stays_in_the_browser() -> None:
 
 
 def test_dashboard_assets_are_reachable_as_package_resources() -> None:
-    from importlib.resources import files
-
     package = files("aegisgraph").joinpath("static")
 
     assert package.joinpath("index.html").is_file()
     assert package.joinpath("dashboard.css").is_file()
     assert package.joinpath("dashboard.js").is_file()
+
+
+def test_dashboard_distinguishes_reachability_from_attack_outcome_and_presence() -> None:
+    script = files("aegisgraph").joinpath("static/dashboard.js").read_text(encoding="utf-8")
+    summary = _section(script, "function renderSummary()", "function filteredEvents()")
+    run_data = _section(script, "function deriveRun(run)", "function renderSummary()")
+    trust = _section(script, "const getTrust =", "const currentRun =")
+
+    assert '["Attack success", details.attackSuccess]' in summary
+    assert '["Attack present", details.attackPresent]' in summary
+    assert '["Attack reachability", typeof details.attackReached' in summary
+    assert 'attackReached: typeof merged.attack_reached === "boolean"' in run_data
+    assert 'attackSuccess: typeof merged.attack_success === "boolean"' in run_data
+    assert 'attackPresent: typeof merged.attack_present === "boolean"' in run_data
+    assert 'if (labels.includes("trusted")) return "trusted"' in trust
+    assert 'if (labels.includes("untrusted")) return "untrusted"' in trust
+    assert 'return "unknown"' in trust
+
+
+def test_dashboard_requires_matching_step_ids_and_announces_file_progress() -> None:
+    script = files("aegisgraph").joinpath("static/dashboard.js").read_text(encoding="utf-8")
+    related = _section(script, "function matchingRelated(event)", "function renderInspector")
+    comparison = _section(script, "function renderComparison()", "function formatMetric")
+    selection = _section(script, "function selectEvent(event)", "function renderComparison")
+
+    assert 'eventStep === undefined || eventStep === null || eventStep === ""' in related
+    assert '(candidate.step_id ?? getPayload(candidate).step_id) === eventStep' in related
+    assert "Reading ${file.name} locally" in script
+    assert 'byId("import-status").textContent = message' in script
+    assert "runtime_config" in comparison
+    assert "configuration" in comparison
+    assert 'selectedRow?.focus()' in selection
+    assert 'selectedRow?.scrollIntoView' in selection
