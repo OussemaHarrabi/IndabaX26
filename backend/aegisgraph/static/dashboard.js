@@ -128,6 +128,9 @@
   function renderSummary() {
     const run = currentRun();
     if (!run) return;
+    const warning = byId("scorecard-warning");
+    warning.textContent = run.scorecardConflict ? "Multiple scorecards match this trace run ID. Attack and task outcomes are intentionally unlinked; load only the matching scorecard to inspect this trace." : "";
+    warning.classList.toggle("hidden", !run.scorecardConflict);
     const details = deriveRun(run);
     byId("run-title").textContent = run.id || run.source;
     const root = byId("summary-grid");
@@ -380,9 +383,29 @@
     }
     for (const outcome of outcomes) {
       const scenarioId = typeof outcome.scenario_id === "string" ? outcome.scenario_id : undefined;
-      const existing = state.runs.find((run) => run.id === scenarioId && run.scorecard === null);
+      const runId = typeof outcome.run_id === "string" && outcome.run_id ? outcome.run_id : undefined;
+      const existing = runId
+        ? state.runs.find((run) => run.id === outcome.run_id && run.scorecard === null)
+        : state.runs.find((run) => run.id === scenarioId && run.scorecard === null);
       if (existing) existing.scorecard = { ...data, outcomes: [outcome] };
-      else state.runs.push({ id: scenarioId || file.name, source: file.name, events: [], scorecard: { ...data, outcomes: [outcome] } });
+      else state.runs.push({ id: runId || scenarioId || file.name, source: file.name, events: [], scorecard: { ...data, outcomes: [outcome] } });
+    }
+  }
+
+  function reconcileTraceScorecards() {
+    for (const run of state.runs) {
+      if (!run.events.length) continue;
+      const matches = [];
+      for (const card of state.scorecards) {
+        for (const outcome of Array.isArray(card.data.outcomes) ? card.data.outcomes : []) {
+          const outcomeRunId = typeof outcome.run_id === "string" && outcome.run_id ? outcome.run_id : undefined;
+          if (outcomeRunId ? run.id === outcomeRunId : run.id === outcome.scenario_id) {
+            matches.push({ ...card.data, outcomes: [outcome] });
+          }
+        }
+      }
+      run.scorecardConflict = matches.length > 1;
+      run.scorecard = matches.length === 1 ? matches[0] : null;
     }
   }
 
@@ -403,7 +426,9 @@
         notify(message);
       }
     }
+    reconcileTraceScorecards();
     if (state.runs.length) { state.selectedRun = Math.min(state.selectedRun, state.runs.length - 1); fillTypes(); render(); }
+    if (state.runs.some((run) => run.scorecardConflict)) setImportStatus("Multiple scorecards match a trace run ID. Its outcomes are unlinked until only one matching scorecard is loaded.");
   }
 
   function exportView() {
