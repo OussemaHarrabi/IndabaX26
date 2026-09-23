@@ -130,6 +130,26 @@ _UNVERIFIED_CLAIM = re.compile(
     r"must\s+not\s+be\s+followed|do\s+not\s+follow)\b",
     re.IGNORECASE,
 )
+_ATTRIBUTED_CLAIM = re.compile(r"\b(?:claims?|alleges?|asserts?|purports?)\b", re.IGNORECASE)
+_SAFE_CLAIM_NEGATIONS: Final[dict[str, re.Pattern[str]]] = {
+    "alert_dismissal": re.compile(
+        r"\b(?:not\s+(?:a\s+)?(?:known\s+)?false\s+positive|"
+        r"(?:should|must)\s+not\s+be\s+(?:closed|resolved)|"
+        r"do\s+not\s+(?:close|resolve)\s+(?:the\s+)?(?:alert|incident))\b",
+        re.IGNORECASE,
+    ),
+    "monitoring_suppression": re.compile(
+        r"\b(?:monitoring\s+(?:should|must)\s+not\s+be\s+disabled|"
+        r"do\s+not\s+disable\s+monitoring|"
+        r"alerts?\s+(?:should|must)\s+not\s+be\s+silenced)\b",
+        re.IGNORECASE,
+    ),
+}
+_DANGLING_ACTION_REFERENCE = re.compile(
+    r"\b(?:these|those|such)\s+(?:actions|steps|changes)\b|"
+    r"\bproceed\s+with\s+(?:them|it)\b",
+    re.IGNORECASE,
+)
 _EMAIL_ADDRESS = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _REPORTED_EMAIL_ACTION = re.compile(
     r"\b(?:draft(?:ed)?|prepar(?:ed|e)|sent|emailed|forwarded)\b", re.IGNORECASE
@@ -634,10 +654,16 @@ def _redact_untrusted_authority(
 
     def clean(value: str) -> str:
         sentences = _NARRATIVE_SENTENCE.split(value)
+        tainted = [
+            _is_laundered_claim(sentence, sources, adapted.request.user_goal)
+            for sentence in sentences
+        ]
+        removed = any(tainted)
         kept = [
             sentence
-            for sentence in sentences
-            if not _is_laundered_claim(sentence, sources, adapted.request.user_goal)
+            for sentence, is_tainted in zip(sentences, tainted, strict=True)
+            if not is_tainted
+            and not (removed and _DANGLING_ACTION_REFERENCE.search(sentence))
         ]
         return " ".join(kept).strip()
 
@@ -689,12 +715,22 @@ def _redact_untrusted_authority(
 
 
 def _is_laundered_claim(sentence: str, sources: tuple[str, ...], user_goal: str) -> bool:
-    if _UNVERIFIED_CLAIM.search(sentence):
+    if _ATTRIBUTED_CLAIM.search(sentence) and _UNVERIFIED_CLAIM.search(sentence):
         return False
+    if _CONTRAST_SPLIT.search(sentence):
+        return any(
+            _is_laundered_claim(part, sources, user_goal)
+            for part in _CONTRAST_SPLIT.split(sentence)
+        )
     for source in sources:
         if any(
-            pattern.search(sentence) and pattern.search(source)
-            for pattern in _UNTRUSTED_CLAIM_PATTERNS.values()
+            pattern.search(sentence)
+            and pattern.search(source)
+            and not (
+                name in _SAFE_CLAIM_NEGATIONS
+                and _SAFE_CLAIM_NEGATIONS[name].search(sentence)
+            )
+            for name, pattern in _UNTRUSTED_CLAIM_PATTERNS.items()
         ):
             return True
         source_addresses = set(_EMAIL_ADDRESS.findall(source.lower()))
