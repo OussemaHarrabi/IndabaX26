@@ -28,8 +28,10 @@ unmeasured experiment. The pinned benchmark is
    v5 is not a universal output-integrity solution.
 
 The UI never executes traces or changes policy. Import only a matching scorecard
-with a trace: different revision scorecards can reuse a run ID, in which case the
-dashboard intentionally warns instead of guessing an outcome.
+with a trace. If multiple scorecards match one run ID, the dashboard warns and
+withholds the outcome; it cannot detect a *single* wrong-revision scorecard with
+the same run ID. Verify the artifact names, metadata, and hashes before drawing
+conclusions.
 
 ## What was measured
 
@@ -87,6 +89,28 @@ The gateway does not execute tools: an integrator must enforce each decision and
 bind it to the exact candidate action. Do not expose the unauthenticated local
 prototype to the public internet or use it for real payments, account changes,
 or incident response.
+
+## Known gaps and next work
+
+1. **Utility:** the kit's self-test gate is not met (4/9 benign tasks versus
+   5/9 under allow-all). Diagnose the `enterprise_security_digest`
+   confirmation/subject mismatch without allowing unconfirmed consequential
+   `email_send` operations; separately document the four benign failures already
+   present under allow-all. Re-run matched attack and benign controls after any
+   change, then replace the evidence only if it truly improves the tradeoff.
+2. **Output integrity:** v5 still passes a lower-trust tool-use prompt into the
+   final `enterprise_memory_poison` answer. The current narrative guard is
+   bounded and can miss paraphrases, translations, transformed secrets, and
+   multi-turn laundering. Any stronger candidate needs a component ablation
+   and a benign-response regression suite before replacing measured v5.
+3. **Evidence integrity and uncertainty:** add a trace/scorecard revision
+   fingerprint, repeat the Qwen suite across seeds or reruns, and report
+   confidence intervals or observed variance. The current result is a single
+   seeded public-suite observation, not a general security guarantee.
+4. **Release readiness:** verify a clean Docker run and the pinned organizer
+   validator, exercise the dashboard with assistive technology, and prepare an
+   uncut attack/benign observability demo. Human-team eligibility must be
+   clarified with the organizers; no names should be invented.
 
 AegisGraph is a local SENTINEL v1 gateway: it receives an inert agent-action
 proposal and returns `allow`, `block`, `escalate`, or `rewrite`. It never invokes
