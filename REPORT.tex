@@ -23,7 +23,7 @@
 \cfoot{\thepage}
 \title{\textbf{AegisGraph}\\\large A provenance-aware decision gateway for tool-using agents\\[4pt]\normalsize Technical architecture, security, implementation, and evaluation dossier}
 \author{Team 9ahwa mahrou9a}
-\date{IndabaX Tunisia 2026\\Engineering snapshot: 23 September 2026}
+\date{IndabaX Tunisia 2026\\Engineering snapshot: 24 September 2026}
 
 \begin{document}
 \maketitle
@@ -231,23 +231,24 @@ The prior three-run and v3 archives are retained for ablation and baseline compa
 \subsection{Completed local evidence}
 The test suite covers contracts and bounds, trust/provenance mapping, request/response behavior, policy decision paths including exact-value redaction and rewrite revalidation, HTTP error behavior, dashboard serving/import parsing, and attack reachability. V5 passed 187 tests; Ruff, strict mypy, and JavaScript syntax checks passed; packaged-wheel inspection verified dashboard assets. Real-artifact desktop and narrow browser checks joined a trace to its scorecard and surfaced reason and outcome. These establish engineering correctness over tested cases only. The Colab v5 evaluator completed 40/40 cases with zero defense errors, but did not pass its utility gate.
 
+\newpage
 \subsection{Final acceptance matrix}
 \begin{longtable}{p{0.21\linewidth}p{0.48\linewidth}p{0.22\linewidth}}
 \toprule
 Gate & Evidence required & Status \\
 \midrule
 Build and package & Clean checkout builds; assets included; pinned dependencies install & Partial \\
-Automated QA & Tests, Ruff, mypy, JS syntax pass on frozen commit & Previously pass; rerun on release \\
-Dashboard evidence & Real JSONL + scorecard import, filters, comparison warnings, related navigation, export, clear/undo & Desktop and narrow real-artifact import verified; assistive technology pending \\
-Reachability & Raw allow-all records for all attacks, with every showcased scenario true & 22/31 reached; two demo cases verified \\
-Matched baseline comparison & Allow-all, provenance, AegisGraph v1/v3/v5 under same reference settings & Complete; one seed, synthetic suite \\
-Security boundary & Invalid/missing provenance, oversized payload, malformed action, rewrite trap, external recipient, missing confirmation all block/escalate as designed & Automated test coverage; release rerun required \\
-Failure behavior & Safe block on internal evaluation exception; no tool/model/network side effects & Implemented and locally tested; integration enforcement remains external \\
-Container & Build, non-root, read-only filesystem, dropped capabilities, no-new-privileges, resource limits & Docker engine run pending \\
+Automated QA & Tests, Ruff, mypy, JS syntax pass on frozen commit & Passed on v5; rerun before release \\
+Dashboard evidence & Real JSONL + scorecard import, filters, comparison warnings, related navigation, export, clear/undo & Desktop/narrow checked; assistive tech pending \\
+Reachability & Raw allow-all records for all attacks, with every showcased scenario true & 22/31 reached; two demo cases checked \\
+Matched baseline comparison & Allow-all, provenance, AegisGraph v1/v3/v5 under same reference settings & Complete; one seed \\
+Security boundary & Invalid/missing provenance, oversized payload, malformed action, rewrite trap, external recipient, missing confirmation all block/escalate as designed & Automated tests; release rerun due \\
+Failure behavior & Safe block on internal evaluation exception; no tool/model/network side effects & Local tests pass; external enforcement needed \\
+Container & Build, non-root, read-only filesystem, dropped capabilities, no-new-privileges, resource limits & Docker check pending \\
 Official validator & Manifest + live health/decision endpoint accepted by pinned kit validator & Pending \\
-Human eligibility & Organizer confirms required 3--5 participants or accepts the team's registration & Pending; team name alone does not establish eligibility \\
+Human eligibility & Organizer confirms required 3--5 participants or accepts the team's registration & Pending \\
 Demo & 5--10 minutes; one reached-and-stopped attack, one benign success, inspectable actual trace/outcome & Pending \\
-Submission & Final repo freeze, LaTeX report, artifact hashes, video, portal receipt & Report/archives drafted; video/portal pending \\
+Submission & Final repo freeze, LaTeX report, artifact hashes, video, portal receipt & PDF ready; video/portal pending \\
 \bottomrule
 \end{longtable}
 
