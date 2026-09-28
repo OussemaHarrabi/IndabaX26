@@ -25,46 +25,46 @@ fields, so you cannot smuggle in extra context. It carries eight things:
 
 - `user_goal` — what the human asked for this turn.
 - `conversation` — the running transcript. Each item is a `ConversationItem`
-  (`interface.py:23-28`) with a `role` (one of `user|agent|tool|memory|safety|human`), a `kind`,
+  (`.sentinel_reference/src/sentinel/defenses/interface.py:23-28`) with a `role` (one of `user|agent|tool|memory|safety|human`), a `kind`,
   the `content`, and `provenance_ids` pointing at where the text came from.
-- `observation` — the latest tool/document output, if any (`interface.py:30-34`).
+- `observation` — the latest tool/document output, if any (`.sentinel_reference/src/sentinel/defenses/interface.py:30-34`).
 - `candidate_action` — the one action you are being asked to judge. This is the heart of it: a
   defense never blocks "the agent"; it judges one next action.
 - `policy_context` — a dict of tool lists and policy for the scenario
-  (`interface.py:63`).
+  (`.sentinel_reference/src/sentinel/defenses/interface.py:63`).
 - `provenance` — the labels behind those `provenance_ids`
-  (`interface.py:18-21`): `trust_level`, `sensitivity`, `origin_actor`, `retrieved_via`, and more.
+  (`.sentinel_reference/src/sentinel/defenses/interface.py:18-21`): `trust_level`, `sensitivity`, `origin_actor`, `retrieved_via`, and more.
 - `history_digest` — a compact summary of the run so far
-  (`interface.py:43-51`): `steps_taken`, `tool_calls`, `confirmations_granted`, `blocked_count`,
+  (`.sentinel_reference/src/sentinel/defenses/interface.py:43-51`): `steps_taken`, `tool_calls`, `confirmations_granted`, `blocked_count`,
   `least_trusted_seen`, `most_sensitive_seen`.
 
 One comment in that file matters more than the rest: *"Never contains reference plans, labels, or
-attack payloads."* (`interface.py:55`). The scenario author's ground truth — the intended attack,
+attack payloads."* (`.sentinel_reference/src/sentinel/defenses/interface.py:55`). The scenario author's ground truth — the intended attack,
 the expected verdict — is deliberately withheld. If you decide from a scenario id or a filename, you
 are cheating against the benchmark, and the rules disqualify it
 (`.sentinel_reference/docs/threat-model.md:58-60`).
 
 **What a defense returns** is a `DefenseDecision`
 (`.sentinel_reference/src/sentinel/core/actions.py:110-152`). It has exactly one decision word —
-`allow`, `block`, `escalate`, or `rewrite` (`actions.py:105-108`) — plus:
+`allow`, `block`, `escalate`, or `rewrite` (`.sentinel_reference/src/sentinel/core/actions.py:105-108`) — plus:
 
 - `risk_score` in `[0,1]` and `confidence` in `[0,1]`;
-- `reason_codes` — machine-readable labels in `UPPER_SNAKE_CASE`, at most 16 (`actions.py:120`);
+- `reason_codes` — machine-readable labels in `UPPER_SNAKE_CASE`, at most 16 (`.sentinel_reference/src/sentinel/core/actions.py:120`);
 - `explanation` — human prose, at most 500 characters;
-- `rewritten_action` — required if and only if the decision is `rewrite` (`actions.py:147-151`);
-- `metadata` — a small JSON bag, capped at 4 KB (`actions.py:123`).
+- `rewritten_action` — required if and only if the decision is `rewrite` (`.sentinel_reference/src/sentinel/core/actions.py:147-151`);
+- `metadata` — a small JSON bag, capped at 4 KB (`.sentinel_reference/src/sentinel/core/actions.py:123`).
 
 **The HTTP variant.** You can run a defense in-process by name, or as a service. The service speaks
 `POST /v1/decision` and answers health at `GET /healthz`
 (`.sentinel_reference/src/sentinel/defenses/client.py:32-92`). The client retries only transport
 errors — never a bad response. If your service is down, too slow, returns a non-200, sends more than
 64 KB, or sends malformed JSON, the client raises `DefenseUnavailable`
-(`client.py:17-18,63-92`).
+(`.sentinel_reference/src/sentinel/defenses/client.py:17-18,63-92`).
 
 Then the **fail mode** decides what happens. This is *fail-closed* vs *fail-open*:
 
 - `fail_mode=CLOSED` → the request is turned into a `block` with `risk_score=1.0` and reason code
-  `DEFENSE_UNAVAILABLE` (`client.py:21-28`).
+  `DEFENSE_UNAVAILABLE` (`.sentinel_reference/src/sentinel/defenses/client.py:21-28`).
 - `fail_mode=OPEN` → the request is turned into an `allow` with `risk_score=0.0`.
 
 Fail-closed is the safe default: if the guard cannot speak, you do not let the action through. The
@@ -212,7 +212,7 @@ to a specific argument. Two things follow:
    action scores `0.05` and is allowed. The defense never reads the text, so it cannot notice the
    injection.
 2. `least_trusted_seen` only covers provenance referenced *this* turn, so earlier poisoning is
-   invisible ([INFERENCE], from the per-turn digest shape at `interface.py:43-51`).
+   invisible ([INFERENCE], from the per-turn digest shape at `.sentinel_reference/src/sentinel/defenses/interface.py:43-51`).
 
 This is a **scoring without reading** design. It can count risk factors but cannot tell whether a
 particular value in the action came from the attacker. [INFERENCE] Its precision also suffers:
@@ -225,7 +225,7 @@ every unconfirmed consequential action escalates, which inflates the unnecessary
 closely. Its algorithm (`.sentinel_reference/src/sentinel/defenses/baselines/provenance.py:52-110`):
 
 1. Split conversation text into untrusted and sensitive pools, using provenance
-   (`common.py:61-73`).
+   (`.sentinel_reference/src/sentinel/defenses/baselines/common.py:61-73`).
 2. For a tool call whose tool is **not** in `allowed_tools` → `block`, `0.95`, code
    `TOOL_NOT_REQUIRED_FOR_GOAL` (`.sentinel_reference/src/sentinel/defenses/baselines/provenance.py:59-66`).
 3. If the tool name and an argument value co-occur inside an untrusted text → `block`, `0.9`, code
@@ -332,7 +332,7 @@ declares `TOOL_PERMISSION`, `CONFIRM_CONSEQUENTIAL`, `SENSITIVE_TO_UNTRUSTED_SIN
 
 Now the audit punchline. **The baselines read almost none of this.** They consult only
 `allowed_tools`, `consequential_tools`, and `internal_email_domains` through the shared helpers
-(`common.py:40-58`) — not the rule objects themselves. The mapping by code reading:
+(`.sentinel_reference/src/sentinel/defenses/baselines/common.py:40-58`) — not the rule objects themselves. The mapping by code reading:
 
 | Property | `allow_all` | `keyword` | `deny_sensitive` | `heuristic_risk` | `provenance` |
 |---|:-:|:-:|:-:|:-:|:-:|
@@ -385,7 +385,7 @@ data is *allowed* to go, and knows which actions are legitimate. That is [Module
 1. A defense's HTTP service crashes mid-run. What does the harness decide for the pending action, and
    why is that the safe choice?
    - Under the default fail-closed mode, the action becomes a `block` with `risk_score=1.0` and code
-     `DEFENSE_UNAVAILABLE` (`client.py:21-28`). Fail-closed means "when broken, refuse" — if the guard
+     `DEFENSE_UNAVAILABLE` (`.sentinel_reference/src/sentinel/defenses/client.py:21-28`). Fail-closed means "when broken, refuse" — if the guard
      cannot speak, you do not permit. Fail-open would have allowed it.
 
 2. `allow_all` has ASR `1.0000` on mock but `0.7097` on real Qwen3-8B. Which number tells you which
@@ -419,7 +419,7 @@ data is *allowed* to go, and knows which actions are legitimate. That is [Module
    - `tool_prerequisites` and `no_forbidden_effect`. The finance and SOC policies declare ordering
      rules (`finance_standard.yaml:17-23`, `soc_standard.yaml:17-23`), and every policy declares a
      `FORBIDDEN_EFFECT` rule — but no baseline reads rule objects or action ordering; they only use
-     `allowed_tools`, `consequential_tools`, and `internal_email_domains` (`common.py:40-58`).
+     `allowed_tools`, `consequential_tools`, and `internal_email_domains` (`.sentinel_reference/src/sentinel/defenses/baselines/common.py:40-58`).
 
 ## Where this lives in the repo
 
