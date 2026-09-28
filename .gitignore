@@ -18,6 +18,7 @@ results/raw/
 .env
 .env.*
 !.env.example
+.audit-tmp/
 .coverage
 htmlcov/
 *.egg-info/
