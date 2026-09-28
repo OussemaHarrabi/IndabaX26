@@ -1,0 +1,391 @@
+<section class="chapter" id="ch-06" data-title="6 · AegisGraph part 1: shape and contracts">
+  <h2 class="chapter-title">AegisGraph part 1: shape and contracts</h2>
+
+  <p class="lead">AegisGraph is a small, deterministic HTTP service that reads a SENTINEL decision request, converts the loose wire fields into a strict internal <strong>canonical action</strong>, and returns exactly one of four verdicts — <span class="decision allow">allow</span>, <span class="decision block">block</span>, <span class="decision escalate">escalate</span>, <span class="decision rewrite">rewrite</span> — without ever executing the proposed action. It is a <strong>reference monitor</strong>: a checkpoint that inspects an action and issues a verdict. It never runs a tool, never calls a model, never writes memory.</p>
+
+  <div class="callout">
+    <div class="callout-title">The one line worth remembering</div>
+    <p>It is rules, not a model. Every verdict comes from deterministic Python policy code, so the same request always produces the same answer.</p>
+  </div>
+
+  <p>Two clarifications that save confusion later:</p>
+  <ul class="diamond">
+    <li><strong>No LLM inside the defense.</strong> The only model in the picture is the <em>agent</em> on the harness side, which proposes the candidate actions AegisGraph judges.</li>
+    <li><strong>Nothing is trained.</strong> The project never fits weights for the defense.</li>
+  </ul>
+
+  <h3>The path of one request</h3>
+
+  <p>Five stages, left to right. Each has exactly one job.</p>
+
+  <figure class="diagram">
+    <svg viewBox="0 0 940 250" role="img" aria-label="Pipeline: wire request to sentinel parser to adapter to canonical contracts to engine and policy to response builder">
+      <defs>
+        <marker id="arw6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+      <g fill="none" stroke="currentColor" stroke-width="1.4">
+        <rect x="10" y="60" width="130" height="66" rx="8"/>
+        <rect x="172" y="60" width="150" height="66" rx="8"/>
+        <rect x="354" y="60" width="176" height="66" rx="8"/>
+        <rect x="562" y="60" width="160" height="66" rx="8"/>
+        <rect x="754" y="60" width="176" height="66" rx="8"/>
+        <line x1="140" y1="93" x2="166" y2="93" marker-end="url(#arw6)"/>
+        <line x1="322" y1="93" x2="348" y2="93" marker-end="url(#arw6)"/>
+        <line x1="530" y1="93" x2="556" y2="93" marker-end="url(#arw6)"/>
+        <line x1="722" y1="93" x2="748" y2="93" marker-end="url(#arw6)"/>
+      </g>
+      <g fill="currentColor" font-size="13" text-anchor="middle" font-family="inherit">
+        <text x="75" y="86">POST</text>
+        <text x="75" y="106">/v1/decision</text>
+        <text x="247" y="78">sentinel.py</text>
+        <text x="247" y="98" font-size="11">loose wire parse</text>
+        <text x="247" y="114" font-size="11">unknown fields dropped</text>
+        <text x="442" y="78">adapter.py</text>
+        <text x="442" y="98" font-size="11">resolve provenance,</text>
+        <text x="442" y="114" font-size="11">bound the evidence</text>
+        <text x="642" y="78">contracts.py</text>
+        <text x="642" y="98" font-size="11">strict canonical model</text>
+        <text x="642" y="114" font-size="11">frozen + bounded</text>
+        <text x="842" y="78">engine.py / policy.py</text>
+        <text x="842" y="98" font-size="11">deterministic rules</text>
+        <text x="842" y="114" font-size="11">then app.py serializes</text>
+        <text x="470" y="170" font-size="11">one decision per request — never an execution</text>
+      </g>
+    </svg>
+    <figcaption>The five stages of one decision. <code>sentinel.py</code> and <code>contracts.py</code> are two different model families for the same data; the adapter is the only bridge.</figcaption>
+  </figure>
+
+  <table class="data">
+    <thead>
+      <tr><th>Stage</th><th>File</th><th>Job</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Wire model</td><td><code>backend/aegisgraph/sentinel.py:159-224</code></td><td>The exact JSON the organizer harness sends and expects. Tolerant of unknown fields (<code>extra="ignore"</code>, <code>backend/aegisgraph/sentinel.py:50-52</code>) so next season's extra envelope field does not crash the defense.</td></tr>
+      <tr><td>Adapter</td><td><code>backend/aegisgraph/adapter.py:1</code>, imported at <code>backend/aegisgraph/engine.py:8</code></td><td>The only place that knows both vocabularies. The engine imports the adapter and never touches wire types directly.</td></tr>
+      <tr><td>Canonical model</td><td><code>backend/aegisgraph/contracts.py:97-99</code></td><td>Frozen, policy-neutral facts. Strict everywhere.</td></tr>
+      <tr><td>Rules</td><td><code>engine.py</code> / <code>policy.py</code></td><td>The decision pipeline — the subject of <a href="#ch-07">Chapter 7</a>.</td></tr>
+      <tr><td>HTTP boundary</td><td><code>backend/aegisgraph/app.py:30-108</code></td><td>Routes, security headers, generic errors, fail-closed fallback.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>The canonical action model</h3>
+
+  <p>The engine never reads JSON. It reads five small frozen classes in <code>contracts.py</code>. <strong>Frozen</strong> means you cannot change one after it is built — mutating it raises an error, and a test asserts it (<code>tests/test_contracts.py:30</code>, code reading).</p>
+
+  <h4>Four enums</h4>
+  <p>An <strong>enum</strong> is a fixed set of allowed strings. The <code>TrustLevel</code> ordering below is real: the class defines <code>&lt;</code> by declaration order (<code>backend/aegisgraph/contracts.py:59-64</code>), so the engine can ask "is this source less trusted than that sink?" with a plain comparison.</p>
+
+  <div class="table-scroll">
+    <table class="data">
+      <thead>
+        <tr><th>Enum</th><th>Values (in order)</th><th>Meaning</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Trust level<br><code>backend/aegisgraph/contracts.py:67-74</code></td>
+          <td><span class="trust">system_policy</span> → <span class="trust">authenticated_user</span> → <span class="trust">trusted_internal</span> → <span class="trust">untrusted_internal</span> → <span class="trust">untrusted_external</span> → <span class="trust">adversary_controlled</span></td>
+          <td>How much the system believes a piece of text. Most trusted first.</td>
+        </tr>
+        <tr>
+          <td>Sensitivity<br><code>backend/aegisgraph/contracts.py:76-81</code></td>
+          <td><code>public</code>, <code>internal</code>, <code>confidential</code>, <code>restricted</code></td>
+          <td>How damaging the data is if it moves somewhere it should not.</td>
+        </tr>
+        <tr>
+          <td>Action kind<br><code>backend/aegisgraph/contracts.py:83-88</code></td>
+          <td><code>respond</code>, <code>tool_call</code>, <code>memory_write</code>, <code>request_confirmation</code></td>
+          <td>What the agent proposes to do.</td>
+        </tr>
+        <tr>
+          <td>Verdict<br><code>backend/aegisgraph/contracts.py:90-95</code></td>
+          <td><span class="decision allow">allow</span>, <span class="decision block">block</span>, <span class="decision escalate">escalate</span>, <span class="decision rewrite">rewrite</span></td>
+          <td>What AegisGraph answers.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h4>The five classes</h4>
+  <ul class="diamond">
+    <li><strong><code>Observation</code></strong> (<code>backend/aegisgraph/contracts.py:101-108</code>) — one bounded piece of input plus its security labels.</li>
+    <li><strong><code>CandidateAction</code></strong> (<code>backend/aegisgraph/contracts.py:111-170</code>) — the proposed action.</li>
+    <li><strong><code>GuardRequest</code></strong> (<code>backend/aegisgraph/contracts.py:172-195</code>) — the complete engine input.</li>
+    <li><strong><code>GuardDecision</code></strong> (<code>backend/aegisgraph/contracts.py:198-233</code>) — the engine output.</li>
+    <li><strong><code>DecisionReceipt</code></strong> (<code>backend/aegisgraph/contracts.py:236-246</code>) — request id, digests, and the decision.</li>
+  </ul>
+
+  <div class="table-scroll">
+    <table class="data">
+      <thead>
+        <tr><th>Class</th><th>Field</th><th>Bound</th></tr>
+      </thead>
+      <tbody>
+        <tr><td rowspan="5"><code>Observation</code></td><td><code>kind</code></td><td>1–64 chars, <code>^[a-z][a-z0-9_]*$</code></td></tr>
+        <tr><td><code>content</code></td><td>≤ 16 000 chars (<code>MAX_CONTENT_CHARS</code>)</td></tr>
+        <tr><td><code>source</code></td><td>1–256 chars</td></tr>
+        <tr><td><code>trust_level</code></td><td>enum, required</td></tr>
+        <tr><td><code>sensitivity</code></td><td>enum, defaults to <code>internal</code></td></tr>
+        <tr><td rowspan="3"><code>GuardRequest</code></td><td><code>request_id</code></td><td>≤ 128 chars, <code>^[A-Za-z0-9][A-Za-z0-9._:-]*$</code></td></tr>
+        <tr><td><code>user_goal</code></td><td>non-empty, ≤ 16 000 chars</td></tr>
+        <tr><td><code>policy_context</code></td><td>≤ 16 384 bytes of JSON (<code>MAX_CONTEXT_BYTES</code>); observations ≤ 128</td></tr>
+        <tr><td rowspan="4"><code>GuardDecision</code></td><td><code>risk_score</code>, <code>confidence</code></td><td>each in <code>[0,1]</code></td></tr>
+        <tr><td><code>reason_codes</code></td><td>≤ 16, each <code>^[A-Z][A-Z0-9_]{1,63}$</code></td></tr>
+        <tr><td><code>explanation</code></td><td>≤ 500 chars</td></tr>
+        <tr><td><code>metadata</code></td><td>≤ 4 096 bytes; <code>rewritten_action</code> present iff verdict is <span class="decision rewrite">rewrite</span> (<code>backend/aegisgraph/contracts.py:228-233</code>)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Inside <code>CandidateAction</code>, argument values are deliberately flat — <code>str | int | float | bool | None</code> only, no nested objects or lists (<code>backend/aegisgraph/contracts.py:31</code>). The validator at <code>backend/aegisgraph/contracts.py:123-136</code> then enforces: at most <strong>32</strong> arguments; every key a Python identifier of ≤ 64 chars; every string value ≤ 8 000 chars (<code>MAX_ARGUMENT_CHARS</code>); every float finite (no <code>NaN</code>/<code>inf</code>).</p>
+
+  <p>A second validator, <code>_shape_matches_type</code> (<code>backend/aegisgraph/contracts.py:142-161</code>), enforces that the <em>shape</em> matches the <em>type</em>:</p>
+  <ul class="diamond">
+    <li><code>tool_call</code> needs <code>tool</code> and must not carry <code>content</code>.</li>
+    <li><code>respond</code> and <code>memory_write</code> need <code>content</code> and must not carry <code>tool</code>/<code>arguments</code>.</li>
+    <li><code>request_confirmation</code> must wrap a <code>tool_call</code> in <code>confirmation_for</code>.</li>
+    <li>Only <code>respond</code> may set <code>final=True</code>.</li>
+  </ul>
+
+  <h3>Why a second, stricter internal model</h3>
+
+  <p><code>contracts.py</code> and <code>sentinel.py</code> describe nearly the same four action types. Keeping both is intentional, because the two sides have <strong>opposite jobs</strong>.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>Wire model: forgiving</h4>
+      <p>The organizer can add a field next season; a defense that crashes on unknown fields would fail closed on every request. So the envelope, provenance records, conversation items, observation view and history digest all use <code>extra="ignore"</code> (<code>backend/aegisgraph/sentinel.py:50-52</code>). A test feeds in <code>future_envelope_field</code> and asserts it is dropped (<code>tests/test_sentinel_adapter.py:52-63</code>, code reading).</p>
+    </div>
+    <div class="card">
+      <h4>Two strict spots on the wire</h4>
+      <p><code>SentinelCandidateAction</code> — an unknown key inside the action is a hard error, not ignored (<code>backend/aegisgraph/sentinel.py:54-57</code>, test at <code>tests/test_sentinel_adapter.py:65-80</code>) — and <code>SentinelResponse</code> (<code>backend/aegisgraph/sentinel.py:188-191</code>).</p>
+    </div>
+    <div class="card">
+      <h4>Canonical model: strict everywhere</h4>
+      <p><code>backend/aegisgraph/contracts.py:97-99</code>. By the time the engine runs, every field it can read has been re-checked against canonical bounds. A value that passed the lenient wire parse is parsed <em>again</em> under the canonical rules, so a looser wire type can never smuggle a value the engine was not written to handle.</p>
+    </div>
+  </div>
+
+  <h4>Two fingerprints, on purpose</h4>
+
+  <p>The model can produce two different hashes of the same action, and the difference is a designed trade-off.</p>
+
+  <div class="table-scroll">
+    <table class="data">
+      <thead>
+        <tr><th>Digest</th><th>What it is for</th><th>What it normalizes away</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>action_digest</code><br><code>backend/aegisgraph/contracts.py:249-262</code></td>
+          <td>The <strong>confirmation digest</strong>: the protocol uses it to match a human approval to a later execution.</td>
+          <td>Argument keys sorted; whitespace inside strings collapsed; an integral float like <code>12.0</code> becomes <code>12</code>; <code>final</code> ignored.</td>
+        </tr>
+        <tr>
+          <td><code>exact_action_digest</code><br><code>backend/aegisgraph/contracts.py:265-285</code></td>
+          <td>The <strong>execution fingerprint</strong>: recovers the precision the protocol threw away, for audit.</td>
+          <td>Nothing — it keeps <code>final</code>, keeps raw argument text, and recurses into <code>confirmation_for</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>A test pins the normalization with an official golden vector: <code>{amount: 12.0, note: "a   b\n c"}</code> and <code>{amount: 12, note: "a b c"}</code> both hash to <code>2ce0b8de5d0b516fd176a716</code> (<code>tests/test_contracts.py:52</code>, <span class="pill">measured</span>). Another test shows a non-<code>final</code> and a <code>final</code> respond share an <code>action_digest</code> but differ under <code>execution_digest</code> (<code>tests/test_contracts.py:80</code>).</p>
+
+  <div class="callout">
+    <div class="callout-title">The practical trap</div>
+    <p>The normalization is lossy by design — it is what the protocol asked for. <span class="pill gold">[INFERENCE]</span> Anything that binds only <code>action_digest</code> inherits that loss: two genuinely different executions can share a confirmation signature. <code>exact_action_digest</code> exists to mitigate this, and the code comments the behaviour as intentional.</p>
+  </div>
+
+  <h3>Provenance resolution: where trust comes from</h3>
+
+  <p><strong>Provenance</strong> is the audit trail that says <em>where</em> a piece of text came from and <em>how much</em> it should be trusted. On the wire it is a list of records the request cites by id (<code>backend/aegisgraph/sentinel.py:123-125</code>). The adapter's central job is to turn each cited id into a trust label on an <code>Observation</code>, so the engine can later compare "untrusted content" against "trusted sink".</p>
+
+  <p>The adapter builds an index of provenance records once (<code>backend/aegisgraph/adapter.py:43-47</code>), then walks every conversation item plus the single <code>observation</code> through one function, <code>append_resolved</code> (<code>backend/aegisgraph/adapter.py:54-93</code>). Three cases matter.</p>
+
+  <div class="widget" data-widget="provenance-resolver"></div>
+
+  <h4>Case 1 — a cited id that resolves</h4>
+  <p>The item has <code>provenance_ids: ["prov-1"]</code>, and <code>prov-1</code> exists. The adapter copies the trust level and sensitivity <strong>verbatim from the wire record</strong> and mints an observation whose <code>source</code> is <code>&lt;id&gt;:&lt;source_type&gt;:&lt;source_id&gt;</code> (<code>backend/aegisgraph/adapter.py:83-93</code>).</p>
+  <p>Honesty note: nothing here verifies the declared label against the actual origin. <span class="pill gold">[INFERENCE]</span> The whole trust model rests on the harness honestly labelling its own sources. That is an assumption the design <em>chooses</em>, not a cryptographic guarantee.</p>
+
+  <h4>Case 2 — an id that is missing or duplicated</h4>
+  <p>If the cited id is not in the index, <code>records.get(identifier)</code> returns <code>None</code>, the adapter marks the whole request <strong>incomplete</strong> (<code>complete = False</code>), and it emits an observation labelled <code>source="unresolved:&lt;id&gt;"</code>, <code>trust_level=adversary_controlled</code>, <code>sensitivity=restricted</code> (<code>backend/aegisgraph/adapter.py:75-80</code>, helper at <code>backend/aegisgraph/adapter.py:151-159</code>). The engine then returns a <span class="decision block">block</span> with <span class="reason">PROVENANCE_INCOMPLETE</span> (<code>backend/aegisgraph/engine.py:467-468</code>), <em>regardless</em> of what the candidate action was.</p>
+  <p>Duplicates take the same path: the index is built with <code>records[record.id] = None if record.id in records else record</code> (<code>backend/aegisgraph/adapter.py:47</code>), so a repeated id overwrites the real record with <code>None</code> and any later citation of it is treated as unresolved. <span class="pill gold">[INFERENCE]</span> Fail-closed, but the first record is silently discarded and no error names the duplicate — the id simply becomes indistinguishable from "never declared".</p>
+
+  <h4>Case 3 — no ids, and the implicit-trust rule</h4>
+  <p>This is the case worth slowing down for. If a conversation item carries <strong>no</strong> <code>provenance_ids</code>, the adapter does not mark it unresolved. It looks at the item's <code>role</code> and mints a label (<code>backend/aegisgraph/adapter.py:56-67</code>).</p>
+
+  <div class="table-scroll">
+    <table class="data">
+      <thead>
+        <tr><th>Role, with no ids</th><th>Resulting trust</th><th><code>source</code> string</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>user</code></td><td><span class="trust">authenticated_user</span></td><td><code>implicit:user</code></td></tr>
+        <tr><td><code>agent</code>, <code>safety</code>, <code>human</code></td><td><span class="trust">trusted_internal</span></td><td><code>implicit:&lt;role&gt;</code></td></tr>
+        <tr><td>anything else (<code>tool</code>, <code>memory</code>, observation)</td><td><span class="trust">untrusted_internal</span></td><td><code>unattributed:&lt;role&gt;</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>The contrast <em>is</em> the finding. An <em>explicit</em> id that fails to resolve becomes <span class="trust">adversary_controlled</span> and blocks the request. An item that simply <em>omits</em> its ids can be auto-promoted to <span class="trust">authenticated_user</span> — and the omission is <strong>not</strong> recorded as incomplete.</p>
+
+  <div class="callout">
+    <div class="callout-title">Audit finding: trust is self-asserted in this path</div>
+    <ul class="diamond">
+      <li>The wire client chooses the <code>role</code> (<code>backend/aegisgraph/sentinel.py:129</code>) <em>and</em> chooses whether to include <code>provenance_ids</code>.</li>
+      <li>So a client can present attacker-influenced text under <code>role="user"</code> with no ids and have it trusted as if a real authenticated user wrote it (<code>backend/aegisgraph/adapter.py:55-68</code>).</li>
+      <li>The code's docstring frames the intent as deliberate — evidence supplied without provenance identifiers "remains usable but is marked unattributed and untrusted rather than being confused with a broken integrity reference" (<code>backend/aegisgraph/adapter.py:40-43</code>). That holds for the <code>tool</code>/<code>memory</code> branch, but the <code>user</code>/<code>agent</code>/<code>safety</code>/<code>human</code> branch does the opposite of "untrusted": it <em>widens</em> trust.</li>
+      <li><span class="pill gold">[INFERENCE]</span> Likely rationale: a legitimate harness always labels turn text as <code>user</code>. The cost is that the defense cannot distinguish a well-labelled turn from a self-labelled attack.</li>
+    </ul>
+  </div>
+
+  <h4>Everything else the adapter decides</h4>
+  <p>Beyond the three cases, <code>adapt_request</code> also (<code>backend/aegisgraph/adapter.py:107-134</code>):</p>
+  <ul class="diamond">
+    <li>Computes <code>least_trust</code> and <code>max_sensitivity</code> across all observations — defaults <code>authenticated_user</code> / <code>internal</code> when there are none (<code>backend/aegisgraph/adapter.py:107-116</code>). These become the <code>metadata</code> on the response.</li>
+    <li>Derives a canonical <code>request_id</code> as <code>"request:" + sha256(run_id + "\x00" + step_id)[:32]</code> (<code>backend/aegisgraph/adapter.py:120</code>, helper at <code>backend/aegisgraph/adapter.py:178-181</code>).</li>
+    <li>Replaces an empty <code>user_goal</code> with the literal <code>"Unspecified user goal"</code> (<code>backend/aegisgraph/adapter.py:121</code>). The wire model permits an empty goal; the canonical model requires non-empty (<code>backend/aegisgraph/sentinel.py:164</code> vs <code>backend/aegisgraph/contracts.py:180</code>), so the mismatch is smoothed over rather than rejected.</li>
+    <li>Normalizes <code>kind</code> to fit the canonical pattern with <code>_safe_kind</code> (<code>backend/aegisgraph/adapter.py:171-176</code>): lowercase, non-conforming characters become <code>_</code>, truncate to 64. <span class="pill gold">[INFERENCE]</span> This is lossy — two distinct wire <code>kind</code> values could collapse into one canonical value, with no collision check.</li>
+    <li>Compacts any <code>source</code> string longer than 256 chars into <code>source:&lt;sha256&gt;</code> (<code>backend/aegisgraph/adapter.py:183-187</code>).</li>
+  </ul>
+
+  <h3>Bounded, fail-closed I/O</h3>
+
+  <p><strong>Fail closed</strong> means: when something is wrong or unknown, the system picks the <em>safe</em> outcome (<span class="decision block">block</span>), never the permissive one (<span class="decision allow">allow</span>). AegisGraph applies this at several layers.</p>
+
+  <h4>Field caps</h4>
+  <p>Every string, map and list a request can carry has a ceiling (<code>backend/aegisgraph/contracts.py:25-29</code>; wire mirrors at <code>backend/aegisgraph/sentinel.py:54-108</code>, <code>backend/aegisgraph/sentinel.py:176-181</code>).</p>
+  <div class="table-scroll">
+    <table class="data">
+      <thead>
+        <tr><th>Item</th><th>Cap</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Content (message, observation, action)</td><td>16 000 chars</td></tr>
+        <tr><td>One argument value</td><td>8 000 chars</td></tr>
+        <tr><td>Argument count</td><td>32</td></tr>
+        <tr><td>Argument key</td><td>≤ 64 chars, identifier-shaped</td></tr>
+        <tr><td>Tool name</td><td>2–64 chars</td></tr>
+        <tr><td><code>policy_context</code></td><td>16 384 bytes</td></tr>
+        <tr><td><code>reason_codes</code> (out)</td><td>≤ 16</td></tr>
+        <tr><td><code>explanation</code> (out)</td><td>≤ 500 chars</td></tr>
+        <tr><td><code>metadata</code> (out)</td><td>≤ 4 096 bytes</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h4>The 128-observation truncation</h4>
+  <p>A request can carry many conversation items and each may cite several provenance ids, so the observation count can exceed the canonical cap of 128. The adapter does not reject — it <em>selects</em>. <code>_select_security_relevant_observations</code> (<code>backend/aegisgraph/adapter.py:190-206</code>) ranks observations by <code>(-trust_index, -sensitivity_index, original_index)</code>, keeps the 128 <strong>least trusted and most sensitive</strong>, then restores their original order. When it must drop evidence, it drops the <em>benign</em> evidence and keeps the <em>suspicious</em> evidence.</p>
+  <p>"Keeps the suspicious ones" is a heuristic, not a proof. <span class="pill gold">[INFERENCE]</span> A benign-but-relevant item can vanish, and the only trace left is the boolean <code>evidence_truncated = len(observations) &gt; 128</code> (<code>backend/aegisgraph/adapter.py:133</code>). The engine consumes that flag as a <span class="decision block">block</span> with <span class="reason">EVIDENCE_TRUNCATED</span> (<code>backend/aegisgraph/engine.py:471-472</code>).</p>
+
+  <h4>Generic error bodies</h4>
+  <p>Malformed input never leaks field names or values. The app installs a handler that turns any request-validation error into the constant body <code>{"detail": "Invalid SENTINEL request"}</code> with status 422 (<code>backend/aegisgraph/app.py:65-67</code>), and routing errors into either that constant or <code>{"detail": "Request could not be safely processed"}</code> with the original status (<code>backend/aegisgraph/app.py:70-75</code>). A test plants a secret in a bad request and asserts it does not come back (<code>tests/test_http_service.py:110</code>, code reading).</p>
+
+  <h4>The 64 KB response cap with a block fallback</h4>
+  <p>After a decision is built, the app serializes it and checks the byte length against <code>_MAX_RESPONSE_BYTES = 64_000</code> (<code>backend/aegisgraph/app.py:20</code>, <code>backend/aegisgraph/app.py:91-92</code>). It is reachable in principle, because a <span class="decision rewrite">rewrite</span> can carry a <code>tool_call</code> with 32 arguments of 8 000 characters each. If the response is too large, it is <strong>not</strong> sent.</p>
+  <p>Instead, <em>any</em> exception while building or validating the response falls into one catch-all returning HTTP 200 with a fixed <span class="decision block">block</span> (<code>backend/aegisgraph/app.py:94-105</code>): <code>risk_score = 1.0</code>, <code>confidence = 1.0</code>, <code>reason_codes = ("INTERNAL_EVALUATION_FAILED",)</code>. The comment states the invariant directly: "A valid request reaching policy must never become an allow on an error" (<code>backend/aegisgraph/app.py:96</code>).</p>
+  <p>The same bound appears on the organizer side — the harness treats a body over 64 000 bytes as a defense failure (<code>.sentinel_reference/src/sentinel/defenses/client.py:14,78</code>), so the two ends agree.</p>
+
+  <h3>The service surface</h3>
+
+  <p>The entire HTTP surface is one 116-line file (<code>app.py</code>).</p>
+
+  <div class="table-scroll">
+    <table class="data">
+      <thead>
+        <tr><th>Route</th><th>Method</th><th>Meaning</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>/</code></td><td>GET</td><td>The local dashboard (a static HTML file).</td></tr>
+        <tr><td><code>/assets/...</code></td><td>static</td><td>Dashboard JS/CSS.</td></tr>
+        <tr><td><code>/healthz</code></td><td>GET</td><td>Liveness only, returns <code>{"status": "ok"}</code>; does not touch the engine (<code>backend/aegisgraph/app.py:78-80</code>).</td></tr>
+        <tr><td><code>/v1/decision</code></td><td>POST</td><td>One decision (<code>backend/aegisgraph/app.py:83-108</code>).</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Each design choice has a reason:</p>
+  <ul class="diamond">
+    <li><strong>No authentication.</strong> No API key, session, or auth middleware anywhere in the package. This is documented, not hidden: the README says the service "has no authentication by default and must not be exposed directly to an untrusted network" (<code>README.md:155-157</code>) and to "keep it bound to localhost" (<code>README.md:134</code>). It is a local prototype by intent.</li>
+    <li><strong>Local-only binding.</strong> The documented run command binds loopback explicitly: <code>--host 127.0.0.1 --port 8080</code> (<code>README.md:125</code>).</li>
+    <li><strong>Docs disabled.</strong> <code>docs_url=None, redoc_url=None, openapi_url=None</code> (<code>backend/aegisgraph/app.py:30-35</code>), so <code>/docs</code> and <code>/openapi.json</code> return 404 — asserted in <code>tests/test_http_service.py:40-46</code>.</li>
+    <li><strong>Security headers.</strong> Every response gets <code>Cache-Control: no-store</code>, <code>Pragma: no-cache</code>, <code>X-Content-Type-Options: nosniff</code> (<code>backend/aegisgraph/app.py:57-59</code>); the HTML asset additionally gets a strict <code>Content-Security-Policy</code> including <code>connect-src 'none'</code> (<code>backend/aegisgraph/app.py:24-28</code>, <code>backend/aegisgraph/app.py:60-61</code>).</li>
+    <li><strong>Client-side-only dashboard.</strong> It reads files you pick and never uploads them (<code>static/index.html:36</code>), has hard limits of 25 MiB per file and 100 000 events (<code>static/dashboard.js:4-5</code>), and persists nothing.</li>
+  </ul>
+
+  <h4>Two places where docs and code disagree</h4>
+  <p>"Documented prototype" and "documented prototype with a footgun" are different things, so both are stated plainly.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>1. The Docker port publish contradicts the localhost rule</h4>
+      <p>The README tells you to keep the unauthenticated service bound to localhost (<code>README.md:134</code>), then a few paragraphs later gives <code>docker run ... -p 8080:8080</code> (<code>README.md:168</code>). <code>-p 8080:8080</code> publishes the port on <strong>all</strong> host interfaces, not just loopback. With no authentication, that is the one concrete deployment mistake in the packaging. The fix is <code>-p 127.0.0.1:8080:8080</code>. <span class="pill gold">[INFERENCE]</span> This is a documentation defect, not a code defect — the app cannot control how a container is published.</p>
+    </div>
+    <div class="card">
+      <h4>2. No HTTP-layer request-body cap</h4>
+      <p>Per-field pydantic bounds exist, but nothing inspects <code>Content-Length</code> and no middleware limits the body. A worst-case accepted body is roughly 256 conversation items × 16 000 chars plus provenance and context — on the order of a few megabytes, buffered in full before validation. <span class="pill gold">[INFERENCE]</span> A single large POST can pin memory; no test covers it.</p>
+    </div>
+  </div>
+  <p>Neither is a hidden vulnerability; both are places where the code is looser than the prose implies. Naming them is the honest move.</p>
+
+  <h3>Why this design is auditable</h3>
+
+  <p>The architecture is deliberately boring, and boring is what you want from a security component you must defend to a jury.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>Purity and determinism</h4>
+      <p>The decision path holds no server-side state: no session, no cache, no run store, nothing written to disk. Each request is evaluated independently. Combined with rule-based (not model-based) policy, that gives "same request in, same decision out". <span class="pill gold">[INFERENCE]</span> Statelessness is a structural fact (no module-level mutable state in <code>engine.py</code>/<code>policy.py</code>/<code>adapter.py</code>), though no test asserts it.</p>
+    </div>
+    <div class="card">
+      <h4>Explicit reason codes</h4>
+      <p>Every verdict carries machine-readable <code>reason_codes</code> in a fixed UPPER_SNAKE vocabulary, so a reviewer can tell <em>why</em> without reading the explanation text. The vocabulary is defined by a single pattern, so a stray free-text code becomes a validation failure rather than a leak.</p>
+    </div>
+    <div class="card">
+      <h4>Hashes that pin the revision</h4>
+      <p>The canonical request id is a content hash of <code>run_id</code> and <code>step_id</code> (<code>backend/aegisgraph/adapter.py:178-181</code>), and the two action digests bind the exact action semantics. Together with the evaluator's own deterministic digest, these let you prove which revision produced a given measured result — which is why <a href="#ch-08">Chapter 8</a> can talk about "the v5 revision" and mean one specific artifact.</p>
+    </div>
+  </div>
+
+  <p>That is the through-line for the rest of the course: a small transparent pipeline (this chapter), a rules engine with explicit reason codes (<a href="#ch-07">Chapter 7</a>), and evidence that pins exactly what was measured (<a href="#ch-08">Chapter 8</a>).</p>
+
+  <h3>Check yourself</h3>
+
+  <details class="qa">
+    <summary>In one sentence, what does AegisGraph return for each candidate action, and what does it never do?</summary>
+    <div class="qa-answer">It returns exactly one of <span class="decision allow">allow</span>, <span class="decision block">block</span>, <span class="decision escalate">escalate</span>, <span class="decision rewrite">rewrite</span> for the proposed action; it never executes that action (<code>backend/aegisgraph/app.py:85</code>).</div>
+  </details>
+
+  <details class="qa">
+    <summary>Why keep a separate canonical model in <code>contracts.py</code> instead of trusting the wire types in <code>sentinel.py</code>?</summary>
+    <div class="qa-answer">The wire model must be forgiving (<code>extra="ignore"</code>) for forward compatibility, while the canonical model is strict and bounded everywhere (<code>backend/aegisgraph/contracts.py:97-99</code>). Re-validating into canonical types means the engine only ever reads fields that passed the strict bounds, and the engine stays free of wire coupling.</div>
+  </details>
+
+  <details class="qa">
+    <summary>A request cites <code>provenance_ids: ["prov-x"]</code> and <code>prov-x</code> is not in <code>provenance</code>. What trust does the observation get, and what does the engine do?</summary>
+    <div class="qa-answer">The observation is labelled <code>unresolved:prov-x</code>, <span class="trust">adversary_controlled</span>, <code>restricted</code>, and the request is marked incomplete (<code>backend/aegisgraph/adapter.py:75-80</code>); the engine returns a <span class="decision block">block</span> with <span class="reason">PROVENANCE_INCOMPLETE</span> (<code>backend/aegisgraph/engine.py:467-468</code>).</div>
+  </details>
+
+  <details class="qa">
+    <summary>Now the same request cites no ids at all, with <code>role="user"</code>. What changes?</summary>
+    <div class="qa-answer">The observation is labelled <code>implicit:user</code> with trust <span class="trust">authenticated_user</span> and is <em>not</em> marked incomplete (<code>backend/aegisgraph/adapter.py:56-67</code>). This is the trust-widening finding: the client chose both the role and the omission, so the trust is self-asserted.</div>
+  </details>
+
+  <details class="qa">
+    <summary>What does the 128-observation truncation keep, and what flag does it set?</summary>
+    <div class="qa-answer">It keeps the 128 least-trusted, most-sensitive observations, re-sorted to their original order (<code>backend/aegisgraph/adapter.py:190-206</code>), and sets <code>evidence_truncated = True</code> when observations exceeded 128 (<code>backend/aegisgraph/adapter.py:133</code>). The engine then blocks with <span class="reason">EVIDENCE_TRUNCATED</span> (<code>backend/aegisgraph/engine.py:471-472</code>).</div>
+  </details>
+
+  <details class="qa">
+    <summary>A <span class="decision rewrite">rewrite</span> decision would produce a response larger than 64 KB. What is sent?</summary>
+    <div class="qa-answer">Not the oversized response: the size check raises (<code>backend/aegisgraph/app.py:91-92</code>) and the endpoint returns a fixed HTTP 200 <span class="decision block">block</span> with <code>risk_score = 1.0</code>, <code>confidence = 1.0</code>, <span class="reason">INTERNAL_EVALUATION_FAILED</span> (<code>backend/aegisgraph/app.py:94-105</code>).</div>
+  </details>
+
+  <details class="qa">
+    <summary>Why are <code>action_digest</code> and <code>exact_action_digest</code> different?</summary>
+    <div class="qa-answer"><code>action_digest</code> is the protocol's confirmation digest and normalizes whitespace, integral floats and ignores <code>final</code> (<code>backend/aegisgraph/contracts.py:249-262</code>, <code>backend/aegisgraph/contracts.py:287-292</code>); <code>exact_action_digest</code> keeps those distinctions so a confirmation signature can never stand in for an exact execution fingerprint (<code>backend/aegisgraph/contracts.py:265-285</code>).</div>
+  </details>
+</section>

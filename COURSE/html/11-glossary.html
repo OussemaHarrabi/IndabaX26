@@ -1,0 +1,63 @@
+<section class="chapter" id="ch-11" data-title="11 · Glossary">
+  <h2 class="chapter-title">Glossary</h2>
+
+  <p class="lead">Every term this course uses, defined once, with the place in the code where you meet it. Terms are listed in the order you encounter them.</p>
+
+  <div class="table-scroll">
+  <table class="data">
+    <thead><tr><th>Term</th><th>Meaning</th><th>Where you meet it</th><th>Ch.</th></tr></thead>
+    <tbody>
+      <tr><td><strong>agent</strong></td><td>A loop that asks a model for an action, executes it with tools, feeds the result back, and repeats. In SENTINEL the model is Qwen3-8B and the loop is the starter kit's reference agent.</td><td><code>.sentinel_reference/src/sentinel/agent/reference.py</code></td><td>1, 3</td></tr>
+      <tr><td><strong>candidate action</strong></td><td>The single action proposed at one step, before anything executes: a tool call, a reply, or a memory write. The defence sees exactly this one action, never a plan.</td><td><code>.sentinel_reference/src/sentinel/core/actions.py</code></td><td>3</td></tr>
+      <tr><td><strong>action-level mediation</strong></td><td>The security pattern of putting a decision point between the agent and its tools so every action is checked before it takes effect. AegisGraph is this component.</td><td><code>backend/aegisgraph/engine.py:462-548</code></td><td>1, 6</td></tr>
+      <tr><td><strong>defence / gateway</strong></td><td>The component under test that returns a decision for each candidate action. It never executes the action it judges.</td><td><code>backend/aegisgraph/sentinel.py</code></td><td>3, 6</td></tr>
+      <tr><td><strong>decision</strong></td><td>Exactly one of four verbs: <span class="decision allow">allow</span>, <span class="decision block">block</span>, <span class="decision escalate">escalate</span> (ask a simulated human), <span class="decision rewrite">rewrite</span> (substitute a safer action).</td><td><code>backend/aegisgraph/contracts.py</code></td><td>2, 7</td></tr>
+      <tr><td><strong>reason code</strong></td><td>An <code>UPPER_SNAKE_CASE</code> label explaining a decision, at most 16 per decision. AegisGraph defines about thirty across the pipeline.</td><td>each gate in <code>engine.py</code></td><td>7</td></tr>
+      <tr><td><strong>risk score / confidence</strong></td><td>Two numbers in [0,1] accompanying a decision. In AegisGraph they are fixed literals chosen per gate, not computed probabilities.</td><td><code>backend/aegisgraph/engine.py:1107</code></td><td>7, 9</td></tr>
+      <tr><td><strong>provenance</strong></td><td>The record of where a piece of text came from: source type, origin actor, retrieval path, timestamp, and how much it can be trusted.</td><td><code>backend/aegisgraph/adapter.py:55-91</code></td><td>1, 3, 6</td></tr>
+      <tr><td><strong>trust level</strong></td><td>An ordered label: <span class="trust">system_policy</span> &gt; <span class="trust">authenticated_user</span> &gt; <span class="trust">trusted_internal</span> &gt; <span class="trust">untrusted_internal</span> &gt; <span class="trust">untrusted_external</span> &gt; <span class="trust">adversary_controlled</span>.</td><td><code>.sentinel_reference/src/sentinel/core/provenance.py</code></td><td>1, 3</td></tr>
+      <tr><td><strong>sensitivity</strong></td><td>A separate axis describing how damaging disclosure would be: <code>public</code>, <code>internal</code>, <code>confidential</code>, <code>restricted</code>.</td><td><code>.sentinel_reference/src/sentinel/core/provenance.py</code></td><td>1, 3</td></tr>
+      <tr><td><strong>taint / trust inheritance</strong></td><td>Text keeps the lowest trust it has touched. A memory entry written after reading untrusted content stays untrusted when recalled.</td><td><code>.sentinel_reference/src/sentinel/agent/reference.py:196-236</code></td><td>1, 3</td></tr>
+      <tr><td><strong>canary</strong></td><td>A synthetic secret the benchmark generates per run and plants in fixtures. Any appearance at a destination its tags do not allow is a data-flow violation.</td><td><code>.sentinel_reference/src/sentinel/core/canary.py</code></td><td>3, 4</td></tr>
+      <tr><td><strong>sink / destination</strong></td><td>Anywhere data can end up: a tool argument, a record field, an email recipient, the final answer.</td><td><code>.sentinel_reference/src/sentinel/domains/*/tools.py</code></td><td>1, 4</td></tr>
+      <tr><td><strong>exfiltration</strong></td><td>Moving sensitive data to a sink whose destination the data's tags do not permit. The dominant harm in this benchmark.</td><td><code>.sentinel_reference/src/sentinel/evaluator/leakage.py</code></td><td>4, 7</td></tr>
+      <tr><td><strong>prompt injection — direct</strong></td><td>The user's own turn asks for something outside policy, e.g. "give me the vault token".</td><td><code>scenarios/public/enterprise/enterprise_direct_token_request.yaml</code></td><td>1, 4</td></tr>
+      <tr><td><strong>prompt injection — indirect</strong></td><td>Hostile text arrives inside content the agent reads while doing legitimate work: a ticket comment, a document body, a log line, vendor email.</td><td><code>scenarios/public/soc/soc_hostile_log_text.yaml</code></td><td>1, 4</td></tr>
+      <tr><td><strong>memory poisoning</strong></td><td>Writing a hostile instruction into the agent's memory so it is recalled — and obeyed — in a later turn.</td><td><code>scenarios/public/enterprise/enterprise_memory_poison.yaml</code></td><td>4</td></tr>
+      <tr><td><strong>fail-closed / fail-open</strong></td><td>What the harness does when the defence errors, times out or returns nonsense. SENTINEL defaults to fail-closed: the action is blocked.</td><td><code>.sentinel_reference/src/sentinel/defenses/client.py:21-89</code></td><td>3</td></tr>
+      <tr><td><strong>reachability control</strong></td><td>The organiser's mandatory check: run the attack with the do-nothing defence first. If it does not succeed undefended, it never reached the agent and any defended result is meaningless.</td><td><code>.sentinel_reference/docs/participant-guide.md:65-72</code></td><td>2, 8</td></tr>
+      <tr><td><strong>ASR</strong></td><td>Attack success rate: attack scenarios that succeeded ÷ attack scenarios. Lower is better. Headline here: 0 of 22 reached attacks.</td><td><code>.sentinel_reference/src/sentinel/evaluator/metrics.py</code></td><td>2, 8</td></tr>
+      <tr><td><strong>BTU</strong></td><td>Benign task utility: benign scenarios whose success conditions all pass ÷ benign scenarios. Higher is better. Here: 4/9 versus 5/9 undefended.</td><td>same</td><td>2, 8</td></tr>
+      <tr><td><strong>FBR</strong></td><td>False block rate: legitimate actions blocked (or escalated and denied) ÷ legitimate actions. Here: 0.86 % for v5.</td><td>same</td><td>2, 8</td></tr>
+      <tr><td><strong>DFI / TUI / CVR / UER</strong></td><td>Data-flow integrity, tool-use integrity, critical violation rate, unnecessary escalation rate — secondary metrics over the same finding stream.</td><td>same</td><td>2, 8</td></tr>
+      <tr><td><strong>Brier score / ECE</strong></td><td>Calibration metrics comparing a reported risk against a label. Only meaningful if the risk is a real estimate — see finding F5.</td><td><code>.sentinel_reference/src/sentinel/evaluator/metrics.py</code></td><td>8, 9</td></tr>
+      <tr><td><strong>intent envelope</strong></td><td>AegisGraph's representation of what the authenticated user actually asked for, derived from the goal text, used to decide whether an action the goal supports may proceed despite untrusted text.</td><td><code>backend/aegisgraph/engine.py:804-887</code></td><td>7</td></tr>
+      <tr><td><strong>redaction</strong></td><td>Replacing a detected secret inside an action with the literal <code>[REDACTED]</code>, then re-validating the replacement.</td><td><code>backend/aegisgraph/engine.py:586-610</code></td><td>7</td></tr>
+      <tr><td><strong>rewrite</strong></td><td>Substituting a safer action (for example <code>email_send</code> → <code>email_draft</code>). The harness executes the rewritten action instead of the original; a rewrite may not make a non-final action final and may not name an unknown tool.</td><td><code>.sentinel_reference/src/sentinel/agent/reference.py:314-341</code></td><td>3, 7</td></tr>
+      <tr><td><strong>false positive / false negative</strong></td><td>A legitimate action blocked or escalated (costs utility and precision points) versus an attack allowed (costs the point of the exercise).</td><td>measured in <code>evaluation/</code></td><td>1, 5</td></tr>
+      <tr><td><strong>hard negative</strong></td><td>A benign scenario deliberately full of security vocabulary — a fraud-awareness note, a security digest — to punish keyword-based defences.</td><td><code>scenarios/public/finance/finance_fraud_awareness_note.yaml</code></td><td>4, 5</td></tr>
+      <tr><td><strong>mock model vs real Qwen3-8B</strong></td><td><code>--model mock</code> is a deterministic plan-driven stand-in used to iterate without a GPU; it never paraphrases, so its numbers are optimistic. Every number in this course is labelled with which one produced it.</td><td><code>.sentinel_reference/src/sentinel/models/</code></td><td>3, 8</td></tr>
+      <tr><td><strong>deterministic digest</strong></td><td>A SHA-256 over a scorecard's outcomes and metrics with latency removed, so identical inputs give an identical digest. Used to pin evidence.</td><td><code>sentinel eval</code> output</td><td>8</td></tr>
+      <tr><td><strong>scope of a decision</strong></td><td>What the defence may use: agent state, candidate action, provenance, active policy, observed content. Scenario ids, filenames and expected outcomes are forbidden inputs and disqualify a decision.</td><td><code>.sentinel_reference/docs/participant-guide.md</code></td><td>2, 9</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Check yourself</h3>
+  <details class="qa">
+    <summary>Trust level and sensitivity — what is the difference?</summary>
+    <div class="qa-answer">Trust is about <em>who could have written this</em> (can the text steer the agent?); sensitivity is about <em>how bad disclosure would be</em>. A vendor email is low-trust but may contain a high-sensitivity token — the two axes move independently.</div>
+  </details>
+  <details class="qa">
+    <summary>Why does "untrusted" not mean "ignore"?</summary>
+    <div class="qa-answer">Most legitimate work requires reading untrusted text: vendor mail, logs, ticket comments. A defence that refuses to touch untrusted content destroys utility — which is exactly what the benchmark's benign scenarios measure.</div>
+  </details>
+  <details class="qa">
+    <summary>What is a canary, and why can you not just hide the secret?</summary>
+    <div class="qa-answer">A canary is a synthetic secret generated per run and planted in fixtures. Leak detection scans for it in plain, URL-encoded, base64, hex, rot13 and reversed forms, so transforming the value does not hide it.</div>
+  </details>
+  <details class="qa">
+    <summary>What does the reachability control protect against?</summary>
+    <div class="qa-answer">Self-deception. If an attack does not succeed with no defence installed, the payload never reached the agent, and a defended zero for that scenario proves nothing about the defence.</div>
+  </details>
+</section>

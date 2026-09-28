@@ -9,6 +9,12 @@ the release branch restored identical defense files after reverting a later,
 unmeasured experiment. The pinned benchmark is
 `Skan22/Sentinel_Starter_Kit@dd2e5fe0979d0781a4bfe6d0849cd80cf69ef4a2`.
 
+## Interactive course (new)
+
+[`COURSE/aegisgraph-course.html`](COURSE/aegisgraph-course.html) is a self-contained, offline, single-file course that explains this defence from first principles: the attack model, the 40-scenario library, the decision kernel gate by gate, the measured evidence, an independent audit of this repository (14 findings, two of them demonstrated live against the running service), and eight runnable labs.
+
+Open it by double-clicking the file — no server, no network, no dependencies; it also prints cleanly to PDF. The Markdown source of every chapter is in [`COURSE/`](COURSE/), the audit's raw research notes are in `COURSE/notes/`, and `COURSE/html/build.py` regenerates the HTML from the chapter fragments.
+
 ## Judge's quick path
 
 1. Read the report's abstract, results, ablation, and failure-analysis sections.

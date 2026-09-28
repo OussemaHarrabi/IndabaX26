@@ -1,0 +1,182 @@
+<section class="chapter" id="ch-09" data-title="9 · Audit findings and the honest verdict">
+  <h2 class="chapter-title">Audit findings and the honest verdict</h2>
+
+  <p class="lead">This chapter is the audit: what was independently verified, what is fragile, what it costs, what to fix first — and a straight answer to "can this win?".</p>
+
+  <h3>How the audit was done</h3>
+  <ol class="steps">
+    <li><strong>Recomputed the evidence.</strong> Every metric key and per-domain slice of all ten scorecards was recomputed from the raw <code>outcomes[]</code> arrays without using the project's own metric code.</li>
+    <li><strong>Re-hashed the artifacts.</strong> All fourteen claimed SHA-256 digests were recomputed from the bytes on disk, and the evaluator's deterministic digest algorithm was reimplemented from its description.</li>
+    <li><strong>Re-read the implementation</strong> — every code claim below carries an anchor that was opened and checked.</li>
+    <li><strong>Re-ran the greps</strong> behind the project's strongest honesty claim (no scenario-id-specific decisions) and behind several "dead code" findings.</li>
+    <li><strong>Ran the service and attacked it</strong> with hand-written requests, which produced the two findings marked "demonstrated live".</li>
+  </ol>
+  <p>Severity below: <span class="pill gold">S1</span> breaks a claim or leaves a real bypass; <span class="pill">S2</span> costs rubric points, misleads a reader, or blocks reproducibility; <span class="pill">S3</span> hygiene.</p>
+
+  <h3>What is verified and solid</h3>
+  <div class="table-scroll">
+  <table class="data">
+    <thead><tr><th>Claim</th><th>How it was checked</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td>v5 stops every attack a real model reaches: 0 of 22</td><td>reached set recomputed from the allow-all run; v5 outcomes recomputed</td><td class="ok">exact match</td></tr>
+      <tr><td>Undefended baseline succeeds 22 of 22 reached (0.7097 over 31)</td><td>recomputed from <code>evaluation/real-qwen/allow-all-qwen3-8b.json</code></td><td class="ok">exact match</td></tr>
+      <tr><td>All 18 metric keys and per-domain slices, all ten scorecards</td><td>recomputed independently</td><td class="ok">zero mismatches</td></tr>
+      <tr><td>All 14 SHA-256 digests</td><td>recomputed with a hashing tool</td><td class="ok">byte-for-byte</td></tr>
+      <tr><td>189 decisions = 113 allow / 16 rewrite / 59 block / 1 escalate, zero defence errors</td><td>counted from the v5 evidence archive</td><td class="ok">exact match</td></tr>
+      <tr><td>No scenario-id-specific decisions</td><td>grep for true scenario ids across <code>backend/</code>: zero hits</td><td class="ok">claim holds</td></tr>
+      <tr><td>Deterministic, stateless decision path</td><td>code reading: no caches or counters; a test asserts identical decisions</td><td class="ok">holds</td></tr>
+      <tr><td>Documentation is honest about limits</td><td><code>eligible=false</code> stated, mock vs real labelled, failure analysis names the surviving laundering case</td><td class="ok">holds</td></tr>
+      <tr><td>Project test suite</td><td>run during this audit on the published tree</td><td class="ok">187 passed</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="callout">
+    <div class="callout-title">The short version</div>
+    <p>The arithmetic and the artifact discipline of this project are trustworthy. The weaknesses are in coverage, trust assumptions and release polish — not in the numbers you would quote.</p>
+  </div>
+
+  <h3>Findings register</h3>
+  <div class="table-scroll">
+  <table class="data">
+    <thead><tr><th>ID</th><th>Sev</th><th>Area</th><th>Finding</th></tr></thead>
+    <tbody>
+      <tr><td>F1</td><td><span class="pill gold">S1</span></td><td>trust model</td><td>A conversation item on a trusted role (<code>user</code>/<code>agent</code>/<code>safety</code>/<code>human</code>) that cites no provenance ids is silently trusted as authenticated-user/internal, with <code>provenance_complete</code> left true. <strong>Demonstrated live.</strong> <code>backend/aegisgraph/adapter.py:55-68</code></td></tr>
+      <tr><td>F2</td><td><span class="pill">S2</span></td><td>duplicate guard</td><td><code>validate_rewrite()</code> is called only from tests, so its codes (<code>UNSAFE_REWRITE</code>, the <code>REWRITE_*</code> family) cannot fire in production. The codes that <em>do</em> fire come from the engine's internal revalidation. Any statement that "all rewrite codes are dead" is false. <code>backend/aegisgraph/engine.py:371-459</code> vs <code>backend/aegisgraph/engine.py:606-610</code></td></tr>
+      <tr><td>F15</td><td><span class="pill">S2</span></td><td>decision posture</td><td>Rewrite revalidation accepts only <code>allow</code>, so a redacted consequential action becomes a hard block instead of an escalation. <strong>Demonstrated live.</strong> <code>backend/aegisgraph/engine.py:606-610</code></td></tr>
+      <tr><td>F3</td><td><span class="pill gold">S1</span></td><td>submission</td><td>Release blockers open: no video, no rendered report PDF (the README's first link 404s), no live validator run, no verified Docker run, and a solo registration against a 3-5 member rule.</td></tr>
+      <tr><td>F4</td><td><span class="pill">S2</span></td><td>service</td><td>No HTTP-layer body-size limit; per-field caps allow multi-megabyte bodies to be buffered. The response is capped, the request is not. <code>backend/aegisgraph/app.py:83-105</code></td></tr>
+      <tr><td>F5</td><td><span class="pill">S2</span></td><td>metric meaning</td><td><code>risk_score</code> is a literal per gate and <code>confidence</code> is a constant, yet Brier score and ECE are reported — those calibration numbers measure rule constants.</td></tr>
+      <tr><td>F6</td><td><span class="pill">S2</span></td><td>coverage</td><td>The intent envelope binds arguments for seven tools but not for <code>payment_confirm</code>, <code>payment_execute</code>, <code>remediation_execute</code>, so for those only the confirmation digest protects the arguments. <code>backend/aegisgraph/engine.py:860-869</code></td></tr>
+      <tr><td>F7</td><td><span class="pill">S2</span></td><td>generalization</td><td>Detection is vocabulary-shaped: literal instruction patterns, English verbs, whitespace-only normalisation, adjacency windows, digit-bearing assignment-form secrets. Paraphrase, translation, encoding, longer laundering, unknown tools and non-email sinks are uncovered.</td></tr>
+      <tr><td>F8</td><td><span class="pill">S2</span></td><td>documentation</td><td>Drift: dead report link, an unsourced jury-stage split in the report, runbooks still describing the pre-v5 prototype, "120/40/40 traces" vs 121/42/45 in the archives, a promised per-family slice no scorecard contains.</td></tr>
+      <tr><td>F9</td><td><span class="pill">S2</span></td><td>evidence contract</td><td>The reachability gate is binary while every headline table uses a 22-attack subset — the numbers follow a weaker contract than the project's own gate.</td></tr>
+      <tr><td>F10</td><td><span class="pill">S2</span></td><td>observability</td><td>Dashboard defects: a reachability row fed by a field no artifact emits; the comparison warning ignores the only fields that differ between revisions; six trust levels collapse to three; missing forced-colors/contrast support.</td></tr>
+      <tr><td>F11</td><td><span class="pill">S2</span></td><td>packaging</td><td>Two dependency sources of truth with no test reconciling them; <code>.dockerignore</code> misses <code>evaluation/</code> and <code>scripts/</code>; the Docker path has never been executed.</td></tr>
+      <tr><td>F12-F14</td><td><span class="pill">S3</span></td><td>hygiene</td><td>Kit-side behaviours worth documenting (rewrite target check is registry-wide; escalate on non-tool actions bypasses the confirmation record; memory-sink leak check hardcodes trusted-internal); evidence-format nits; no defence-revision fingerprint on traces.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>The three findings that matter</h3>
+
+  <h4>F1 — the trust boundary is asserted by the caller</h4>
+  <p>Four requests were sent to the running service during this audit. The only difference between the blocked and the allowed case is <em>which channel the text arrived on</em>:</p>
+  <div class="table-scroll">
+  <table class="data">
+    <thead><tr><th>Request</th><th>Arrival channel</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td>hostile instruction in a tool result, cited by provenance id, repeated in the action's text</td><td><code>tool</code> observation with <code>provenance_ids</code></td><td><span class="decision block">block</span> <span class="reason">UNTRUSTED_INSTRUCTION</span> risk 0.99</td></tr>
+      <tr><td>the same instruction in a <code>user</code>-role item with no provenance ids</td><td>role-asserted trust</td><td><span class="decision allow">allow</span> <span class="reason">POLICY_CHECKS_PASSED</span> <span class="trust">authenticated_user</span></td></tr>
+      <tr><td>the same instruction written to memory from a <code>safety</code>-role item</td><td>role-asserted trust</td><td><span class="decision allow">allow</span>, metadata records <code>memory_trust: trusted_internal</code></td></tr>
+      <tr><td>control: the same memory write with untrusted provenance</td><td><code>tool</code> observation with <code>provenance_ids</code></td><td><span class="decision allow">allow</span> <span class="reason">UNTRUSTED_MEMORY_INHERITED</span> <span class="trust">untrusted_external</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>In the pinned harness the attacker mutates declared text surfaces, which carry provenance, so the published threat model is not bypassed. The weakness is at the contract boundary: <strong>the component meant to enforce the trust boundary accepts a self-declaration of trust from the component it guards.</strong> The fix that preserves utility is not "trust nothing" — it is to require an explicit provenance id, or an explicit harness-level opt-in, before text counts as authenticated intent.</p>
+
+  <h4>F2 — a rewrite guard only tests exercise</h4>
+  <p>Grep confirms <code>validate_rewrite()</code> has no caller outside the test suite. The served path is not unguarded — the engine re-validates its own replacements inside the two redaction functions, and this audit observed <code>REDACTION_REVALIDATION_FAILED</code> returned by the running service — but the dead helper is the one that <em>looks</em> authoritative. Wire it in or delete it; do not leave a reviewer guessing which mechanism protects a substitution.</p>
+
+  <h4>F15 — a rewrite that should escalate becomes a hard block</h4>
+  <p>Revalidation accepts exactly one outcome: <code>allow</code>. Take an internal email whose body quotes a credential from a confidential record: the engine redacts it (correct), re-evaluates the replacement, which is still consequential and still unconfirmed, so the inner verdict is <code>escalate</code> — and the outer decision collapses to a block at risk 1.0. Demonstrated live. The security intent is defensible; the utility cost is invisible in the docs and is a plausible contributor to the residual false-block rate. The cheap fix is to propagate the inner <code>escalate</code> for the redacted action.</p>
+
+  <h3>Repair plan, ordered</h3>
+  <div class="table-scroll">
+  <table class="data">
+    <thead><tr><th>#</th><th>Action</th><th>Acceptance</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Close F1: require explicit provenance for consumed content, or mark implicit trust incomplete and fail closed</td><td>a crafted request with hostile text on a trusted role and no ids is blocked; the benign suite still passes</td></tr>
+      <tr><td>2</td><td>Resolve F2 and F15: one canonical rewrite-validation path; propagate inner <code>escalate</code></td><td>a redacted consequential action returns <code>escalate</code> with the redaction reason code; re-measure the benign set</td></tr>
+      <tr><td>3</td><td>Close F6: bind <code>payment_confirm</code>, <code>payment_execute</code>, <code>remediation_execute</code> arguments to the goal</td><td>a confirmation granted for one amount cannot authorise another; benign refund case still completes</td></tr>
+      <tr><td>4</td><td>Fix F9 and the Docker port; state the denominator beside every table</td><td>every table says "reached attacks (N=22)"; the API is no longer published on all interfaces</td></tr>
+      <tr><td>5</td><td>Add a request-size limit (F4)</td><td>a 5 MB body is rejected with a sanitized 4xx before parsing</td></tr>
+      <tr><td>6</td><td>Repair the observability layer (F10) — a 40-point rubric category</td><td>the comparison warning fires for the real v3-vs-v5 pair; the reachability row is real or removed</td></tr>
+      <tr><td>7</td><td>Documentation truth pass (F8)</td><td>no link 404s; runbooks describe v5 with the exact archived command; promised slices exist or the promise is dropped</td></tr>
+      <tr><td>8</td><td>Evidence upgrades (F5, F7, F14)</td><td>a paraphrase/translation suite with a benign control; a multi-seed rerun with variance; a revision fingerprint on traces</td></tr>
+      <tr><td>9</td><td>Release readiness (F3)</td><td>video recorded, report rendered, validator run, Docker run verified, team composition clarified in writing</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Seven of nine items are <em>honesty and finish</em> work, not new defence logic. That is the normal shape of an agent-built project under a measured-evidence discipline: the risk is never the arithmetic, it is the gap between what the docs imply and what the code does.</p>
+
+  <h3>What would falsify the project's claims</h3>
+  <p>The defensible claim is narrow and specific: <em>on SENTINEL's published 40-scenario suite, with the pinned kit and Qwen3-8B at temperature 0 and seed 0, this deterministic gateway reduced attack success on the 22 attacks a real model reaches from 22/22 to 0/22, at a 0.86 % false-block rate and 9.3 ms p95 latency, losing one benign task relative to the undefended baseline.</em></p>
+  <ul class="diamond">
+    <li><strong>Rerun across seeds</strong> — would show whether 0/22 is a stable property or one observation.</li>
+    <li><strong>A paraphrase / translation / encoding suite</strong> — would test the claim that the rules generalise beyond the literal attack vocabulary (chapter 7 names the blind spots).</li>
+    <li><strong>AgentDojo</strong> — would test generalisation beyond this benchmark; it is the optional bonus track and nobody has run it here.</li>
+    <li><strong>A benign regression suite before and after any rule change</strong> — would test whether the 0.86 % cost is stable.</li>
+    <li><strong>A stronger or less quantised model</strong> — would test whether 22/22 reachability is a property of the attack set or of Qwen3-8B at Q4_K_M.</li>
+    <li><strong>A new injection surface</strong> (a tool argument the suite never uses, a non-email sink) — would test whether the flow rules are family-complete.</li>
+  </ul>
+
+  <h3 id="verdict">The honest verdict: can this win?</h3>
+  <p>Straight answer: <strong>the defence is top-tier for a hackathon; the submission, as it stands, is incomplete in the category that carries the most points.</strong> Here is the arithmetic.</p>
+  <div class="table-scroll">
+  <table class="data">
+    <thead><tr><th>Rubric category</th><th>Points</th><th>Where this project stands</th><th>Verdict</th></tr></thead>
+    <tbody>
+      <tr><td>Video &amp; observability</td><td class="num">40</td><td>No video exists. The dashboard is real and provenance-honest, but two of its panels are broken (F10) and the attack-reachability row is fed by a field nothing emits.</td><td class="bad">unclaimed — the single biggest risk</td></tr>
+      <tr><td>Technical report</td><td class="num">25</td><td>Strong content: falsifiable claim, v1→v5 ablation, explicit failure analysis, honest limitations. But the compiled PDF is missing from the repo, so the README's "start here" link 404s for a judge.</td><td>strong content, broken delivery</td></tr>
+      <tr><td>Creativity &amp; novelty</td><td class="num">15</td><td>Goes well beyond keyword matching: provenance resolution, an intent envelope, exact-credential redaction with revalidation, authority-claim redaction. The kit already ships a provenance baseline, so the novelty is incremental rather than a new technique.</td><td>above baseline, not radical</td></tr>
+      <tr><td>Engineering &amp; responsible AI</td><td class="num">20</td><td>187 tests, bounded contracts, fail-closed boundaries, a written safety statement that names what it does not protect against, deterministic purity. Two code-level findings (F1, F15) that a sharp judge could find in ten minutes.</td><td class="ok">genuinely strong</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="callout">
+    <div class="callout-title">My call</div>
+    <p><strong>As submitted today: unlikely to place.</strong> Not because the defence is weak — it is the strongest artefact in the repository — but because 40 of 100 points are in a video that does not exist, the report a judge is told to read first is missing, and a solo entry may not even be eligible under a 3-5 member rule.</p>
+    <p><strong>With three things fixed — a recorded 5-10 minute trace demo, the compiled report committed, and eligibility confirmed in writing — this is a credible top-8 pitch candidate</strong>, because most teams will show a defence and a score, while this one can show a <em>falsifiable claim, an ablation and an admitted failure</em>. That is exactly what the report rubric asks for, and it is rare.</p>
+    <p class="dim">Caveat, honestly: I cannot see the other submissions, the judging is human, and "top-8" is a ranking against unknown competition. What I can say with evidence is which rubric categories are currently claimed and which are not — that table above.</p>
+  </div>
+
+  <h3>What to improve, in the order that maximises score</h3>
+  <ol class="steps">
+    <li><strong>Record the video (40 points).</strong> One take: run <code>ent_portal_rotation_draft</code> under allow-all and show the credential leak, then the same scenario against AegisGraph showing the rewrite and the following <code>attack_success=false, task_success=true</code>, then the benign <code>enterprise_project_status</code> completing. Narrate the trace, not the code.</li>
+    <li><strong>Compile and commit <code>REPORT.tex</code></strong> so the judge's quick path does not 404. If LaTeX is unavailable, export the HTML course to PDF and link both.</li>
+    <li><strong>Email the organizers about eligibility today.</strong> A disqualification makes every other improvement irrelevant.</li>
+    <li><strong>Fix the two code findings (F1, F15)</strong> and re-run the suite. This converts the strongest category from "strong" to "airtight", and both fixes are small.</li>
+    <li><strong>Add the falsification experiments</strong> (multi-seed rerun, paraphrase suite) as a short "what we did not prove" section — the report rubric explicitly rewards honest failure analysis.</li>
+    <li><strong>Repair the dashboard panels (F10)</strong> and exercise them with a screen reader; the observability layer is judged, not just the defence.</li>
+    <li><strong>Keep this course in the repo.</strong> "The GitHub repository is organised, documented and readable end to end" is a scored line, and a 12-chapter interactive explainer of your own defence is unusual evidence for it.</li>
+  </ol>
+
+  <h3>Where to take your learning next</h3>
+  <ul class="diamond">
+    <li><strong>AgentDojo</strong> (NeurIPS 2024) — an independent prompt-injection benchmark for tool-using agents; the highest-value generalisation experiment available.</li>
+    <li><strong>OWASP Top 10 for LLM Applications</strong> — read LLM01 (prompt injection) and LLM06 (excessive agency) with this project in mind; you will recognise every design decision.</li>
+    <li><strong>Dual-LLM / planner-executor patterns</strong> — the architectural answer to "the model reads untrusted text", complementary to this project's decision-point answer.</li>
+    <li><strong>Taint tracking and information-flow control</strong> — the academic ancestor of these rules; the <code>provenance</code> baseline's failure is the classic precision problem of dynamic taint analysis.</li>
+    <li><strong>Calibration</strong> — why reporting Brier/ECE requires a score that means something (F5).</li>
+  </ul>
+
+  <h3>Check yourself</h3>
+  <details class="qa">
+    <summary>Which parts of the project were independently recomputed, and which were only read?</summary>
+    <div class="qa-answer">All ten scorecards' metrics and per-domain slices, all claimed hashes, the evaluator digest, the reached-attack set and the decision counts were recomputed from artifacts. Source-code claims are code reading; structural blind spots are marked <span class="pill">INFERENCE</span>.</div>
+  </details>
+  <details class="qa">
+    <summary>Why is F1 serious even though the published suite cannot exploit it?</summary>
+    <div class="qa-answer">Because the defence's trust boundary accepts a self-declaration from the client it is meant to guard. Exploitability depends on the deployment; the design weakness does not.</div>
+  </details>
+  <details class="qa">
+    <summary>What is dead in F2, and what is not?</summary>
+    <div class="qa-answer"><code>validate_rewrite()</code> and the codes only it emits never run in production. The pipeline's own revalidation is live — this audit saw <code>REDACTION_REVALIDATION_FAILED</code> come back from the running service.</div>
+  </details>
+  <details class="qa">
+    <summary>What does F15 change about a redacted consequential action?</summary>
+    <div class="qa-answer">Revalidation accepts only <code>allow</code>, so an action that would have been escalated for human confirmation becomes a hard block once a secret is found inside it.</div>
+  </details>
+  <details class="qa">
+    <summary>Why is the denominator 22 rather than 31?</summary>
+    <div class="qa-answer">Nine attacks never produce their harm even with no defence installed, so their zero is not evidence about any defence. The reachability control is what identifies them.</div>
+  </details>
+  <details class="qa">
+    <summary>Which rubric category is the biggest risk right now, and why?</summary>
+    <div class="qa-answer">Video and observability — 40 points, and no video exists. The defence being excellent does not claim a single point in that category.</div>
+  </details>
+  <details class="qa">
+    <summary>Name three experiments that would falsify the project's central claim.</summary>
+    <div class="qa-answer">A multi-seed rerun, a paraphrase/translation attack suite, AgentDojo, a benign regression suite, a stronger model, or a new injection surface — any one can shrink the claim.</div>
+  </details>
+</section>

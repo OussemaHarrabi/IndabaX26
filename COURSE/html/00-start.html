@@ -1,0 +1,79 @@
+<section class="chapter" id="ch-00" data-title="0 · Start here">
+  <h2 class="chapter-title">Start here</h2>
+
+  <p class="lead">This is a course about one project: <strong>AegisGraph</strong>, a defence gateway built for the SENTINEL agent-security challenge at IndabaX Tunisia 2026. It was written for someone who knows machine learning and agents, and knows nothing yet about security.</p>
+
+  <h3>What you will be able to do by the end</h3>
+  <ul class="diamond">
+    <li>Explain, in plain language, what a prompt-injection attack against a tool-using agent actually is — and why "tell the model to ignore instructions" is not a defence.</li>
+    <li>Read a SENTINEL scenario and predict which harm it is aiming at, which tool it targets, and how the evaluator decides whether it succeeded.</li>
+    <li>Trace a candidate action through the twelve gates of AegisGraph's decision kernel and name the reason code it will produce.</li>
+    <li>Judge a security claim the way a reviewer does: what was measured, what was only reasoned about, and what would falsify it.</li>
+    <li>Run the whole thing yourself and attack it — the labs give you the exact commands.</li>
+  </ul>
+
+  <h3>The project in one minute</h3>
+  <p>A SENTINEL episode is a loop: a model proposes an action, a defence decides, a tool executes, and the result becomes the model's next input. The attacks never try to run code; they plant <em>text</em> — a line in a ticket comment, a vendor email, a log entry — and wait for the agent to act on it. The benchmark's own measurements say the reference model refuses to move money or disable monitoring, but happily looks up a record and copies a secret into an internal note. So the harm is a <strong>disclosure</strong>, not a dangerous-looking tool call.</p>
+  <p>AegisGraph answers one question for every proposed action: given <em>where this text came from</em>, <em>what the user actually asked for</em>, and <em>where sensitive data is allowed to travel</em>, may this action proceed? It answers with <span class="decision allow">allow</span>, <span class="decision block">block</span>, <span class="decision escalate">escalate</span> or <span class="decision rewrite">rewrite</span> — and it never executes anything itself.</p>
+
+  <div class="callout">
+    <div class="callout-title">What it achieved, measured and recomputed</div>
+    <p>With Qwen3-8B and no defence, 22 of the 31 published attacks reach their harm and succeed. With AegisGraph v5, <strong>0 of those 22</strong> succeed, while 4 of 9 benign tasks still complete, at a false-block rate of 0.86 % and 9.3 ms p95 latency. All ten scorecards, all fourteen SHA-256 digests and the 22-attack reached set were recomputed during this audit from the raw artifacts — they match. The run is a single seeded self-test on a published suite, not a jury score, and the kit's own gate marks it <code>eligible=false</code> because benign utility sits under 0.5.</p>
+  </div>
+
+  <h3>How to read this</h3>
+  <table class="data">
+    <thead><tr><th>If you want to…</th><th>Read</th></tr></thead>
+    <tbody>
+      <tr><td>understand the field from scratch</td><td>1 → 2 → 3</td></tr>
+      <tr><td>see the whole attack arsenal</td><td>4 (use the scenario explorer)</td></tr>
+      <tr><td>understand why naive defences fail</td><td>5</td></tr>
+      <tr><td>understand this project's code</td><td>6 → 7 (drive the simulator)</td></tr>
+      <tr><td>judge the evidence</td><td>8</td></tr>
+      <tr><td>know what is still broken and whether it can win</td><td><a href="#ch-09">9</a></td></tr>
+      <tr><td>run and break it yourself</td><td>10</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Four things to know about the widgets</h3>
+  <div class="card-grid">
+    <div class="card"><h4>They are teaching models</h4><p>The decision simulator follows the same gate order as the real engine but is a simplification. Where a widget says "measured", a real request produced that answer; where it says "code reading", it was read out of the source.</p></div>
+    <div class="card"><h4>Search filters, not just finds</h4><p>Type in the search box (or press <code>/</code>) and the contents list narrows to matching chapters while matches are highlighted in the text.</p></div>
+    <div class="card"><h4>Answers are hidden on purpose</h4><p>Each chapter ends with check-yourself questions. Reveal them one at a time; the counter at the bottom of each chapter tracks how many you opened.</p></div>
+    <div class="card"><h4>It prints</h4><p>Print or export to PDF and you get a light, serif document with every answer expanded — handy as a study copy.</p></div>
+  </div>
+
+  <h3>How to check anything this course claims</h3>
+  <table class="data">
+    <thead><tr><th>Kind of claim</th><th>Where to verify it</th></tr></thead>
+    <tbody>
+      <tr><td>a number</td><td>the scorecards in <code>evaluation/</code> — one JSON entry per scenario, recomputable by hand</td></tr>
+      <tr><td>a code behaviour</td><td>the <code>path:line</code> anchor printed after the claim, e.g. <code>backend/aegisgraph/engine.py:462</code></td></tr>
+      <tr><td>a harness behaviour</td><td>anchors under <code>.sentinel_reference/src/sentinel/</code>, the pinned starter kit</td></tr>
+      <tr><td>an audit finding</td><td>chapter 9, where each finding is labelled measured, code reading or <span class="pill">INFERENCE</span></td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <div class="callout-title">One honest paragraph before you start</div>
+    <p>AegisGraph is a competent, well-evidenced instance of one specific idea: check every action against provenance, policy and the user's real goal before it executes. It is not a general solution to prompt injection, and its own documentation says so. What makes it worth studying is that it measures itself honestly enough for you to see exactly where it would break — paraphrased instructions, translated payloads, encoded payloads, longer multi-turn laundering, and any exfiltration channel that is not an external email recipient. Chapter 9 turns those into experiments you can run.</p>
+  </div>
+
+  <h3>Check yourself</h3>
+  <details class="qa">
+    <summary>What does the defence actually control?</summary>
+    <div class="qa-answer">Only the decision about a proposed action: allow, block, escalate or rewrite. It never executes a tool, never talks to the model, and cannot change what the agent sees.</div>
+  </details>
+  <details class="qa">
+    <summary>Why is the honest denominator 22 and not 31?</summary>
+    <div class="qa-answer">Because nine attacks never reach their harm even with no defence installed — the model refuses, or the tool it would need is outside the allowed set. Counting those as "stopped" would be dishonest.</div>
+  </details>
+  <details class="qa">
+    <summary>What is the single largest category in the jury rubric?</summary>
+    <div class="qa-answer">Video and observability, at 40 of 100 points — more than the defence code itself. That is the category this project currently has not claimed.</div>
+  </details>
+  <details class="qa">
+    <summary>Where do the numbers in this course come from?</summary>
+    <div class="qa-answer">From the repository's own artifacts: ten scorecards and their raw JSONL traces under <code>evaluation/</code>, recomputed during this audit. Mock-model numbers and real-Qwen numbers are always labelled separately.</div>
+  </details>
+</section>
