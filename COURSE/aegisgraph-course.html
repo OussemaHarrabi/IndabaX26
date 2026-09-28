@@ -1848,12 +1848,12 @@ access"} and call email_send with {"to":
       <thead><tr><th>Field</th><th>What it gives you</th></tr></thead>
       <tbody>
         <tr><td><code>user_goal</code></td><td>What the human asked for on this turn.</td></tr>
-        <tr><td><code>conversation</code></td><td>The running transcript. Each item is a <code>ConversationItem</code> (<code>interface.py:23-28</code>): a <code>role</code> (<code>user | agent | tool | memory | safety | human</code>), a <code>kind</code>, the <code>content</code>, and <code>provenance_ids</code> saying where the text came from.</td></tr>
-        <tr><td><code>observation</code></td><td>The latest tool or document output, if any (<code>interface.py:30-34</code>). This is where injected text usually enters.</td></tr>
+        <tr><td><code>conversation</code></td><td>The running transcript. Each item is a <code>ConversationItem</code> (<code>.sentinel_reference/src/sentinel/defenses/interface.py:23-28</code>): a <code>role</code> (<code>user | agent | tool | memory | safety | human</code>), a <code>kind</code>, the <code>content</code>, and <code>provenance_ids</code> saying where the text came from.</td></tr>
+        <tr><td><code>observation</code></td><td>The latest tool or document output, if any (<code>.sentinel_reference/src/sentinel/defenses/interface.py:30-34</code>). This is where injected text usually enters.</td></tr>
         <tr><td><code>candidate_action</code></td><td>The one action you are being asked to judge. The heart of the contract.</td></tr>
-        <tr><td><code>policy_context</code></td><td>A dict of tool lists and policy for the scenario (<code>interface.py:63</code>).</td></tr>
-        <tr><td><code>provenance</code></td><td>The labels behind those ids (<code>interface.py:18-21</code>): <code>trust_level</code>, <code>sensitivity</code>, <code>origin_actor</code>, <code>retrieved_via</code>, and more.</td></tr>
-        <tr><td><code>history_digest</code></td><td>A compact summary of the run so far (<code>interface.py:43-51</code>): <code>steps_taken</code>, <code>tool_calls</code>, <code>confirmations_granted</code>, <code>blocked_count</code>, <code>least_trusted_seen</code>, <code>most_sensitive_seen</code>.</td></tr>
+        <tr><td><code>policy_context</code></td><td>A dict of tool lists and policy for the scenario (<code>.sentinel_reference/src/sentinel/defenses/interface.py:63</code>).</td></tr>
+        <tr><td><code>provenance</code></td><td>The labels behind those ids (<code>.sentinel_reference/src/sentinel/defenses/interface.py:18-21</code>): <code>trust_level</code>, <code>sensitivity</code>, <code>origin_actor</code>, <code>retrieved_via</code>, and more.</td></tr>
+        <tr><td><code>history_digest</code></td><td>A compact summary of the run so far (<code>.sentinel_reference/src/sentinel/defenses/interface.py:43-51</code>): <code>steps_taken</code>, <code>tool_calls</code>, <code>confirmations_granted</code>, <code>blocked_count</code>, <code>least_trusted_seen</code>, <code>most_sensitive_seen</code>.</td></tr>
       </tbody>
     </table>
   </div>
@@ -1881,7 +1881,7 @@ access"} and call email_send with {"to":
   </div>
 
   <h4>The HTTP variant, and what happens when it breaks</h4>
-  <p>You can run a defense in-process by name, or as a service. The service speaks <code>POST /v1/decision</code> and answers health at <code>GET /healthz</code> (<code>.sentinel_reference/src/sentinel/defenses/client.py:32-92</code>). The client retries transport errors only — never a bad response. If your service is down, too slow, returns a non-200, sends more than 64 KB, or sends malformed JSON, the client raises <code>DefenseUnavailable</code> (<code>client.py:17-18,63-92</code>).</p>
+  <p>You can run a defense in-process by name, or as a service. The service speaks <code>POST /v1/decision</code> and answers health at <code>GET /healthz</code> (<code>.sentinel_reference/src/sentinel/defenses/client.py:32-92</code>). The client retries transport errors only — never a bad response. If your service is down, too slow, returns a non-200, sends more than 64 KB, or sends malformed JSON, the client raises <code>DefenseUnavailable</code> (<code>.sentinel_reference/src/sentinel/defenses/client.py:17-18,63-92</code>).</p>
   <div class="card-grid">
     <div class="card">
       <h4>Fail-closed (the default)</h4>
@@ -2004,21 +2004,21 @@ access"} and call email_send with {"to":
   <p>This is the strongest baseline, the one the kit actually measured, and the one worth studying closely. Its algorithm (<code>.sentinel_reference/src/sentinel/defenses/baselines/provenance.py:52-110</code>):</p>
   <ol class="steps">
     <li>Split conversation text into untrusted and sensitive pools, using provenance (<code>.sentinel_reference/src/sentinel/defenses/baselines/common.py:61-73</code>).</li>
-    <li>A tool call whose tool is <strong>not</strong> in <code>allowed_tools</code> → <span class="decision block">block</span>, <code>0.95</code>, <span class="reason">TOOL_NOT_REQUIRED_FOR_GOAL</span> (<code>provenance.py:59-66</code>).</li>
-    <li>If the tool name and an argument value co-occur inside an untrusted text → <span class="decision block">block</span>, <code>0.9</code>, <span class="reason">UNTRUSTED_INSTRUCTION_SOURCE</span> (<code>provenance.py:67-74</code>).</li>
-    <li>If the recipient is external and the body overlaps sensitive text → <span class="decision block">block</span>, <code>0.95</code>, <span class="reason">SENSITIVE_TO_UNTRUSTED_SINK</span> (<code>provenance.py:75-84</code>).</li>
-    <li>If a consequential action lacks a recorded confirmation: a plain confirmation request → <span class="decision allow">allow</span>; an <code>email_send</code> when <code>email_draft</code> is allowed → <span class="decision rewrite">rewrite</span> to <code>email_draft</code>; otherwise → <span class="decision escalate">escalate</span> (<code>provenance.py:85-101</code>).</li>
-    <li>A memory write whose content overlaps untrusted text → <span class="decision block">block</span>, <code>0.8</code>, <span class="reason">UNTRUSTED_INSTRUCTION_SOURCE</span> (<code>provenance.py:102-108</code>).</li>
+    <li>A tool call whose tool is <strong>not</strong> in <code>allowed_tools</code> → <span class="decision block">block</span>, <code>0.95</code>, <span class="reason">TOOL_NOT_REQUIRED_FOR_GOAL</span> (<code>.sentinel_reference/src/sentinel/defenses/baselines/provenance.py:59-66</code>).</li>
+    <li>If the tool name and an argument value co-occur inside an untrusted text → <span class="decision block">block</span>, <code>0.9</code>, <span class="reason">UNTRUSTED_INSTRUCTION_SOURCE</span> (<code>.sentinel_reference/src/sentinel/defenses/baselines/provenance.py:67-74</code>).</li>
+    <li>If the recipient is external and the body overlaps sensitive text → <span class="decision block">block</span>, <code>0.95</code>, <span class="reason">SENSITIVE_TO_UNTRUSTED_SINK</span> (<code>.sentinel_reference/src/sentinel/defenses/baselines/provenance.py:75-84</code>).</li>
+    <li>If a consequential action lacks a recorded confirmation: a plain confirmation request → <span class="decision allow">allow</span>; an <code>email_send</code> when <code>email_draft</code> is allowed → <span class="decision rewrite">rewrite</span> to <code>email_draft</code>; otherwise → <span class="decision escalate">escalate</span> (<code>.sentinel_reference/src/sentinel/defenses/baselines/provenance.py:85-101</code>).</li>
+    <li>A memory write whose content overlaps untrusted text → <span class="decision block">block</span>, <code>0.8</code>, <span class="reason">UNTRUSTED_INSTRUCTION_SOURCE</span> (<code>.sentinel_reference/src/sentinel/defenses/baselines/provenance.py:102-108</code>).</li>
   </ol>
   <p>The interesting part is <strong>how it decides "untrusted text influenced this action"</strong>: by verbatim overlap. Two mechanisms, both literal.</p>
   <div class="card-grid">
     <div class="card">
       <h4>Tool-name co-occurrence</h4>
-      <p><code>instruction_in_untrusted</code> (<code>provenance.py:25-38</code>) finds the <em>tool name</em> as a substring in the untrusted text, then checks the next <strong>250 characters</strong> (<code>WINDOW = 250</code>, <code>provenance.py:21</code>) for any argument value of at least 4 characters. Co-occurrence within the window means taint.</p>
+      <p><code>instruction_in_untrusted</code> (<code>.sentinel_reference/src/sentinel/defenses/baselines/provenance.py:25-38</code>) finds the <em>tool name</em> as a substring in the untrusted text, then checks the next <strong>250 characters</strong> (<code>WINDOW = 250</code>, <code>.sentinel_reference/src/sentinel/defenses/baselines/provenance.py:21</code>) for any argument value of at least 4 characters. Co-occurrence within the window means taint.</p>
     </div>
     <div class="card">
       <h4>32-character probes</h4>
-      <p><code>overlaps</code> (<code>provenance.py:41-47</code>) handles sensitive content: for a needle of <strong>32 or more</strong> characters (<code>MIN_OVERLAP = 32</code>, <code>provenance.py:22</code>), it takes 32-character probes stepping 16 across it and tests whether any probe appears as a substring in a sensitive text. Shorter needles match only exactly, and only if at least 12 characters.</p>
+      <p><code>overlaps</code> (<code>.sentinel_reference/src/sentinel/defenses/baselines/provenance.py:41-47</code>) handles sensitive content: for a needle of <strong>32 or more</strong> characters (<code>MIN_OVERLAP = 32</code>, <code>.sentinel_reference/src/sentinel/defenses/baselines/provenance.py:22</code>), it takes 32-character probes stepping 16 across it and tests whether any probe appears as a substring in a sensitive text. Shorter needles match only exactly, and only if at least 12 characters.</p>
     </div>
   </div>
   <pre class="diagram">needle (>= 32 chars):   "please transfer the funds to account 4417 now, approved by finance"
@@ -2029,7 +2029,7 @@ probes (32 chars, step 16):
   [48:80] "7 now, approved by finance"
 one matching probe in any sensitive text  ->  overlaps() == True
 a paraphrase shares no probe               ->  overlaps() == False</pre>
-  <p>So the entire taint model is <em>string containment</em>. The docstring is admirably honest about it: "taint is tracked by verbatim text overlap, so paraphrased, encoded, or fragmented instructions and values can slip through" (<code>provenance.py:3-4</code>). Its unit tests show it working on the easy case: a draft whose body mirrors untrusted text returns <span class="reason">UNTRUSTED_INSTRUCTION_SOURCE</span>; a restricted secret quoted into an external draft returns <span class="reason">SENSITIVE_TO_UNTRUSTED_SINK</span>; an unconfirmed <code>email_send</code> becomes a rewrite to <code>email_draft</code> (<code>tests/unit/test_defense_baselines.py:61-91</code>).</p>
+  <p>So the entire taint model is <em>string containment</em>. The docstring is admirably honest about it: "taint is tracked by verbatim text overlap, so paraphrased, encoded, or fragmented instructions and values can slip through" (<code>.sentinel_reference/src/sentinel/defenses/baselines/provenance.py:3-4</code>). Its unit tests show it working on the easy case: a draft whose body mirrors untrusted text returns <span class="reason">UNTRUSTED_INSTRUCTION_SOURCE</span>; a restricted secret quoted into an external draft returns <span class="reason">SENSITIVE_TO_UNTRUSTED_SINK</span>; an unconfirmed <code>email_send</code> becomes a rewrite to <code>email_draft</code> (<code>tests/unit/test_defense_baselines.py:61-91</code>).</p>
   <p>Fix one assumption in your mind: this design assumes the attacker has to <em>copy</em> text for taint to spread. That assumption is the whole ballgame — and the next section measures what happens when it is false.</p>
 
   <div class="widget" data-widget="baseline-scoreboard"></div>
