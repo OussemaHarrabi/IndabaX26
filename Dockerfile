@@ -64,10 +64,15 @@ RUN rm -rf /usr/local/lib/python3.12/site-packages/pip \
 
 WORKDIR /app
 
-# Application code and the lock (kept for provenance/introspection) are copied
-# root-owned, then made read-only for everyone. The service user gets no write
-# bit anywhere under /app.
+# Application code, the Alembic configuration and the lock (kept for
+# provenance/introspection) are copied root-owned, then made read-only for
+# everyone. The service user gets no write bit anywhere under /app.
+#
+# alembic.ini is included so the migration step runs from the *shipped* artifact
+# and not only from a developer checkout:
+#   docker run --rm -e DATABASE_URL=... <image> python -m alembic upgrade head
 COPY --chown=root:root backend ./backend
+COPY --chown=root:root alembic.ini ./alembic.ini
 COPY --chown=root:root requirements.lock ./requirements.lock
 RUN chmod -R a-w /app && chmod a-w /app
 

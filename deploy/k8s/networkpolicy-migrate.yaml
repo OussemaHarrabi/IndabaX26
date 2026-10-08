@@ -1,0 +1,34 @@
+# The migration Job needs exactly two things: DNS and the datastore. The
+# default-deny policy in this namespace blocks everything else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: aegisgraph-migrate
+  labels:
+    app.kubernetes.io/name: aegisgraph
+    app.kubernetes.io/component: migrate
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: aegisgraph
+      app.kubernetes.io/component: migrate
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: aegisgraph
+              app.kubernetes.io/component: postgres
+      ports:
+        - port: 5432
+          protocol: TCP

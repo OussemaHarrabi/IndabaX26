@@ -31,18 +31,44 @@ env:
   # Coverage floor is a ratchet: it may only move up, and any lowering requires a
   # written justification in the same commit.
   #
-  # Baseline at commit 33f96cc (measured 2026-10-08, both on a local 3.13.14
-  # interpreter and on python:3.12-slim): 988/1043 statements = 94.73 %. pytest-cov
-  # prints that as a rounded "95 %", which is why the floor is 94 and not 95: a
-  # floor of 95 fails on the real baseline by three statements. The M1 workstream
-  # is adding substantive tests; when coverage clears 95 % the floor is raised.
-  COVERAGE_FAIL_UNDER: "94"
+  # Measured at commit 4350af3 (2026-10-08) on python:3.12-slim with the
+  # PostgreSQL 17 service declared by the `quality` job below, so every test runs
+  # except the two that need the untracked `.sentinel_reference` checkout:
+  #   454 collected, 452 passed, 2 skipped -> 96.42 % (2612/2709)
+  # With no database the 12 `db` tests skip and the ratio collapses to 92.80 %
+  # (2514/2709), so this floor is also the guard that the `db` tests actually ran:
+  # a silent skip cannot pass at 95. (Before M2 the same suite measured 94.73 % at
+  # commit 33f96cc, which is why the floor was 94 then.)
+  COVERAGE_FAIL_UNDER: "95"
 
 jobs:
   quality:
     name: lint, type-check, test
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    # M2's durable store is exercised by the `db`-marked tests. Without this
+    # service they skip and the coverage gate fails (see COVERAGE_FAIL_UNDER).
+    services:
+      postgres:
+        # Digest-pinned, same major version as the Compose stack.
+        image: postgres@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+        env:
+          POSTGRES_USER: aegisgraph
+          POSTGRES_PASSWORD: aegisgraph
+          POSTGRES_DB: aegisgraph_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aegisgraph -d aegisgraph_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Two names by design: `DATABASE_URL` is what the service and Alembic read,
+      # `AEGISGRAPH_TEST_DATABASE_URL` is what the `db` tests look for. Credentials
+      # are throwaway values scoped to this runner, never committed.
+      DATABASE_URL: postgresql+psycopg://aegisgraph:aegisgraph@localhost:5432/aegisgraph_test
+      AEGISGRAPH_TEST_DATABASE_URL: postgresql+psycopg://aegisgraph:aegisgraph@localhost:5432/aegisgraph_test
     steps:
       - name: Check out
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -61,6 +87,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.lock
           python -m pip install -e ".[dev]"
+          # PyYAML is required by tests/test_benchmark_sentinel_adapter.py but is
+          # not declared in the [dev] extra; adding it there is proposed in the M4
+          # handoff (pyproject.toml is outside this change's write scope).
+          python -m pip install pyyaml
 
       - name: Ruff
         run: python -m ruff check backend tests scripts
@@ -68,8 +98,19 @@ jobs:
       - name: mypy (strict)
         run: python -m mypy
 
+      - name: Apply the schema migration to the test database
+        run: python -m alembic upgrade head
+
+      - name: Assert the database suites run (not skip)
+        run: |
+          # `AEGISGRAPH_TEST_DATABASE_URL` is set, so these cannot skip. This names
+          # a database failure explicitly instead of letting it show up only as a
+          # coverage drop.
+          python -m pytest -q -m db -p no:cacheprovider
+
       - name: pytest with coverage gate
         run: |
+          # The full suite, including the `db`-marked tests.
           python -m pytest -q \
             --cov=aegisgraph \
             --cov-report=term-missing \
@@ -141,11 +182,16 @@ jobs:
       - name: Hardened smoke test (read-only root filesystem)
         run: |
           set -euo pipefail
+          # AEGISGRAPH_LEGACY_UNAUTHENTICATED=true exercises the frozen
+          # development-only /v1/decision surface (M2 decision D5) with a
+          # throwaway process and no database, so the smoke needs no credentials.
+          # It is passed explicitly rather than relying on the development default.
           docker run --rm -d --name aegisgraph-smoke \
             --read-only \
             --tmpfs /tmp:rw,noexec,nosuid,size=16m \
             --cap-drop=ALL \
             --security-opt=no-new-privileges \
+            -e AEGISGRAPH_LEGACY_UNAUTHENTICATED=true \
             -p 18080:8080 \
             "${IMAGE_NAME}"
           cleanup() { docker stop aegisgraph-smoke >/dev/null 2>&1 || true; }

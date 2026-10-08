@@ -14,9 +14,9 @@
 
 SHELL := /bin/sh
 IMAGE ?= aegisgraph:local
-COVERAGE_FAIL_UNDER ?= 94
+COVERAGE_FAIL_UNDER ?= 95
 
-.PHONY: help gates lint typecheck test audit bandit image smoke sbom \
+.PHONY: help gates lint typecheck test audit bandit image smoke sbom migrate \
         k8s-validate k8s-validate-both compose-config stack-up stack-down stack-logs stack-ps clean
 
 help:
@@ -31,9 +31,12 @@ lint: ## ruff over backend, tests and scripts
 typecheck: ## strict mypy
 	python -m mypy
 
-test: ## pytest with coverage gate (COVERAGE_FAIL_UNDER, default 94)
+test: ## pytest with coverage gate (needs PostgreSQL for the db tests; floor 95)
 	python -m pytest -q --cov=aegisgraph --cov-report=term-missing \
 		--cov-fail-under=$(COVERAGE_FAIL_UNDER)
+
+migrate: ## apply migrations to the stack's PostgreSQL (one-shot container)
+	docker compose run --rm migrate
 
 audit: ## pip-audit against the shipped pins
 	python -m pip_audit -r requirements.lock --strict --progress-spinner off
