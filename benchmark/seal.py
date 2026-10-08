@@ -260,10 +260,15 @@ def verify_seal(root: Path | str, passphrase: str | None = None) -> dict[str, An
             hashlib.sha256(sealed_path.read_bytes()).hexdigest() == manifest.ciphertext_sha256
         )
     if passphrase is not None:
-        scenarios = open_seal(passphrase, base)
-        result["opened"] = True
-        result["opened_scenario_count"] = len(scenarios)
-        result["splits"] = sorted({scenario.split.value for scenario in scenarios})
+        try:
+            scenarios = open_seal(passphrase, base)
+        except SealError as error:
+            result["opened"] = False
+            result["open_error"] = str(error)
+        else:
+            result["opened"] = True
+            result["opened_scenario_count"] = len(scenarios)
+            result["splits"] = sorted({scenario.split.value for scenario in scenarios})
     return result
 
 

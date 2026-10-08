@@ -38,6 +38,12 @@ LEAK_SIMILARITY_THRESHOLD = 0.9
 #: Token-shingle width used for the near-duplicate check.
 SHINGLE_WIDTH = 5
 
+#: A text must yield at least this many shingles to take part in the comparison.
+#: Short strings are identifiers and argument values ("isolate", "AL-3001"), not
+#: payload templates: treating them as templates produces false leaks. With
+#: ``SHINGLE_WIDTH = 5`` this means a text needs at least seven tokens.
+MIN_SHINGLES = 3
+
 _NORMALIZE = re.compile(r"[^a-z0-9 ]+")
 _WHITESPACE = re.compile(r"\s+")
 
@@ -200,14 +206,14 @@ def template_fingerprint(scenario: Scenario) -> str:
 
 def _shingles(text: str) -> frozenset[tuple[str, ...]]:
     tokens = normalize_text(text).split()
-    if len(tokens) < SHINGLE_WIDTH:
-        return frozenset({tuple(tokens)}) if tokens else frozenset()
+    if len(tokens) < SHINGLE_WIDTH + MIN_SHINGLES - 1:
+        return frozenset()
     span = len(tokens) - SHINGLE_WIDTH + 1
     return frozenset(tuple(tokens[index : index + SHINGLE_WIDTH]) for index in range(span))
 
 
 def _jaccard(left: frozenset[tuple[str, ...]], right: frozenset[tuple[str, ...]]) -> float:
-    if not left or not right:
+    if len(left) < MIN_SHINGLES or len(right) < MIN_SHINGLES:
         return 0.0
     union = left | right
     if not union:
@@ -288,8 +294,7 @@ def pair_findings(dataset: Dataset) -> list[Finding]:
                 Finding(
                     code="PAIR_ATTACK_COUNT",
                     message=(
-                        f"pair {pair!r} has {len(attacks)} attack scenarios, "
-                        "expected exactly 1"
+                        f"pair {pair!r} has {len(attacks)} attack scenarios, expected exactly 1"
                     ),
                     where=ids,
                 )
@@ -299,8 +304,7 @@ def pair_findings(dataset: Dataset) -> list[Finding]:
                 Finding(
                     code="PAIR_CONTROL_COUNT",
                     message=(
-                        f"pair {pair!r} has {len(controls)} benign controls, "
-                        "expected exactly 1"
+                        f"pair {pair!r} has {len(controls)} benign controls, expected exactly 1"
                     ),
                     where=ids,
                 )
@@ -441,6 +445,97 @@ def assert_seal_closed(root: Path | str) -> list[Finding]:
     return findings
 
 
+def holdout_leakage_findings(holdout: list[Scenario], dataset: Dataset) -> list[Finding]:
+    """Check a candidate holdout against the plaintext dataset before sealing it.
+
+    This is the gate the seal command runs. A holdout that shares an id, a pair,
+    a paraphrase family, a payload template or a near-duplicate payload with the
+    plaintext dataset is not a holdout: it measures memorisation, so sealing it
+    would be worse than not having one.
+    """
+
+    findings: list[Finding] = []
+    plaintext = list(dataset.scenarios)
+
+    known_ids = {scenario.id for scenario in plaintext}
+    known_pairs = {scenario.pair_id for scenario in plaintext}
+    known_families = {scenario.paraphrase_family for scenario in plaintext}
+
+    for scenario in holdout:
+        if scenario.id in known_ids:
+            findings.append(
+                Finding(
+                    code="HOLDOUT_ID_COLLISION",
+                    message=f"holdout id {scenario.id!r} already exists in the plaintext dataset",
+                    where=(scenario.id,),
+                )
+            )
+        if scenario.pair_id in known_pairs:
+            findings.append(
+                Finding(
+                    code="HOLDOUT_PAIR_COLLISION",
+                    message=(
+                        f"holdout pair {scenario.pair_id!r} already exists in the plaintext dataset"
+                    ),
+                    where=(scenario.id,),
+                )
+            )
+        if scenario.paraphrase_family in known_families:
+            findings.append(
+                Finding(
+                    code="HOLDOUT_FAMILY_COLLISION",
+                    message=(
+                        f"holdout paraphrase family {scenario.paraphrase_family!r} already "
+                        "exists in the plaintext dataset"
+                    ),
+                    where=(scenario.id,),
+                )
+            )
+        if scenario.split is not Split.HOLDOUT:
+            findings.append(
+                Finding(
+                    code="HOLDOUT_SPLIT_MISMATCH",
+                    message=f"sealed scenario {scenario.id!r} does not declare split 'holdout'",
+                    where=(scenario.id,),
+                )
+            )
+
+    plaintext_fingerprints = {template_fingerprint(scenario): scenario.id for scenario in plaintext}
+    for scenario in holdout:
+        collision = plaintext_fingerprints.get(template_fingerprint(scenario))
+        if collision is not None:
+            findings.append(
+                Finding(
+                    code="HOLDOUT_TEMPLATE_COLLISION",
+                    message=(
+                        f"holdout payload template is identical to plaintext scenario {collision!r}"
+                    ),
+                    where=(scenario.id, collision),
+                )
+            )
+
+    plaintext_shingles = [
+        (scenario.id, _shingles(text)) for scenario in plaintext for text in payload_texts(scenario)
+    ]
+    for scenario in holdout:
+        for text in payload_texts(scenario):
+            candidate = _shingles(text)
+            for plaintext_id, known in plaintext_shingles:
+                similarity = _jaccard(candidate, known)
+                if similarity >= LEAK_SIMILARITY_THRESHOLD:
+                    findings.append(
+                        Finding(
+                            code="HOLDOUT_NEAR_DUPLICATE",
+                            message=(
+                                f"holdout payload is {similarity:.3f} similar to plaintext "
+                                f"scenario {plaintext_id!r}"
+                            ),
+                            where=(scenario.id, plaintext_id),
+                        )
+                    )
+    return findings
+
+
 def split_disjointness(index: SplitIndex, dataset: Dataset) -> list[Finding]:
     """Every scenario belongs to exactly one split, and the split pools are disjoint.
 
@@ -483,9 +578,7 @@ def split_disjointness(index: SplitIndex, dataset: Dataset) -> list[Finding]:
                 findings.append(
                     Finding(
                         code="SPLIT_OVERLAP",
-                        message=(
-                            f"splits {left!r} and {right!r} share {len(overlap)} scenarios"
-                        ),
+                        message=(f"splits {left!r} and {right!r} share {len(overlap)} scenarios"),
                         where=tuple(sorted(overlap)),
                     )
                 )
@@ -505,6 +598,7 @@ def split_disjointness(index: SplitIndex, dataset: Dataset) -> list[Finding]:
 
 __all__ = [
     "LEAK_SIMILARITY_THRESHOLD",
+    "MIN_SHINGLES",
     "SHINGLE_WIDTH",
     "SPLIT_ORDER",
     "Finding",
@@ -512,6 +606,7 @@ __all__ = [
     "SplitIndex",
     "assert_seal_closed",
     "build_index",
+    "holdout_leakage_findings",
     "holdout_manifest",
     "leakage_findings",
     "normalize_text",
