@@ -150,6 +150,8 @@ The native scorer's columns, defined so a reader can recompute each cell from `o
 | `p50` / `p95` | nearest-rank latency over the decisions in the slice |
 | control fields | `control_licensed`, `control_excluded`, `control_excluded_ids`, `effectiveness_claim` (§5.3) |
 
+The native scorer reports these columns and no others of the legacy set: it does **not** compute the legacy simulator's `DFI`, `TUI`, `CVR`, `UER`, `Brier` or `ECE`, which are defined over the simulator's data-flow, tool-execution and calibration records and remain legacy-only (`code reading`: [`../benchmark/evaluation-card.md`](../benchmark/evaluation-card.md) §5; [`../evidence/ledger.md`](../evidence/ledger.md) row P40, audit finding I2-11). That is why §6.5's legacy ladder and §6.1's native table are separate tables with separate configuration identities.
+
 ### 5.6 Frozen configuration identity of the campaign
 
 | Element | Value | Source |
