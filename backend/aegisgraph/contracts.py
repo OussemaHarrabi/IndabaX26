@@ -7,6 +7,7 @@ import json
 import math
 import re
 from collections.abc import Iterator, Mapping
+from dataclasses import dataclass
 from enum import StrEnum
 from functools import total_ordering
 from types import MappingProxyType
@@ -244,6 +245,85 @@ class DecisionReceipt(_FrozenModel):
     action_digest: str = Field(pattern=r"^[0-9a-f]{24}$")
     execution_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{24}$")
     decision: GuardDecision
+
+
+class ConfirmationMode(StrEnum):
+    """How a caller-supplied confirmation grant is matched to an action.
+
+    ``LEGACY`` accepts a bare canonical action digest and is the trusted-caller
+    behaviour of the frozen SENTINEL ``/v1/decision`` wire. ``STRICT`` requires a
+    grant that is bound to the request identity, the exact execution digest and an
+    expiry, and is the behaviour of the generic ``/api/v1/decisions`` surface.
+    """
+
+    LEGACY = "legacy"
+    STRICT = "strict"
+
+
+class PolicyIdentity(_FrozenModel):
+    """Versioned identity of the policy set that produced a decision."""
+
+    id: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    )
+    version: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+@dataclass(frozen=True)
+class ConfirmationGrant:
+    """A parsed strict grant: ``run_id:step_id:execution_digest:expiry_unix``."""
+
+    run_id: str
+    step_id: int
+    execution_digest: str
+    expires_at: int
+
+
+def parse_confirmation_grant(value: str) -> ConfirmationGrant | None:
+    """Parse a strict, caller-bound confirmation grant.
+
+    ``run_id`` may itself contain ``:``; the final three fields may not, so the
+    grant is split from the right. Returns ``None`` for anything malformed, which
+    callers must treat as "not granted" rather than as a parse failure.
+    """
+
+    parts = value.rsplit(":", 3)
+    if len(parts) != 4:
+        return None
+    run_id, step_text, digest, expiry_text = parts
+    if not run_id or not step_text.isdigit() or not expiry_text.isdigit():
+        return None
+    if re.fullmatch(r"[0-9a-f]{24}", digest) is None:
+        return None
+    return ConfirmationGrant(
+        run_id=run_id,
+        step_id=int(step_text),
+        execution_digest=digest,
+        expires_at=int(expiry_text),
+    )
+
+
+def confirmation_grant_binds(
+    grant_value: str,
+    *,
+    run_id: str,
+    step_id: int,
+    execution_digest: str,
+    now_epoch: int,
+) -> bool:
+    """Return whether a strict grant authorizes exactly this request and action."""
+
+    grant = parse_confirmation_grant(grant_value)
+    if grant is None:
+        return False
+    return (
+        grant.run_id == run_id
+        and grant.step_id == step_id
+        and grant.execution_digest == execution_digest
+        and grant.expires_at > now_epoch
+    )
 
 
 def action_digest(action: CandidateAction) -> str:

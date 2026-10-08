@@ -30,6 +30,8 @@ class AdaptedRequest:
     provenance_complete: bool
     referenced_provenance: tuple[SentinelProvenanceRecord, ...]
     evidence_truncated: bool
+    run_id: str
+    step_id: int
 
 
 def adapt_request(request: SentinelRequest) -> AdaptedRequest:
@@ -131,7 +133,15 @@ def adapt_request(request: SentinelRequest) -> AdaptedRequest:
         provenance_complete=complete,
         referenced_provenance=tuple(referenced_records),
         evidence_truncated=len(observations) > _MAX_CANONICAL_OBSERVATIONS,
+        run_id=request.run_id,
+        step_id=request.step_id,
     )
+
+
+def canonical_action(action: SentinelCandidateAction) -> CandidateAction:
+    """Map a wire action onto the canonical, policy-neutral action contract."""
+
+    return _canonical_action(action)
 
 
 def _canonical_action(action: SentinelCandidateAction) -> CandidateAction:
