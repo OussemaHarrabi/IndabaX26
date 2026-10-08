@@ -32,6 +32,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from aegisgraph import telemetry
 from aegisgraph.access import (
     ProblemError,
     SettingsDep,
@@ -74,6 +75,9 @@ API_VERSION: ApiVersion = "aegisgraph/v1"
 
 DEFAULT_POLICY_SET = PolicyIdentity(id="aegisgraph-default", version="1")
 """Policy identity reported when the caller does not pin one."""
+
+DECISION_ROUTE: str = "/api/v1/decisions"
+"""The route template this surface is served at; the only telemetry route value here."""
 
 RECEIPT_TTL_ENV = "AEGISGRAPH_RECEIPT_TTL_SECONDS"
 DEFAULT_RECEIPT_TTL_SECONDS = 60
@@ -191,62 +195,112 @@ async def create_decision(
     decided_at = datetime.now(UTC)
     now_epoch = int(decided_at.timestamp())
 
-    assert_trust_ceiling(principal, request)
-    policy_set, policy_context = effective_policy(
-        principal,
-        policy_set=request.policy_set,
-        policy_context=request.policy_context,
-        store=store,
-        default_policy_set=DEFAULT_POLICY_SET,
-    )
-    request = _with_policy_context(request, policy_context)
-    authorization = authorize_confirmations(
-        request, tenant_id=principal.tenant_id, store=store, now=decided_at
-    )
-    request = authorization.request
-    identity = _ReceiptIdentity(
-        request_id=request.request_id or uuid4().hex,
-        receipt_id=uuid4().hex,
-        policy_set=policy_set,
-        decided_at=decided_at,
-        valid_until=decided_at + timedelta(seconds=receipt_ttl_seconds()),
-    )
-    try:
-        evaluated = evaluate(
-            request,
-            confirmation_mode=ConfirmationMode.STRICT,
-            now_epoch=now_epoch,
+    with telemetry.span(
+        telemetry.SPAN_DECISION, **{telemetry.ATTR_ROUTE: DECISION_ROUTE}
+    ) as decision_span:
+        with telemetry.span(telemetry.SPAN_NORMALISE) as normalise_span:
+            assert_trust_ceiling(principal, request)
+            policy_set, policy_context = effective_policy(
+                principal,
+                policy_set=request.policy_set,
+                policy_context=request.policy_context,
+                store=store,
+                default_policy_set=DEFAULT_POLICY_SET,
+            )
+            request = _with_policy_context(request, policy_context)
+            authorization = authorize_confirmations(
+                request, tenant_id=principal.tenant_id, store=store, now=decided_at
+            )
+            request = authorization.request
+            identity = _ReceiptIdentity(
+                request_id=request.request_id or uuid4().hex,
+                receipt_id=uuid4().hex,
+                policy_set=policy_set,
+                decided_at=decided_at,
+                valid_until=decided_at + timedelta(seconds=receipt_ttl_seconds()),
+            )
+            normalise_span.set_attribute(telemetry.ATTR_POLICY_SET_ID, policy_set.id)
+            normalise_span.set_attribute(
+                telemetry.ATTR_POLICY_SET_VERSION, policy_set.version
+            )
+        with telemetry.span(telemetry.SPAN_EVALUATE) as evaluate_span:
+            try:
+                evaluated = evaluate(
+                    request,
+                    confirmation_mode=ConfirmationMode.STRICT,
+                    now_epoch=now_epoch,
+                )
+                response = _to_generic_response(evaluated, identity)
+            except Exception as error:
+                _LOGGER.error("Generic decision failed (%s)", type(error).__name__)
+                response = _fail_closed_response(request, identity)
+            encoded = response.model_dump_json().encode("utf-8")
+            if len(encoded) > MAX_RESPONSE_BYTES:
+                response = _fail_closed_response(request, identity)
+            evaluate_span.set_attribute(telemetry.ATTR_VERDICT, response.decision)
+            evaluate_span.set_attribute(telemetry.ATTR_POLICY_SET_ID, response.policy_set.id)
+            evaluate_span.set_attribute(
+                telemetry.ATTR_POLICY_SET_VERSION, response.policy_set.version
+            )
+        with telemetry.span(telemetry.SPAN_PERSIST) as persist_span:
+            receipt_outcome = telemetry.OUTCOME_UNAVAILABLE
+            try:
+                response, receipt_outcome = _persist_receipt(
+                    request=request,
+                    response=response,
+                    identity=identity,
+                    principal=principal,
+                    settings=settings,
+                    store=store,
+                )
+            except ProblemError as error:
+                telemetry.record_receipt_failure(error.code)
+                receipt_outcome = _receipt_outcome(error.code)
+                raise
+            finally:
+                persist_span.set_attribute(
+                    telemetry.ATTR_RECEIPT_STORE_OUTCOME, receipt_outcome
+                )
+        with telemetry.span(telemetry.SPAN_RESPOND) as respond_span:
+            record_refusal(
+                authorization,
+                tenant_id=principal.tenant_id,
+                principal_id=principal.principal_id,
+                store=store,
+                now=decided_at,
+                request_id=response.request_id,
+            )
+            latency_ms = round((time.perf_counter() - started) * 1000.0, 3)
+            _log_decision(
+                response,
+                latency_ms=latency_ms,
+                caller=_caller_label(principal),
+            )
+            telemetry.record_decision(
+                verdict=response.decision,
+                policy_id=response.policy_set.id,
+                latency_seconds=latency_ms / 1000.0,
+            )
+            respond_span.set_attribute(telemetry.ATTR_LATENCY_MS, latency_ms)
+        decision_span.set_attribute(telemetry.ATTR_VERDICT, response.decision)
+        decision_span.set_attribute(telemetry.ATTR_POLICY_SET_ID, response.policy_set.id)
+        decision_span.set_attribute(
+            telemetry.ATTR_POLICY_SET_VERSION, response.policy_set.version
         )
-        response = _to_generic_response(evaluated, identity)
-    except Exception as error:
-        _LOGGER.error("Generic decision failed (%s)", type(error).__name__)
-        response = _fail_closed_response(request, identity)
-    encoded = response.model_dump_json().encode("utf-8")
-    if len(encoded) > MAX_RESPONSE_BYTES:
-        response = _fail_closed_response(request, identity)
-    response = _persist_receipt(
-        request=request,
-        response=response,
-        identity=identity,
-        principal=principal,
-        settings=settings,
-        store=store,
-    )
-    record_refusal(
-        authorization,
-        tenant_id=principal.tenant_id,
-        principal_id=principal.principal_id,
-        store=store,
-        now=decided_at,
-        request_id=response.request_id,
-    )
-    _log_decision(
-        response,
-        latency_ms=round((time.perf_counter() - started) * 1000.0, 3),
-        caller=_caller_label(principal),
-    )
+        decision_span.set_attribute(
+            telemetry.ATTR_RECEIPT_STORE_OUTCOME, receipt_outcome
+        )
+        decision_span.set_attribute(telemetry.ATTR_LATENCY_MS, latency_ms)
     encoded = response.model_dump_json().encode("utf-8")
     return Response(content=encoded, media_type="application/json", status_code=200)
+
+
+def _receipt_outcome(problem_code: str) -> str:
+    """Map a receipt-store refusal onto the bounded telemetry outcome value."""
+
+    if problem_code == "REQUEST_ID_CONFLICT":
+        return telemetry.OUTCOME_CONFLICT
+    return telemetry.OUTCOME_UNAVAILABLE
 
 
 def _caller_label(principal: Principal) -> str | None:
@@ -273,8 +327,8 @@ def _persist_receipt(
     principal: Principal,
     settings: Settings,
     store: ReceiptStore,
-) -> GenericDecisionResponse:
-    """Store the receipt idempotently and return the durable identity (F7, D1)."""
+) -> tuple[GenericDecisionResponse, str]:
+    """Store the receipt idempotently and return it with the store outcome (F7, D1)."""
 
     record = ReceiptRecord(
         tenant_id=principal.tenant_id,
@@ -330,7 +384,7 @@ def _persist_receipt(
             status_code=503,
         ) from error
     if stored.receipt_id == response.receipt_id:
-        return response
+        return response, telemetry.OUTCOME_STORED
     # A duplicate returns the stored receipt rather than creating a second one.
     update: dict[str, object] = {
         "receipt_id": stored.receipt_id,
@@ -341,7 +395,7 @@ def _persist_receipt(
         update["risk_score"] = stored.risk_score
         update["confidence"] = stored.confidence
         update["reason_codes"] = stored.reason_codes
-    return response.model_copy(update=update)
+    return response.model_copy(update=update), telemetry.OUTCOME_DUPLICATE
 
 
 def receipt_ttl_seconds() -> int:
@@ -463,6 +517,7 @@ __all__ = [
     "API_VERSION",
     "BUILD_COMMIT_ENV",
     "BUILD_VERSION_ENV",
+    "DECISION_ROUTE",
     "DEFAULT_POLICY_SET",
     "DEFAULT_RECEIPT_TTL_SECONDS",
     "RECEIPT_TTL_ENV",
