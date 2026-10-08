@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegisgraph.dev/api/decision.schema.json",
+  "title": "AegisGraph generic decision contract (aegisgraph/v1)",
+  "description": "Normative JSON Schema for POST /api/v1/decisions. The legacy POST /v1/decision wire is frozen and described in docs/api/contracts.md; it is deliberately not covered here.",
+  "$defs": {
+    "policyIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$" },
+        "version": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+      }
+    },
+    "argumentValue": { "type": ["string", "integer", "number", "boolean", "null"] },
+    "candidateAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["respond", "tool_call", "memory_write", "request_confirmation"] },
+        "tool": { "type": ["string", "null"], "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+        "arguments": {
+          "type": "object",
+          "maxProperties": 32,
+          "additionalProperties": { "$ref": "#/$defs/argumentValue" }
+        },
+        "content": { "type": ["string", "null"], "maxLength": 16000 },
+        "final": { "type": "boolean", "default": false },
+        "confirmation_for": { "oneOf": [{ "$ref": "#/$defs/candidateAction" }, { "type": "null" }] }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["source_type", "source_id", "trust_level", "origin_actor", "retrieved_via", "timestamp"],
+      "properties": {
+        "source_type": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "source_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "trust_level": {
+          "enum": ["system_policy", "authenticated_user", "trusted_internal", "untrusted_internal", "untrusted_external", "adversary_controlled"]
+        },
+        "origin_actor": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "retrieved_via": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "sensitivity": { "enum": ["public", "internal", "confidential", "restricted"], "default": "internal" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "parent_event_ids": { "type": "array", "maxItems": 128, "items": { "type": "string", "minLength": 1, "maxLength": 256 } },
+        "tags": { "type": "array", "maxItems": 128, "items": { "type": "string", "minLength": 1, "maxLength": 128 } }
+      }
+    },
+    "reasonCode": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,63}$" }
+  },
+  "request": {
+    "type": "object",
+    "required": ["api_version", "run_id", "step_id", "user_goal", "candidate_action"],
+    "properties": {
+      "api_version": { "const": "aegisgraph/v1" },
+      "request_id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$" },
+      "policy_set": { "$ref": "#/$defs/policyIdentity" },
+      "run_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+      "step_id": { "type": "integer", "minimum": 0 },
+      "user_goal": { "type": "string", "maxLength": 16000 },
+      "conversation": {
+        "type": "array",
+        "maxItems": 256,
+        "items": {
+          "type": "object",
+          "required": ["role", "kind", "content"],
+          "properties": {
+            "role": { "enum": ["user", "agent", "tool", "memory", "safety", "human"] },
+            "kind": { "type": "string", "minLength": 1, "maxLength": 64 },
+            "content": { "type": "string", "maxLength": 16000 },
+            "provenance_ids": { "type": "array", "maxItems": 128, "items": { "type": "string" } }
+          }
+        }
+      },
+      "observation": {
+        "type": ["object", "null"],
+        "required": ["kind", "content"],
+        "properties": {
+          "kind": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "content": { "type": "string", "maxLength": 16000 },
+          "provenance_ids": { "type": "array", "maxItems": 128, "items": { "type": "string" } }
+        }
+      },
+      "candidate_action": { "$ref": "#/$defs/candidateAction" },
+      "policy_context": { "type": "object", "description": "At most 16384 JSON bytes." },
+      "provenance": {
+        "type": "array",
+        "maxItems": 256,
+        "items": {
+          "type": "object",
+          "required": ["id", "provenance"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "provenance": { "$ref": "#/$defs/provenance" }
+          }
+        }
+      },
+      "history_digest": {
+        "type": "object",
+        "properties": {
+          "steps_taken": { "type": "integer", "minimum": 0 },
+          "turn_index": { "type": "integer", "minimum": 0 },
+          "tool_calls": { "type": "array", "maxItems": 256, "items": { "type": "object" } },
+          "confirmations_granted": {
+            "type": "array",
+            "maxItems": 256,
+            "items": { "type": "string" },
+            "description": "Strict mode accepts only '<run_id>:<step_id>:<execution_digest>:<expiry_unix>'."
+          },
+          "blocked_count": { "type": "integer", "minimum": 0 },
+          "escalated_count": { "type": "integer", "minimum": 0 },
+          "least_trusted_seen": { "type": ["string", "null"] },
+          "most_sensitive_seen": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "description": "Unknown envelope keys are ignored (forward compatible). The whole body is capped by AEGISGRAPH_MAX_BODY_BYTES (default 1048576) and rejected with 413 before parsing when exceeded."
+  },
+  "response": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "decision", "risk_score", "confidence", "reason_codes", "explanation", "rewritten_action", "metadata",
+      "api_version", "request_id", "receipt_id", "policy_set", "action_digest", "execution_digest",
+      "decided_at", "valid_until"
+    ],
+    "properties": {
+      "decision": { "enum": ["allow", "block", "escalate", "rewrite"] },
+      "risk_score": { "type": "number", "minimum": 0, "maximum": 1 },
+      "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+      "reason_codes": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/reasonCode" } },
+      "explanation": { "type": ["string", "null"], "maxLength": 500 },
+      "rewritten_action": { "oneOf": [{ "$ref": "#/$defs/candidateAction" }, { "type": "null" }] },
+      "metadata": { "type": "object", "description": "At most 4096 JSON bytes." },
+      "api_version": { "const": "aegisgraph/v1" },
+      "request_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+      "receipt_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+      "policy_set": { "$ref": "#/$defs/policyIdentity" },
+      "action_digest": { "type": "string", "pattern": "^[0-9a-f]{24}$", "description": "Lossy canonical digest used by the legacy confirmation protocol." },
+      "execution_digest": { "type": "string", "pattern": "^[0-9a-f]{24}$", "description": "Exact digest the enforcement SDK binds to." },
+      "decided_at": { "type": "string", "format": "date-time" },
+      "valid_until": { "type": "string", "format": "date-time" }
+    }
+  }
+}
