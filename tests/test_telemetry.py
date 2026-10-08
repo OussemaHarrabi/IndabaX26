@@ -114,8 +114,11 @@ def test_a_decision_emits_the_four_phase_spans_and_the_root_span(
     assert root.attributes is not None
     assert root.attributes[telemetry.ATTR_ROUTE] == "/api/v1/decisions"
     assert root.attributes[telemetry.ATTR_VERDICT] == "allow"
-    assert root.attributes[telemetry.ATTR_POLICY_SET_ID] == "aegisgraph-default"
-    assert root.attributes[telemetry.ATTR_POLICY_SET_VERSION] == "1"
+    # The policy identity is resolved server-side (H2-02, H3-04), so telemetry must
+    # mirror whatever identity the decision actually carried.
+    identity = response.json()["policy_set"]
+    assert root.attributes[telemetry.ATTR_POLICY_SET_ID] == identity["id"]
+    assert root.attributes[telemetry.ATTR_POLICY_SET_VERSION] == identity["version"]
     assert root.attributes[telemetry.ATTR_RECEIPT_STORE_OUTCOME] == telemetry.OUTCOME_STORED
     assert float(root.attributes[telemetry.ATTR_LATENCY_MS]) > 0.0
     persisted = spans[telemetry.SPAN_PERSIST].attributes
@@ -245,17 +248,21 @@ def test_a_decision_records_the_verdict_and_the_latency_histogram(
 ) -> None:
     instance, _exporter = captured
 
-    client.post("/api/v1/decisions", json=_body({"type": "respond", "content": "Done"}))
-    client.post(
+    allowed = client.post("/api/v1/decisions", json=_body({"type": "respond", "content": "Done"}))
+    blocked = client.post(
         "/api/v1/decisions",
         json=_body({"type": "tool_call", "tool": "email_send", "arguments": {"to": "a@b.test"}}),
     )
 
     assert instance.sample(
-        telemetry.DECISION_COUNTER, verdict="allow", policy_id="aegisgraph-default"
+        telemetry.DECISION_COUNTER,
+        verdict="allow",
+        policy_id=allowed.json()["policy_set"]["id"],
     ) == 1.0
     assert instance.sample(
-        telemetry.DECISION_COUNTER, verdict="block", policy_id="aegisgraph-default"
+        telemetry.DECISION_COUNTER,
+        verdict="block",
+        policy_id=blocked.json()["policy_set"]["id"],
     ) == 1.0
     assert instance.sample(f"{telemetry.DECISION_LATENCY}_count") == 2.0
     assert instance.sample(f"{telemetry.DECISION_LATENCY}_sum") > 0.0

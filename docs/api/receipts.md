@@ -20,6 +20,7 @@ A receipt holds:
 | `policy_set {id, version}` | |
 | `principal_id`, `auth_method`, `run_id`, `step_id` | |
 | `decided_at`, `valid_until` | |
+| `decision_body` — the exact response issued for this decision | |
 
 `payload_digest` is the SHA-256 of the canonical JSON of the request plus the
 response metadata. By default **only the digest is stored**: payload-adjacent
@@ -65,6 +66,12 @@ and `::test_an_omitted_request_id_is_generated_by_the_server`.
   `receipt_id`, `decided_at` and `valid_until` — and writes no second row. Two
   workers racing on the same `request_id` produce exactly one row (the unique key
   decides; both callers read the same receipt).
+* A replay returns the **stored decision verbatim**: the response body is persisted
+  in `receipts.decision_body` and re-validated on the way out, so the response and
+  the durable receipt are the same object instead of two evaluations of the same
+  request (H3-02). A stored row whose body cannot be reconstructed faithfully — for
+  example one written before the column existed — is refused with
+  `409 RECEIPT_NOT_RECONSTRUCTIBLE` rather than answered with a fresh decision.
 * The same `request_id` with a **different** action is refused with
   `409 REQUEST_ID_CONFLICT` and an `receipt_request_conflict` audit event. Returning
   the first decision for a different action would be a silent authorization bug.
@@ -200,9 +207,24 @@ readiness is reported by the separate, unauthenticated `GET /readyz`:
 }
 ```
 
-`ready` is `false` and the status is `503` when the receipt store does not answer,
-or when a development process runs without authentication. The body contains no
-secret material: no token, no digest, no key, no database URL.
+`ready` answers the probe's question — *can this process serve?* — and is `false`
+with a `503` only when the receipt store does not answer. Whether the process is
+serving **safely** is reported separately, so a development process is not silently
+presented as production-ready (H3-05):
+
+```json
+{
+  "status": "ready",
+  "ready": true,
+  "insecure": true,
+  "warnings": ["AUTH_MODE_NONE", "LEGACY_UNAUTHENTICATED", "RECEIPT_STORE_NOT_DURABLE", "NOT_PRODUCTION"],
+  "dependencies": { "...": "..." }
+}
+```
+
+`insecure` is `true` whenever authentication is off, the legacy surface is enabled,
+the receipt store is not durable, or the environment is not `production`. The body
+contains no secret material: no token, no digest, no key, no database URL.
 
 ## 6. Enforcement
 

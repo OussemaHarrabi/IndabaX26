@@ -41,6 +41,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -141,6 +142,9 @@ class Receipt(Base):
     action_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     execution_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    decision_body: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(

@@ -155,6 +155,26 @@ as `trusted_internal` or lower, but cannot claim `system_policy` or
 `authenticated_user` — which is precisely the relabelling move F3 described.
 Claiming *less* trust is always allowed: it only makes the engine stricter.
 
+### The ceiling covers *induced* labels, not only declared ones (H3-01)
+
+A request can label evidence without saying so. A conversation item with no
+`provenance_ids` is labelled by the adapter from its role:
+
+| Item | Induced label |
+| --- | --- |
+| conversation item, role `user` | `authenticated_user` |
+| conversation item, role `agent` / `safety` / `human` | `trusted_internal` |
+| conversation item, role `tool` / `memory` | `untrusted_internal` |
+| `observation` without `provenance_ids` | `untrusted_internal` |
+| item whose `provenance_ids` do not resolve | `adversary_controlled` (fails closed) |
+
+`assert_trust_ceiling` evaluates exactly those labels — the mapping is imported from
+`aegisgraph.adapter.IMPLICIT_ROLE_TRUST`, which is the same one the adapter uses, so
+the two can never drift. A caller at the default ceiling therefore cannot place
+hostile text in a `user`-role item and have it treated as authenticated user intent;
+it must hold a ceiling at or above `authenticated_user`. An item that carries
+`provenance_ids` is still governed by the label of the record it references.
+
 ## 6. Policy authority (D3) and policy identity (H2-02)
 
 The **identity** a decision reports is always a server value, never a caller-asserted
@@ -171,6 +191,13 @@ string:
 * The response, the receipt, and the structured decision record all carry the
   resolved server identity. `enforcement.POLICY_MISMATCH` is therefore meaningful:
   the identity it compares against cannot be chosen by the caller it checks.
+* When a caller holding `policy:context_override` supplies a document and **no**
+  stored version backs it, the reported identity is derived from that document:
+  `{"id": "caller-override", "version": "<first 32 hex of sha256(canonical JSON of the document)>"}`.
+  It is content-addressed, so two different documents give two different identities,
+  it changes when the document changes, and no caller string ever appears verbatim
+  as the id or the version (H3-04). A caller that wants to re-verify such a receipt
+  can recompute the same identity from the same document.
 * `GET /api/v1/version` reports the same server default identity and accepts no
   caller input that could change it.
 
@@ -194,6 +221,13 @@ It is available only while `AEGISGRAPH_LEGACY_UNAUTHENTICATED=true` — the
 development default — and only on a loopback bind. Production refuses to start with
 it enabled, and in development it answers `404` when the flag is off.
 
+The loopback condition is checked against `AEGISGRAPH_BIND_ADDRESS` at startup, which
+is the address the process is *configured* to serve on (compose, the Makefile and the
+container entrypoint all pass it to `uvicorn`). The application cannot observe the
+socket a host ASGI server actually bound in a way that is portable across servers, so
+this is a configuration guard rather than a runtime one; production refuses the
+legacy surface outright, which is why the gap is acceptable (H3-06).
+
 ## 8. The development-only issuer
 
 `scripts/dev_issuer.py` mints tokens against a local JWKS file. It is **not** a
@@ -213,7 +247,17 @@ The default output directory is a temporary directory **outside** the repository
 a generated private key cannot be committed by accident. If you pass `--directory`
 inside the repository, add it to `.gitignore` first.
 
-## 9. Secret handling
+## 9. Request handling order (H3-08)
+
+`BodySizeLimitMiddleware` reads and buffers the request body up to
+`AEGISGRAPH_MAX_BODY_BYTES` (1 MiB) *before* the application sees it, because the
+413 refusal must happen before parsing (finding F5). FastAPI then resolves the
+dependencies — including the credential — **before** it parses the JSON body, so an
+unauthenticated caller is rejected without a parse and without touching policy. The
+residual cost of an anonymous request is one bounded 1 MiB read; that is the
+documented trade-off, and it is why the cap is enforced ahead of everything else.
+
+## 10. Secret handling
 
 * No secret is committed. `AEGISGRAPH_JWKS_FILE` and `AEGISGRAPH_SERVICE_TOKEN_FILE`
   exist so a deployment can mount secrets read-only instead of passing them in the
