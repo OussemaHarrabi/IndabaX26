@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -11,15 +13,22 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import RequestResponseEndpoint
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from aegisgraph.contracts import GuardDecision, Verdict
+from aegisgraph.api_v1 import router as api_v1_router
+from aegisgraph.contracts import GuardDecision
 from aegisgraph.engine import decide
-from aegisgraph.sentinel import SentinelRequest, SentinelResponse
+from aegisgraph.sentinel import (
+    MAX_RESPONSE_BYTES,
+    SentinelRequest,
+    SentinelResponse,
+    wire_response,
+)
 
 _LOGGER = logging.getLogger(__name__)
-_MAX_RESPONSE_BYTES = 64_000
 _GENERIC_INVALID = {"detail": "Invalid SENTINEL request"}
 _GENERIC_FAILURE = {"detail": "Request could not be safely processed"}
+_GENERIC_TOO_LARGE = {"detail": "Request body exceeds the configured limit"}
 _STATIC_DIRECTORY = Path(__file__).parent / "static"
 _DASHBOARD_CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self'; "
@@ -27,12 +36,71 @@ _DASHBOARD_CSP = (
     "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 )
 
+MAX_BODY_BYTES_ENV = "AEGISGRAPH_MAX_BODY_BYTES"
+DEFAULT_MAX_BODY_BYTES = 1_048_576
+"""Upper bound for a request body, enforced before the body is parsed (F5)."""
+
 app = FastAPI(
     title="AegisGraph SENTINEL v1 defense API",
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
 )
+
+
+class BodySizeLimitMiddleware:
+    """Reject oversized request bodies with 413 before any JSON parsing (F5).
+
+    Both the declared ``Content-Length`` and the streamed body (chunked transfer
+    encoding) are bounded: the declared size is rejected before the body is read,
+    and a streamed body is buffered only until the bound is crossed. The request
+    is then replayed downstream, so the bound is applied in front of parsing and
+    memory never exceeds the configured size.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        limit = max_body_bytes()
+        headers = {key.lower(): value for key, value in scope["headers"]}
+        declared = headers.get(b"content-length")
+        if declared is not None and _declared_too_large(declared, limit):
+            await _send_too_large(send)
+            return
+
+        chunks: list[bytes] = []
+        received = 0
+        while True:
+            message = await receive()
+            if message["type"] != "http.request":
+                return
+            chunk = message.get("body", b"")
+            received += len(chunk)
+            if received > limit:
+                await _send_too_large(send)
+                return
+            chunks.append(chunk)
+            if not message.get("more_body", False):
+                break
+        body = b"".join(chunks)
+        replayed = False
+
+        async def replay() -> Message:
+            nonlocal replayed
+            if replayed:
+                return {"type": "http.disconnect"}
+            replayed = True
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        await self.app(scope, replay, send)
+
+
+app.add_middleware(BodySizeLimitMiddleware)
 
 
 @app.get("/", include_in_schema=False)
@@ -62,6 +130,47 @@ async def no_store_and_sanitize_errors(
     return response
 
 
+def max_body_bytes() -> int:
+    """Return the configured request-body bound in bytes (default 1 MiB)."""
+
+    raw = os.environ.get(MAX_BODY_BYTES_ENV)
+    if raw is None:
+        return DEFAULT_MAX_BODY_BYTES
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_MAX_BODY_BYTES
+    return value if value > 0 else DEFAULT_MAX_BODY_BYTES
+
+
+def _declared_too_large(declared: bytes, limit: int) -> bool:
+    try:
+        return int(declared) > limit
+    except ValueError:
+        return True
+
+
+async def _send_too_large(send: Send) -> None:
+    body = json.dumps(_GENERIC_TOO_LARGE).encode("utf-8")
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode("ascii")),
+                (b"cache-control", b"no-store"),
+                (b"pragma", b"no-cache"),
+                (b"x-content-type-options", b"nosniff"),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})
+
+
+app.include_router(api_v1_router)
+
+
 @app.exception_handler(RequestValidationError)
 async def invalid_request_handler(_request: Request, _error: RequestValidationError) -> Response:
     return JSONResponse(_GENERIC_INVALID, status_code=422)
@@ -88,7 +197,7 @@ async def decision_endpoint(request: SentinelRequest) -> Response:
         result = decide(request)
         response = _to_wire_response(result)
         encoded = response.model_dump_json().encode("utf-8")
-        if len(encoded) > _MAX_RESPONSE_BYTES:
+        if len(encoded) > MAX_RESPONSE_BYTES:
             raise ValueError("decision response exceeded protocol response bound")
         return Response(content=encoded, media_type="application/json", status_code=200)
     except Exception as error:
@@ -110,7 +219,4 @@ async def decision_endpoint(request: SentinelRequest) -> Response:
 def _to_wire_response(decision: GuardDecision) -> SentinelResponse:
     """Translate canonical enums into the strict public response contract."""
 
-    payload = decision.model_dump(mode="json")
-    payload["decision"] = Verdict(decision.verdict).value
-    payload.pop("verdict", None)
-    return SentinelResponse.model_validate(payload)
+    return wire_response(decision)
