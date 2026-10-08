@@ -1,21 +1,45 @@
+# Build context exclusions for the AegisGraph image.
+#
+# The build only ever needs `requirements.lock` and `backend/`, but the entries
+# below also protect against accidentally shipping evaluation corpora, course
+# material, evidence, local databases and worktrees.
 .git
 .gitignore
-.venv
+.gitattributes
+.github
+.worktrees
+.audit-tmp
 .repowise
 .bench
-.worktrees
+.venv
+.env
+.env.*
+!.env.example
+
+# Evidence/corpora and course material that must never reach an image layer.
+evaluation
+COURSE
+docs
+pdf-*
+*.pdf
+artifacts
+results
+deploy
+
+# Tests and tooling are not part of the runtime image.
+tests
+frontend
+scripts
+
+# Caches, byte code and local databases.
 __pycache__
 .pytest_cache
 .ruff_cache
 .mypy_cache
 *.py[cod]
-*.pdf
-.env
-.env.*
-!.env.example
-tests
-frontend
-artifacts
-results
+*.sqlite
+*.sqlite3
+*.db
+.coverage
 coverage.xml
 htmlcov
