@@ -15,8 +15,10 @@ that means.
 | `deploy/k8s/configmap.yaml` | ConfigMap | non-secret config (legacy surface off, OTLP endpoint) |
 | `deploy/k8s/deployment.yaml` | Deployment | 2 replicas, full container hardening, probes, resources |
 | `deploy/k8s/service.yaml` | Service | ClusterIP `80 → http(8080)` |
+| `deploy/k8s/migrate-job.yaml` | Job | one-shot `alembic upgrade head` from the same image (M2 schema) |
 | `deploy/k8s/networkpolicy-default-deny.yaml` | NetworkPolicy | deny all ingress+egress in the namespace |
 | `deploy/k8s/networkpolicy-api.yaml` | NetworkPolicy | allow only edge→8080, DNS, DB 5432, OTLP 4317/4318 |
+| `deploy/k8s/networkpolicy-migrate.yaml` | NetworkPolicy | migration Job egress limited to DNS + PostgreSQL 5432 |
 | `deploy/k8s/poddisruptionbudget.yaml` | PodDisruptionBudget | `minAvailable: 1` |
 | `deploy/k8s/kustomization.yaml` | Kustomization | the single place the image is resolved |
 
@@ -39,6 +41,9 @@ failing assertions:
 - the default-deny policy covers Ingress and Egress; the API policy's ingress
   ports are ⊆ {8080} and its egress ports ⊆ {53, 5432, 4317, 4318};
 - a PodDisruptionBudget with `minAvailable`/`maxUnavailable`;
+- the migration Job runs `python -m alembic upgrade head` from the **same image**
+  as the API, reads `DATABASE_URL` from the Secret (never a ConfigMap), is
+  hardened identically, and has its own egress policy limited to DNS + 5432;
 - the image is not a floating `:latest` (a non-digest tag prints an explicit
   NOTE, see below).
 
@@ -46,15 +51,15 @@ failing assertions:
 
 ```sh
 kubectl kustomize deploy/k8s
-# → 7 objects, image rewritten to ghcr.io/oussemaharrabi/aegisgraph:0.1.0
+# → 9 objects, image rewritten to ghcr.io/oussemaharrabi/aegisgraph:0.1.0
 
 python scripts/validate_k8s_manifests.py --validator both
-# 7 × schema[kubernetes-validate] PASS
-# schema[kubeconform]: Summary: 7 resources found in 1 file - Valid: 7, Invalid: 0, Errors: 0, Skipped: 0
-# 21 × policy PASS → "all manifest checks passed"
+# 9 × schema[kubernetes-validate] PASS
+# schema[kubeconform]: Summary: 9 resources found in 1 file - Valid: 9, Invalid: 0, Errors: 0, Skipped: 0
+# 29 × policy PASS → "all manifest checks passed"
 ```
 
-Two independent schema validators agree on all 7 objects:
+Two independent schema validators agree on all 9 objects:
 
 - **`kubernetes-validate` 1.36.0** — pip-installable, fully offline (schemas ship
   with the package). This is the primary validator and the only one CI needs.
@@ -108,6 +113,39 @@ kustomize edit set image \
 The validator prints a NOTE whenever the image is tag-pinned rather than
 digest-pinned, so the deviation is visible in every CI run.
 
+**Rule: any recorded image ID must name the lock revision it was built from.**
+`requirements.lock` gained the whole M2 stack, and the image digest moved with
+it. The portable provenance triple is **(commit, `requirements.lock` blob
+SHA-256, exact build command)**; the image ID is the checksum of the artifact you
+actually built and is context-sensitive (see the table in
+`docs/ops/container.md`). At commit `4350af3` the lock blob is
+`b49b8c5d328f5823f07f5aa96bbc63572376e857a982bff2050781d57b5f93fd`.
+
+## Deploying with the schema
+
+The API's readiness is dependency-aware. `/healthz` is liveness only, so it stays
+the probe for the Deployment; `/readyz` additionally reports the authentication
+mode and whether the receipt store is durable and reachable — use it once M2 auth
+and `DATABASE_URL` are configured.
+
+Migrations are a separate, explicit step, never an init container racing the API:
+
+```sh
+kubectl apply -k deploy/k8s
+kubectl -n aegisgraph create secret generic aegisgraph-secrets \
+  --from-literal=DATABASE_URL='postgresql+psycopg://user:secret@postgres:5432/aegisgraph'
+kubectl -n aegisgraph wait --for=condition=complete job/aegisgraph-migrate --timeout=180s
+kubectl -n aegisgraph rollout status deploy/aegisgraph-api --timeout=120s
+```
+
+Re-running a migration after a schema change needs the Job recreated (Jobs are
+immutable in their pod template):
+
+```sh
+kubectl -n aegisgraph delete job aegisgraph-migrate --ignore-not-found
+kubectl apply -k deploy/k8s
+```
+
 ## Rollback
 
 **Kubernetes**
@@ -152,18 +190,23 @@ python scripts/generate_sbom.py --image aegisgraph:m4 --deterministic \
   --output deploy/sbom/aegisgraph-image-sbom.json
 ```
 
-| Artifact | SHA-256 |
+| Artifact | SHA-256 (git blob) |
 | --- | --- |
-| `deploy/sbom/aegisgraph-image-sbom.json` | `9042dfe2358c2625bc2b70727244f8e89cfc19280d6255037349423fbcd492c7` |
-| `deploy/sbom/aegisgraph-image-sbom.requirements.txt` | `ed494c891709fbfeb93fc8b23173250c306b32dbc3f9a71f8114767260881e13` |
+| `deploy/sbom/aegisgraph-image-sbom.json` | `14949d1b921cf5dca0cd2c55b12508f84d93205371ad066addc239a0b3144143` |
+| `deploy/sbom/aegisgraph-image-sbom.requirements.txt` | `e4539d17fbcfc892e907fb83eab67c81ea025ed7de9d9a6065eb323e31dfac3e` |
 
-The manifest records `image.id =
-sha256:179c8913d1b4d373058048e719c553a17ae93a4dcc8b817a9c6dac36648b0c18` (the
-reproducible content digest; the image is built with `--provenance=false
---sbom=false`, see `docs/ops/container.md`) and `source.commit`, the revision
-whose source produced the image. Because the manifest is committed after the
-commit it describes, `source.commit` names its parent commit; regenerating at
-that revision reproduces the file byte-for-byte.
+Both are **blob** digests (`git show HEAD:<path> | sha256sum`). `.gitattributes`
+marks `*.json` as `-text`, so the manifest's blob bytes are stable; the `.txt`
+inventory is LF in the blob and a Windows working copy may materialize CRLF, so
+hash the blob for both.
+
+The manifest records `image.id` (the content digest of the build that produced
+it — `sha256:f36f6e1e…` for the current revision; the image is built with
+`--provenance=false --sbom=false`, see `docs/ops/container.md`),
+`source.requirements_lock_sha256` (the lock revision it corresponds to) and
+`source.commit`. Because the manifest is committed after the commit it describes,
+`source.commit` names its parent commit; regenerating at that revision reproduces
+the file byte-for-byte.
 
 Two consecutive deterministic runs produced byte-identical output. CI emits a
 fresh (timestamped) SBOM plus the image digest and uploads them as the
