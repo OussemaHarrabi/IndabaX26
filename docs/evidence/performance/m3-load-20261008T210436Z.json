@@ -1,0 +1,119 @@
+{
+  "api_version": "aegisgraph/v1",
+  "digest_semantics": "report_digest_sha256 covers this report's canonical (sorted, compact) encoding without that field; the .sha256 sidecar is the sha256 of the exact bytes written to disk (LF line endings, written in binary), so it equals sha256sum of the file",
+  "environment": {
+    "base_url": "http://127.0.0.1:49739",
+    "cpu_count": 16,
+    "machine": "AMD64",
+    "observed_on": "local developer hardware, single API process, no tuning",
+    "platform": "Windows 11",
+    "processor": "AMD64 Family 26 Model 96 Stepping 0, AuthenticAMD",
+    "python": "3.13.14",
+    "server_build": {
+      "commit": "unknown",
+      "service": "aegisgraph",
+      "version": "0.1.0"
+    },
+    "server_policy_set": {
+      "id": "aegisgraph-default",
+      "version": "1"
+    }
+  },
+  "label": "M3 decision-surface baseline v2 (warm-up excluded from the service-side block; byte-exact sidecar)",
+  "policy_set": {
+    "document": {
+      "allowed_tools": [
+        "document_search",
+        "payment_execute"
+      ],
+      "confirmation_required_tools": [
+        "payment_execute"
+      ],
+      "consequential_tools": [
+        "payment_execute"
+      ],
+      "internal_email_domains": [
+        "aegisgraph.local"
+      ]
+    },
+    "id": "load-test-policy",
+    "source": "published and activated by the harness",
+    "version": "1"
+  },
+  "report_digest_sha256": "e437951890bce9837eb75e751fcb04f606ce513456e359bcf81102ded780ce89",
+  "results": {
+    "elapsed_seconds": 20.048582,
+    "error_rate": 0.0,
+    "error_samples": {},
+    "latency_kind": "client-observed end-to-end, including load-generator scheduling on the same host",
+    "latency_seconds": {
+      "max": 0.360021,
+      "mean": 0.107209,
+      "min": 0.030891,
+      "p50": 0.098596,
+      "p95": 0.169357,
+      "p99": 0.201422
+    },
+    "measured_requests": 2986,
+    "parameters": {
+      "concurrency": 16,
+      "duration_seconds": 20.0,
+      "request_cap": null,
+      "warm_up_requests": 40
+    },
+    "percentile_method": "linear interpolation on the sorted sample set",
+    "request_mix": [
+      {
+        "name": "answer",
+        "weight": 60
+      },
+      {
+        "name": "read_tool",
+        "weight": 20
+      },
+      {
+        "name": "blocked_tool",
+        "weight": 15
+      },
+      {
+        "name": "confirmation_required",
+        "weight": 5
+      }
+    ],
+    "server_error_rate": 0.0,
+    "shape_counts": {
+      "answer": 1805,
+      "blocked_tool": 455,
+      "confirmation_required": 163,
+      "read_tool": 563
+    },
+    "status_counts": {
+      "200": 2986
+    },
+    "throughput_rps": 148.938,
+    "verdict_counts": {
+      "allow": 2368,
+      "block": 455,
+      "escalate": 163
+    }
+  },
+  "schema": "aegisgraph.load-test/1",
+  "service_side": {
+    "counts_match_measured": true,
+    "decisions_observed": 2986,
+    "latency_seconds": {
+      "max": 0.016475,
+      "mean": 0.002654,
+      "p50": 0.002302,
+      "p95": 0.005227,
+      "p99": 0.007283
+    },
+    "measured_requests": 2986,
+    "source": "C:/Users/oussa/AppData/Local/Temp/m3-load2/api.log"
+  },
+  "started_at": "2026-10-08T21:04:36.242431+00:00",
+  "tool": {
+    "name": "scripts/load_test.py",
+    "version": "1"
+  }
+}
