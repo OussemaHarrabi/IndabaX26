@@ -19,13 +19,37 @@ digests. The tag is kept in this table for humans; the `compose.yaml` files
 reference images **by digest only**, so a re-tagged upstream image cannot change
 what runs.
 
-## Bring-up
+## Bring-up (including the `.env` bootstrap)
+
+`.env` is **not** committed and is required: `compose.yaml` interpolates every
+secret with the `:?` form, so Compose fails closed instead of falling back to a
+weak default. The exact sequence is:
 
 ```sh
-cp .env.example .env      # then edit the passwords; .env is gitignored
-docker compose up -d --build
-docker compose ps
+cd <repo root>
+cp .env.example .env                 # 1. create the file from the template
+#    then edit POSTGRES_PASSWORD and GRAFANA_ADMIN_PASSWORD in .env
+docker compose config                # 2. validate + interpolate (no containers)
+docker compose up -d --build         # 3. build the API and start the stack
+docker compose ps                    # 4. check health
 ```
+
+Without step 1, step 2 already fails:
+
+```
+$ docker compose config
+error while interpolating services.postgres.environment.POSTGRES_USER:
+required variable POSTGRES_USER is missing a value: set POSTGRES_USER in .env
+exit=1
+```
+
+(The variable named in the message depends on Compose's map iteration order; any
+of `POSTGRES_USER`, `POSTGRES_PASSWORD` or `GRAFANA_ADMIN_PASSWORD` can be the
+first one reported. All three are required.)
+
+**`.env` must never be committed.** It is covered by `.gitignore`, and the
+committed template is `.env.example` with placeholders only. The values the CI
+`compose` job uses come from that same template (see `docs/ops/ci.md`).
 
 The API is only reachable on loopback. Everything is reachable from the host on
 `127.0.0.1` for inspection:

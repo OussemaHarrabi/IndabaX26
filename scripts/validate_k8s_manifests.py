@@ -24,6 +24,7 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import os
 import shutil
 import subprocess
@@ -66,37 +67,35 @@ def render_manifests() -> list[dict[str, Any]]:
     raise SystemExit("neither `kubectl kustomize` nor `kustomize build` is available")
 
 
-def schema_validate(documents: list[dict[str, Any]]) -> None:
-    try:
-        import kubernetes_validate
-    except ImportError:
-        kubernetes_validate = None
+def _validate_with_python_package(documents: list[dict[str, Any]]) -> int:
+    """Schema-validate every document with the offline ``kubernetes-validate``."""
 
-    if kubernetes_validate is not None:
-        for document in documents:
-            kind = document.get("kind", "?")
-            name = document.get("metadata", {}).get("name", "?")
-            try:
-                kubernetes_validate.validate(document, KUBERNETES_VERSION, strict=True)
-            except Exception as error:  # report every schema failure verbatim
-                _record(False, f"schema {kind}/{name}: {error}")
-            else:
-                _record(True, f"schema {kind}/{name}")
-        return
+    import kubernetes_validate
 
-    kubeconform = shutil.which("kubeconform")
-    if kubeconform is None:
-        raise SystemExit(
-            "no schema validator available: install `kubernetes-validate` (pip) "
-            "or put `kubeconform` on PATH"
-        )
+    checked = 0
+    for document in documents:
+        kind = document.get("kind", "?")
+        name = document.get("metadata", {}).get("name", "?")
+        try:
+            kubernetes_validate.validate(document, KUBERNETES_VERSION, strict=True)
+        except Exception as error:  # report every schema failure verbatim
+            _record(False, f"schema[kubernetes-validate] {kind}/{name}: {error}")
+        else:
+            _record(True, f"schema[kubernetes-validate] {kind}/{name}")
+        checked += 1
+    return checked
+
+
+def _validate_with_kubeconform(documents: list[dict[str, Any]], binary: str) -> int:
+    """Schema-validate the rendered set with the ``kubeconform`` binary."""
+
     with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False, encoding="utf-8") as handle:
         yaml.safe_dump_all(documents, handle)
         rendered_path = handle.name
     try:
         completed = subprocess.run(
             [
-                kubeconform,
+                binary,
                 "-strict",
                 "-summary",
                 "-kubernetes-version",
@@ -107,9 +106,77 @@ def schema_validate(documents: list[dict[str, Any]]) -> None:
             text=True,
             check=False,
         )
-        _record(completed.returncode == 0, f"kubeconform: {completed.stdout.strip()}")
+        _record(completed.returncode == 0, f"schema[kubeconform]: {completed.stdout.strip()}")
     finally:
         os.unlink(rendered_path)
+    return len(documents)
+
+
+def schema_validate(
+    documents: list[dict[str, Any]], validator: str, kubeconform_path: str | None
+) -> None:
+    """Run the requested schema validators over the rendered documents.
+
+    ``auto`` prefers the offline ``kubernetes-validate`` package and falls back to
+    ``kubeconform``. ``both`` runs both so the two independent implementations
+    cross-check each other. Either way, if neither is available the run fails
+    loudly instead of reporting a green result it did not earn.
+    """
+
+    try:
+        import kubernetes_validate  # noqa: F401
+    except ImportError:
+        has_python_validator = False
+    else:
+        has_python_validator = True
+
+    kubeconform = kubeconform_path or shutil.which("kubeconform")
+    if (
+        kubeconform_path
+        and shutil.which(kubeconform_path) is None
+        and not Path(kubeconform_path).exists()
+    ):
+        raise SystemExit(f"--kubeconform {kubeconform_path!r} does not exist")
+
+    if validator in {"kubernetes-validate", "both"} and not has_python_validator:
+        raise SystemExit(
+            "kubernetes-validate is not installed; "
+            "`python -m pip install kubernetes-validate pyyaml`"
+        )
+    if validator in {"kubeconform", "both"} and kubeconform is None:
+        raise SystemExit(
+            "kubeconform is not available; install it with `python scripts/install_kubeconform.py`"
+        )
+
+    if validator == "kubernetes-validate":
+        _validate_with_python_package(documents)
+        return
+    if validator == "kubeconform":
+        _validate_with_kubeconform(documents, kubeconform or "kubeconform")
+        return
+    if validator == "both":
+        _validate_with_python_package(documents)
+        _validate_with_kubeconform(documents, kubeconform or "kubeconform")
+        return
+
+    # auto
+    if has_python_validator:
+        _validate_with_python_package(documents)
+        if kubeconform is not None:
+            _validate_with_kubeconform(documents, kubeconform)
+        else:
+            print(
+                "[NOTE] kubeconform not found; only kubernetes-validate ran "
+                "(install it with `python scripts/install_kubeconform.py`)"
+            )
+        return
+    if kubeconform is not None:
+        _validate_with_kubeconform(documents, kubeconform)
+        return
+    raise SystemExit(
+        "no schema validator available: install `kubernetes-validate` (pip) or run "
+        "`python scripts/install_kubeconform.py`"
+    )
 
 
 def _by_kind(documents: list[dict[str, Any]], kind: str) -> list[dict[str, Any]]:
@@ -236,8 +303,25 @@ def policy_checks(documents: list[dict[str, Any]]) -> None:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--validator",
+        choices=["auto", "kubernetes-validate", "kubeconform", "both"],
+        default="auto",
+        help=(
+            "which schema validator(s) to run; 'auto' prefers kubernetes-validate "
+            "and also runs kubeconform when it is available (default: auto)"
+        ),
+    )
+    parser.add_argument(
+        "--kubeconform",
+        default=None,
+        help="path to the kubeconform binary (default: search PATH)",
+    )
+    arguments = parser.parse_args()
+
     documents = render_manifests()
-    schema_validate(documents)
+    schema_validate(documents, arguments.validator, arguments.kubeconform)
     policy_checks(documents)
     if _FAILURES:
         print(f"\n{len(_FAILURES)} check(s) failed:", file=sys.stderr)

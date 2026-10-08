@@ -211,13 +211,17 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install schema validator
-        run: python -m pip install --upgrade pip kubernetes-validate pyyaml
+      - name: Install schema validators
+        run: |
+          python -m pip install --upgrade pip kubernetes-validate pyyaml
+          # Pinned, checksum-verified kubeconform (scripts/install_kubeconform.py).
+          python scripts/install_kubeconform.py --dest "${RUNNER_TEMP}/kubeconform"
+          echo "${RUNNER_TEMP}/kubeconform" >> "${GITHUB_PATH}"
 
-      # Renders with `kubectl kustomize` (kubectl ships on the runner), then
-      # schema-validates and asserts the hardening invariants.
+      # Renders with `kubectl kustomize` (kubectl ships on the runner), then runs
+      # BOTH schema validators and asserts the hardening invariants.
       - name: Validate manifests
-        run: python scripts/validate_k8s_manifests.py
+        run: python scripts/validate_k8s_manifests.py --validator both
 
   compose:
     name: compose configuration validation
