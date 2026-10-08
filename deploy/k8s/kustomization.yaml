@@ -8,8 +8,10 @@ resources:
   - configmap.yaml
   - deployment.yaml
   - service.yaml
+  - migrate-job.yaml
   - networkpolicy-default-deny.yaml
   - networkpolicy-api.yaml
+  - networkpolicy-migrate.yaml
   - poddisruptionbudget.yaml
 
 # The only place the image is resolved. `image: aegisgraph` in deployment.yaml is

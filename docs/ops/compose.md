@@ -7,11 +7,17 @@ Owner: Agent E (DevSecOps). Files: `compose.yaml`, `deploy/compose/**`,
 
 | Service | Image (digest-pinned) | Ports (host → container) | Healthcheck | Notes |
 | --- | --- | --- | --- | --- |
-| `api` | built from `Dockerfile` (`aegisgraph:local`) | `127.0.0.1:8080 → 8080` | Python `urlopen /healthz` | read-only rootfs, `cap_drop: [ALL]`, `no-new-privileges` |
-| `postgres` | `postgres@sha256:5660c2cb…` (16.4-alpine) | none published | `pg_isready` | M2 datastore; named volume `pgdata` |
+| `api` | built from `Dockerfile` (`aegisgraph:local`) | `127.0.0.1:8080 → 8080` | Python `urlopen /healthz` | read-only rootfs, `cap_drop: [ALL]`, `no-new-privileges`; `DATABASE_URL` wired for durable receipts (M2) |
+| `migrate` | same image as `api` | none | exit code (one-shot) | `python -m alembic upgrade head`; `restart: "no"` |
+| `postgres` | `postgres@sha256:2d2b8998…` (17) | none published | `pg_isready` | M2 datastore; named volume `pgdata` |
 | `otel-collector` | `otel/opentelemetry-collector-contrib@sha256:d2da12c4…` (0.115.1) | `127.0.0.1:4317/4318/8888/8889` | none (image has no shell) | OTLP in; internal metrics on `:8888`, pipeline metrics on `:8889` |
 | `prometheus` | `prom/prometheus@sha256:2659f4c2…` (v2.55.1) | `127.0.0.1:9090` | `wget /-/ready` | scrapes the collector; named volume `prometheus-data` |
 | `grafana` | `grafana/grafana@sha256:fa801ab6…` (11.3.1) | `127.0.0.1:3000` | `wget /api/health` | provisioned datasource + dashboard; named volume `grafana-data` |
+
+`migrate` binds the API's dependency: `api` waits for
+`service_completed_successfully` with `required: false`, so the schema exists
+before the service starts in the normal path, while a missing or failed migration
+still leaves the API running (its `/readyz` then reports the store honestly).
 
 Digests were resolved on 2026-10-08 with
 `docker buildx imagetools inspect <ref>` and are the multi-arch manifest-list
@@ -64,8 +70,60 @@ Minimal stack (API + datastore only), valid because the API has no hard
 dependency on the observability services:
 
 ```sh
-docker compose up -d api postgres
+docker compose up -d postgres migrate api
 ```
+
+### Schema migration
+
+`docker compose up` runs the `migrate` one-shot service before the API starts.
+Verified bring-up:
+
+```
+$ docker compose up -d --build
+ Container aegisgraph-postgres-1  Healthy
+ Container aegisgraph-migrate-1   Started ... Exited
+ Container aegisgraph-api-1       Started
+$ docker inspect --format 'exit={{.State.ExitCode}}' aegisgraph-migrate-1
+exit=0
+$ docker compose exec -T postgres psql -U aegisgraph -d aegisgraph -c '\dt'
+ alembic_version | audit_events | confirmation_grants | evaluation_runs
+ policy_sets     | receipt_metadata | receipts            (7 rows)
+```
+
+Re-run it on demand (it is idempotent) with:
+
+```sh
+make migrate                 # docker compose run --rm migrate
+```
+
+Migrations are also runnable from the shipped image, which now carries
+`alembic.ini`; see `docs/ops/migrations.md` and `docs/ops/container.md`.
+
+### Readiness and one decision
+
+```sh
+curl -s http://127.0.0.1:8080/readyz
+# {"status":"ready","ready":true,"dependencies":{"authentication":{"mode":"none",...},
+#  "receipt_store":{"durable":true,"reachable":true}, "environment":"development"}}
+```
+
+`/healthz` is liveness only. `/readyz` is the dependency-aware signal and shows
+the durable store is wired and reachable.
+
+The unauthenticated `/v1/decision` surface is **off by default** (M2 decision
+D5). To demo it, set it in `.env` and restart the API:
+
+```sh
+echo 'AEGISGRAPH_LEGACY_UNAUTHENTICATED=true' >> .env   # loopback demo only
+docker compose up -d api
+curl -s -X POST http://127.0.0.1:8080/v1/decision -H 'Content-Type: application/json' \
+  --data-binary '{"run_id":"compose","step_id":1,"user_goal":"Perform the requested safe task","conversation":[],"candidate_action":{"type":"respond","content":"Done"},"policy_context":{"policy_id":"demo","policy_version":"1","allowed_tools":[],"confirmation_required_tools":[],"consequential_tools":[]},"history_digest":{"confirmations_granted":[]}}'
+# {"decision":"allow","risk_score":0.05,...,"reason_codes":["BENIGN_ACTION"],...}
+```
+
+The supported path is the authenticated `/api/v1` API; mint a local token with
+`scripts/dev_issuer.py` rather than enabling the legacy surface outside a
+throwaway demo.
 
 Tear down, keeping named volumes: `docker compose down`. Wipe them:
 `docker compose down -v`.

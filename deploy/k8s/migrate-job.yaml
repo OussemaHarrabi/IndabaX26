@@ -1,0 +1,65 @@
+# One-shot schema migration for the durable receipt store (M2).
+#
+# It runs the *same image* as the API, so the migration and the service can never
+# be different revisions:
+#   kubectl -n aegisgraph delete job aegisgraph-migrate --ignore-not-found
+#   kubectl apply -k deploy/k8s
+#   kubectl -n aegisgraph wait --for=condition=complete job/aegisgraph-migrate
+#
+# The database URL comes from the `aegisgraph-secrets` Secret (key DATABASE_URL);
+# it is never in a ConfigMap and never in this repository.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: aegisgraph-migrate
+  labels:
+    app.kubernetes.io/name: aegisgraph
+    app.kubernetes.io/component: migrate
+spec:
+  backoffLimit: 3
+  # Keep the finished pod briefly for log inspection, then let it go.
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: aegisgraph
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: aegisgraph
+          command: ["python", "-m", "alembic", "upgrade", "head"]
+          envFrom:
+            - secretRef:
+                name: aegisgraph-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
