@@ -1,0 +1,543 @@
+{
+  "schema": "aegisgraph-release-manifest/v1",
+  "generator": "scripts/release_manifest.py",
+  "generator_version": "1.0.0",
+  "generation": {
+    "generated_at": "2026-10-08T21:19:23.581606Z",
+    "digest_bound": false,
+    "note": "the generation time is not part of any digest and nothing here hashes it"
+  },
+  "release": {
+    "tag": "v0.1.0-industrial",
+    "version": "v0.1.0-industrial",
+    "commit": "e4a43164fb9ef14c781739d8d836137218440488",
+    "commit_input": "HEAD",
+    "branch": "feat/m8-release"
+  },
+  "hash_conventions": {
+    "sha256_raw": "sha256 of the bytes exactly as they exist on disk in this checkout",
+    "sha256_lf": "sha256 of the same bytes with CRLF normalised to LF (content-sha256-lf)",
+    "sha256_blob": "sha256 of the bytes git stores for that path at the release commit",
+    "blob_matches": "which of sha256_raw / sha256_lf the committed git blob equals; 'neither' means the working copy is dirty relative to the release commit",
+    "dataset_aggregate": "sha256 over path-sorted (relative_path NUL per-file-sha256 LF) pairs, as benchmark/dataset.py computes dataset.sha256"
+  },
+  "checkout": {
+    "core_autocrlf": "true",
+    "git_version": "git version 2.55.0.windows.3",
+    "note": "sha256_raw is taken from the bytes on disk in this checkout; with core.autocrlf=true that is the CRLF form for git-text files, while sha256_lf and sha256_blob keep the portable value (see each entry's blob_matches)"
+  },
+  "artifact_summary": {
+    "total": 39,
+    "kinds": {
+      "campaign-identity-source": 6,
+      "campaign-run": 7,
+      "dataset": 1,
+      "dependency-lock": 1,
+      "doc": 5,
+      "legacy-scorecard": 6,
+      "load-report": 2,
+      "review": 6,
+      "sbom": 2,
+      "schema": 3
+    },
+    "blob_matches_raw": 20,
+    "blob_matches_lf": 18,
+    "blob_matches_neither": 0
+  },
+  "artifacts": [
+    {
+      "path": "benchmark/runs/20261008T203656Z-m6-campaign/manifest.json",
+      "kind": "campaign-run",
+      "note": "frozen run identity: commit, dataset, policy, model, seed, per-file hashes",
+      "bytes": 18594,
+      "sha256_raw": "4a2b377fa6d36101f8764dc6501cb1434a8cad1d94d330f9d737554ca2df96bd",
+      "sha256_lf": "4a2b377fa6d36101f8764dc6501cb1434a8cad1d94d330f9d737554ca2df96bd",
+      "sha256_blob": "4a2b377fa6d36101f8764dc6501cb1434a8cad1d94d330f9d737554ca2df96bd",
+      "blob_matches": "raw"
+    },
+    {
+      "path": "benchmark/runs/20261008T203656Z-m6-campaign/outcomes.jsonl",
+      "kind": "campaign-run",
+      "note": "one decision record per scenario step of the C1 run, the scorecard's source",
+      "bytes": 67130,
+      "sha256_raw": "58b79e85d12c9683d660af7b59c4b7d0b066b15c0c65d60476725a95007198fd",
+      "sha256_lf": "58b79e85d12c9683d660af7b59c4b7d0b066b15c0c65d60476725a95007198fd",
+      "sha256_blob": "58b79e85d12c9683d660af7b59c4b7d0b066b15c0c65d60476725a95007198fd",
+      "blob_matches": "raw"
+    },
+    {
+      "path": "benchmark/runs/20261008T203656Z-m6-campaign/control.jsonl",
+      "kind": "campaign-run",
+      "note": "the allow-all reachability control (C2) that licenses which attacks count",
+      "bytes": 66826,
+      "sha256_raw": "ea204a61e1c2fe0114548f5a3e4ba8f2069c720dc17a8694f3070e986811d4a5",
+      "sha256_lf": "ea204a61e1c2fe0114548f5a3e4ba8f2069c720dc17a8694f3070e986811d4a5",
+      "sha256_blob": "ea204a61e1c2fe0114548f5a3e4ba8f2069c720dc17a8694f3070e986811d4a5",
+      "blob_matches": "raw"
+    },
+    {
+      "path": "benchmark/runs/20261008T203656Z-m6-campaign/score.json",
+      "kind": "campaign-run",
+      "note": "the C1 native scorecard carrying the deterministic digest b6951afb...",
+      "bytes": 83116,
+      "sha256_raw": "05f22292002cbd6e0739d5d6705227a34ca275e0167da971b7d5fc68172dd447",
+      "sha256_lf": "d3b21dc9d01a2efda306aba33dbd275147ad86cfcdf6e66bc58f8b63c79c8441",
+      "sha256_blob": "05f22292002cbd6e0739d5d6705227a34ca275e0167da971b7d5fc68172dd447",
+      "blob_matches": "raw"
+    },
+    {
+      "path": "benchmark/runs/20261008T203656Z-m6-campaign/score.txt",
+      "kind": "campaign-run",
+      "note": "rendered form of the same scorecard; written in text mode, so raw bytes are CRLF",
+      "bytes": 12474,
+      "sha256_raw": "d9fec910ded9378cedd3c3ab22c38d49f6a8690dcf83f5d360d49bfeb0206984",
+      "sha256_lf": "59a7c3ea88ef93b3725779b2c56609a73f7d2f34645fabfeffdc5cc6321ec638",
+      "sha256_blob": "59a7c3ea88ef93b3725779b2c56609a73f7d2f34645fabfeffdc5cc6321ec638",
+      "blob_matches": "lf"
+    },
+    {
+      "path": "benchmark/runs/20261008T203656Z-m6-campaign/README.md",
+      "kind": "campaign-run",
+      "note": "the run directory's own account of how the C1/C2 artifacts were produced",
+      "bytes": 8706,
+      "sha256_raw": "ca8d213954c2a1121f96a35b08aa2060c2192da7a0e7a8cb8e499ce3f5723f9d",
+      "sha256_lf": "94b8aed58f05abdeac1d17dad2b130c2f9cf431fee899cdcec6fbc51eb242c71",
+      "sha256_blob": "94b8aed58f05abdeac1d17dad2b130c2f9cf431fee899cdcec6fbc51eb242c71",
+      "blob_matches": "lf"
+    },
+    {
+      "path": "evaluation/allow-all-mock.json",
+      "kind": "legacy-scorecard",
+      "note": "legacy 40-scenario mock control (ASR 1.0) defining the reached-attack denominator",
+      "bytes": 193220,
+      "sha256_raw": "3d86a6939785490beb5b5a65ac207f17c79c6c9a57d2f13fdb15bd3423ed861a",
+      "sha256_lf": "3d86a6939785490beb5b5a65ac207f17c79c6c9a57d2f13fdb15bd3423ed861a",
+      "sha256_blob": "3d86a6939785490beb5b5a65ac207f17c79c6c9a57d2f13fdb15bd3423ed861a",
+      "blob_matches": "raw"
+    },
+    {
+      "path": "evaluation/provenance-mock.json",
+      "kind": "legacy-scorecard",
+      "note": "legacy built-in provenance baseline row of the frozen mock ladder",
+      "bytes": 152150,
+      "sha256_raw": "e99800431bba8908acc9e7586d308884503637dc0d825385999db4baac6b8e80",
+      "sha256_lf": "e99800431bba8908acc9e7586d308884503637dc0d825385999db4baac6b8e80",
+      "sha256_blob": "e99800431bba8908acc9e7586d308884503637dc0d825385999db4baac6b8e80",
+      "blob_matches": "raw"
+    },
+    {
+      "path": "evaluation/aegisgraph-mock.json",
+      "kind": "legacy-scorecard",
+      "note": "final calibrated legacy mock scorecard (ASR 0, BTU 8/9, FBR 0.0683)",
+      "bytes": 155783,
+      "sha256_raw": "d6f8f41f4832306d31d6f2d81257fac2f7e3ccc362456d00adb772bb3764ca23",
+      "sha256_lf": "d6f8f41f4832306d31d6f2d81257fac2f7e3ccc362456d00adb772bb3764ca23",
+      "sha256_blob": "d6f8f41f4832306d31d6f2d81257fac2f7e3ccc362456d00adb772bb3764ca23",
+      "blob_matches": "raw"
+    },
+    {
+      "path": "evaluation/real-qwen/allow-all-qwen3-8b.json",
+      "kind": "legacy-scorecard",
+      "note": "Qwen3-8B allow-all control; its ASR 0.7097 over 31 attacks is the v5 22-attack basis",
+      "bytes": 135792,
+      "sha256_raw": "312e1e99befdc3542d7bc6f0b4cd85691a7cc8a0df149536573de5dd7a497593",
+      "sha256_lf": "312e1e99befdc3542d7bc6f0b4cd85691a7cc8a0df149536573de5dd7a497593",
+      "sha256_blob": "312e1e99befdc3542d7bc6f0b4cd85691a7cc8a0df149536573de5dd7a497593",
+      "blob_matches": "raw"
+    },
+    {
+      "path": "evaluation/real-qwen/aegisgraph-v3-qwen3-8b.json",
+      "kind": "legacy-scorecard",
+      "note": "frozen v3 scorecard (ASR 0 of 31, BTU 4/9, FBR 0.0087, p95 8.355 ms), the ladder's step",
+      "bytes": 141874,
+      "sha256_raw": "4894de5b5bd874c28216f64273ab4a91882cd7eac1ee7fb3ccc1c50c332bdbb8",
+      "sha256_lf": "4894de5b5bd874c28216f64273ab4a91882cd7eac1ee7fb3ccc1c50c332bdbb8",
+      "sha256_blob": "4894de5b5bd874c28216f64273ab4a91882cd7eac1ee7fb3ccc1c50c332bdbb8",
+      "blob_matches": "raw"
+    },
+    {
+      "path": "evaluation/real-qwen/aegisgraph-v5-qwen3-8b.json",
+      "kind": "legacy-scorecard",
+      "note": "frozen v5 scorecard (ASR 0 of 31, BTU 4/9, FBR 0.0086, p95 9.284 ms, eligible=false)",
+      "bytes": 143932,
+      "sha256_raw": "b9b0937814f8a545b8cb1deebacb1623830a04dedbfdb6b8f297be31118027c4",
+      "sha256_lf": "b9b0937814f8a545b8cb1deebacb1623830a04dedbfdb6b8f297be31118027c4",
+      "sha256_blob": "b9b0937814f8a545b8cb1deebacb1623830a04dedbfdb6b8f297be31118027c4",
+      "blob_matches": "raw"
+    },
+    {
+      "path": "evaluation/m6-recheck/aegisgraph-mock-m6-818cf1f.json",
+      "kind": "campaign-run",
+      "note": "campaign cell C3: legacy mock re-check at the freeze gateway commit, digest 8669aadb...",
+      "bytes": 161568,
+      "sha256_raw": "2af5e8473f60bdeefc4a76227cf2b7744df7f01de782b5a164eeeca223a744d6",
+      "sha256_lf": "6c04cb5f2e36ae6dfc38e514b3141cf87a1ee0c6b3018db1b7f952769fcc42b5",
+      "sha256_blob": "2af5e8473f60bdeefc4a76227cf2b7744df7f01de782b5a164eeeca223a744d6",
+      "blob_matches": "raw"
+    },
+    {
+      "path": "docs/evidence/performance/m3-load-20261008T210436Z.json",
+      "kind": "load-report",
+      "note": "corrected M3 load baseline: warm-up excluded from the service-side block",
+      "bytes": 3238,
+      "sha256_raw": "a8250f2fcfe0fdcda5a3b25b8ca2e6b578054b8d6f3ef357f39bbef36eee8b62",
+      "sha256_lf": "a8250f2fcfe0fdcda5a3b25b8ca2e6b578054b8d6f3ef357f39bbef36eee8b62",
+      "sha256_blob": "a8250f2fcfe0fdcda5a3b25b8ca2e6b578054b8d6f3ef357f39bbef36eee8b62",
+      "blob_matches": "raw"
+    },
+    {
+      "path": "docs/evidence/performance/m3-load-20261008T210436Z.sha256",
+      "kind": "load-report",
+      "note": "the report's own sidecar, byte-exact under the corrected harness",
+      "bytes": 97,
+      "sha256_raw": "8d83e703f2353fe5cf1bdc09f354428595a0a2eb289555638bdf44b6080e794b",
+      "sha256_lf": "eee7e63fe1490a3d577bd5d80a5db4aa858a914e5fa799c367a94071a02fdbbd",
+      "sha256_blob": "eee7e63fe1490a3d577bd5d80a5db4aa858a914e5fa799c367a94071a02fdbbd",
+      "blob_matches": "lf"
+    },
+    {
+      "path": "deploy/sbom/aegisgraph-image-sbom.json",
+      "kind": "sbom",
+      "note": "image inventory (39 packages) plus the one committed container image digest",
+      "bytes": 7478,
+      "sha256_raw": "142273255283014cc99214466f5bb2cf2305bac35edfeda83be0bf3ae4909572",
+      "sha256_lf": "142273255283014cc99214466f5bb2cf2305bac35edfeda83be0bf3ae4909572",
+      "sha256_blob": "142273255283014cc99214466f5bb2cf2305bac35edfeda83be0bf3ae4909572",
+      "blob_matches": "raw"
+    },
+    {
+      "path": "deploy/sbom/aegisgraph-image-sbom.requirements.txt",
+      "kind": "sbom",
+      "note": "the pinned inventory the SBOM came from, drift-checked against requirements.lock",
+      "bytes": 911,
+      "sha256_raw": "742f94ebe8acfd5256c7e98e8a48fc113e86201acdf228d01d97f1ab03da6964",
+      "sha256_lf": "e7b307190f694cda027f474ab7de7ab3ddf043de9f9f64e6ba214b84acfee8ad",
+      "sha256_blob": "e7b307190f694cda027f474ab7de7ab3ddf043de9f9f64e6ba214b84acfee8ad",
+      "blob_matches": "lf"
+    },
+    {
+      "path": "requirements.lock",
+      "kind": "dependency-lock",
+      "note": "the 39-entry dependency lock pinned by digest in the campaign manifest and SBOM",
+      "bytes": 2056,
+      "sha256_raw": "0f1d4ce10da83fe2e4c6cd6dc8eff75295c82470800317e1f90390824e36d6cc",
+      "sha256_lf": "d0bf0f5504aa8c5da890c6913b2b4faa36f5e0476daced5ee7359eefd15730d3",
+      "sha256_blob": "d0bf0f5504aa8c5da890c6913b2b4faa36f5e0476daced5ee7359eefd15730d3",
+      "blob_matches": "lf"
+    },
+    {
+      "path": "benchmark/scoring.py",
+      "kind": "campaign-identity-source",
+      "note": "scoring source pinned by the campaign identity; defines the digest and metrics",
+      "bytes": 36519,
+      "sha256_raw": "503d7b2e8f329ebca2d67b6cbfdfbcfee4cbd70b8859efc0fdc3d770e2948c19",
+      "sha256_lf": "dba46280df9ddf3dca69c71a18eb2e725e1cbdffc1c424aaef601a6eab7e8c3d",
+      "sha256_blob": "dba46280df9ddf3dca69c71a18eb2e725e1cbdffc1c424aaef601a6eab7e8c3d",
+      "blob_matches": "lf"
+    },
+    {
+      "path": "benchmark/schema.py",
+      "kind": "schema",
+      "note": "the authoritative native evaluation schema the campaign artifacts validate against",
+      "bytes": 22246,
+      "sha256_raw": "9664f9c48ca4131fcf80e081d8d983db9321268168a72e8927f2ce0109a49266",
+      "sha256_lf": "a80dc277bee5510b3c0d2acaad1a94da28ce32859c378fa15f43a2f720640ae3",
+      "sha256_blob": "a80dc277bee5510b3c0d2acaad1a94da28ce32859c378fa15f43a2f720640ae3",
+      "blob_matches": "lf"
+    },
+    {
+      "path": "benchmark/runner.py",
+      "kind": "campaign-identity-source",
+      "note": "campaign runner pinned by the identity; carries the repository's hash conventions",
+      "bytes": 39092,
+      "sha256_raw": "fc316a15f1ef2bffb46dced0b096888c666dba9acb37cbe3649e92b633ac6c56",
+      "sha256_lf": "eefa90a78bb0be096ac627e3d57df7158a45370c08c1db2917f4adb2159665c1",
+      "sha256_blob": "eefa90a78bb0be096ac627e3d57df7158a45370c08c1db2917f4adb2159665c1",
+      "blob_matches": "lf"
+    },
+    {
+      "path": "docs/research/analysis.py",
+      "kind": "campaign-identity-source",
+      "note": "preregistered paired re-analysis pinned by the campaign identity",
+      "bytes": 33596,
+      "sha256_raw": "ca7918907b1a5b51279209732fcd78ccd22a4c4709dbbb5f905366b6674d54ec",
+      "sha256_lf": "3b7c1476abdaac00bab0bf67355ecb2ff110234f0700b51c2d146626e73a94a0",
+      "sha256_blob": "3b7c1476abdaac00bab0bf67355ecb2ff110234f0700b51c2d146626e73a94a0",
+      "blob_matches": "lf"
+    },
+    {
+      "path": "backend/aegisgraph/policy.py",
+      "kind": "campaign-identity-source",
+      "note": "policy source blob pinned by the campaign identity",
+      "bytes": 5612,
+      "sha256_raw": "e12cf76e6c6a0085ea496e21b6a3749ddd4bf9eca02b9b9625e5d7c2c718a1d3",
+      "sha256_lf": "a072f462da4a9dc0e2a2ea5468a536f16b4391a9cb7af62958af2287222cb1be",
+      "sha256_blob": "a072f462da4a9dc0e2a2ea5468a536f16b4391a9cb7af62958af2287222cb1be",
+      "blob_matches": "lf"
+    },
+    {
+      "path": "backend/aegisgraph/engine.py",
+      "kind": "campaign-identity-source",
+      "note": "decision-kernel source blob pinned by the campaign identity",
+      "bytes": 52848,
+      "sha256_raw": "126d33842fb576564f0aa5944f523d155aa1de4a6e837667dcc6e04234b9c721",
+      "sha256_lf": "011111e10254d8cf148116e39a918216ca58bb7ba95cf217b39b1ea8bc1c4af2",
+      "sha256_blob": "011111e10254d8cf148116e39a918216ca58bb7ba95cf217b39b1ea8bc1c4af2",
+      "blob_matches": "lf"
+    },
+    {
+      "path": "backend/aegisgraph/adapter.py",
+      "kind": "campaign-identity-source",
+      "note": "request-adapter source blob pinned by the campaign identity",
+      "bytes": 8833,
+      "sha256_raw": "a856c852076ce0194db1ce6c5ebbf7ae6056b64453fcecb1fe057b325d1d7363",
+      "sha256_lf": "7a4a28c8bd224415c924a4d18a962ee3e8601948636b4d20c3b322b32c979400",
+      "sha256_blob": "7a4a28c8bd224415c924a4d18a962ee3e8601948636b4d20c3b322b32c979400",
+      "blob_matches": "lf"
+    },
+    {
+      "path": "backend/aegisgraph/contracts.py",
+      "kind": "schema",
+      "note": "shared canonical contract, the roadmap's highest-blast-radius single-writer file",
+      "bytes": 15035,
+      "sha256_raw": "428e731e9ac27162159d5e1c84eefd5cd8969827fe186c08d57e8fb44d978ac4",
+      "sha256_lf": "846638bffdf266c16fab4bde7366b45a1c27d8c63cf119360f027aafaf9a57a5",
+      "sha256_blob": "846638bffdf266c16fab4bde7366b45a1c27d8c63cf119360f027aafaf9a57a5",
+      "blob_matches": "lf"
+    },
+    {
+      "path": "docs/api/decision.schema.json",
+      "kind": "schema",
+      "note": "published JSON schema of the generic decision response",
+      "bytes": 7450,
+      "sha256_raw": "eb0225355783e2c619c1257c6a8249c1fbff7d4588e8e3ce66f45954b22a7962",
+      "sha256_lf": "eb0225355783e2c619c1257c6a8249c1fbff7d4588e8e3ce66f45954b22a7962",
+      "sha256_blob": "eb0225355783e2c619c1257c6a8249c1fbff7d4588e8e3ce66f45954b22a7962",
+      "blob_matches": "raw"
+    },
+    {
+      "path": "docs/architecture/roadmap.md",
+      "kind": "doc",
+      "note": "authoritative M0-M8 milestone map and the blocked-by-tooling ledger",
+      "bytes": 31632,
+      "sha256_raw": "1ebf031380f773d8a28f492487e06748b3fb3f3da761d5455c4c357fa9b3daa0",
+      "sha256_lf": "75b771034a2e03d6fefa3e6678ed3f2e5542b0b5df21a2b9f2b0464c330b482e",
+      "sha256_blob": "75b771034a2e03d6fefa3e6678ed3f2e5542b0b5df21a2b9f2b0464c330b482e",
+      "blob_matches": "lf"
+    },
+    {
+      "path": "docs/evidence/ledger.md",
+      "kind": "doc",
+      "note": "claim-to-evidence map: artifact, digest, command and commit per claim",
+      "bytes": 92570,
+      "sha256_raw": "aaf8eb9e032e42de933c570a87587fd06c4cde19c6e31576bfd88ade14392416",
+      "sha256_lf": "17fcf4e182e015d4721c3fceef46298728d113ae271f0d4bbc1ebf1cb2d039b8",
+      "sha256_blob": "17fcf4e182e015d4721c3fceef46298728d113ae271f0d4bbc1ebf1cb2d039b8",
+      "blob_matches": "lf"
+    },
+    {
+      "path": "docs/evidence/m6-freeze.md",
+      "kind": "doc",
+      "note": "the freeze contract (section 7) and results (section 8), with hash conventions",
+      "bytes": 13372,
+      "sha256_raw": "3eed6266c7153d678faf5b4167e6f79af4510f19046e331ce95c683a4b621f06",
+      "sha256_lf": "e02da771612209ebd5c340cdb6e7a8c48ca482f09c65950cffd573db84e0553d",
+      "sha256_blob": "e02da771612209ebd5c340cdb6e7a8c48ca482f09c65950cffd573db84e0553d",
+      "blob_matches": "lf"
+    },
+    {
+      "path": "docs/evidence/m6-campaign.md",
+      "kind": "doc",
+      "note": "the campaign report: identity, C1-C4, the null delta and the blocked cells",
+      "bytes": 14805,
+      "sha256_raw": "c11af5e41b94c49ac53da51bf1cd88cc51aab6e1b84fb81b890198dd33b069a0",
+      "sha256_lf": "391480522125f92361d381e5b6bb021b43bcea8f97f58c2e61164ae327387353",
+      "sha256_blob": "391480522125f92361d381e5b6bb021b43bcea8f97f58c2e61164ae327387353",
+      "blob_matches": "lf"
+    },
+    {
+      "path": "docs/research/report.md",
+      "kind": "doc",
+      "note": "the research report stating the headline numbers in the permitted claim register",
+      "bytes": 66786,
+      "sha256_raw": "728f2c782b11b3e7b9b1d7e4f22a0623f62ee87961a692c5de8adb1af78c46ea",
+      "sha256_lf": "c90b98e59c7cfdfb3bac74fdc2e2fb9db23919002458bc383d17ceeb2c182fae",
+      "sha256_blob": "c90b98e59c7cfdfb3bac74fdc2e2fb9db23919002458bc383d17ceeb2c182fae",
+      "blob_matches": "lf"
+    },
+    {
+      "path": "docs/evidence/reviews/M0-adversarial-security-review.json",
+      "kind": "review",
+      "note": "M0 independent adversarial review (F1-F10), the origin of the findings register",
+      "bytes": 31179,
+      "sha256_raw": "8d6c50522723e54c3bbafd24267dc56020519862ccc736cdfd8a3374effe6ecf",
+      "sha256_lf": "8d6c50522723e54c3bbafd24267dc56020519862ccc736cdfd8a3374effe6ecf",
+      "sha256_blob": "8d6c50522723e54c3bbafd24267dc56020519862ccc736cdfd8a3374effe6ecf",
+      "blob_matches": "raw"
+    },
+    {
+      "path": "docs/evidence/reviews/M0-M5-research-reproducibility-audit.json",
+      "kind": "review",
+      "note": "independent read-only research and reproducibility audit of the legacy chain",
+      "bytes": 50412,
+      "sha256_raw": "d9ba72e843655e5a16f09461b9ed15112dfec64035ac4d5d2bd98739c8ccc9a2",
+      "sha256_lf": "d9ba72e843655e5a16f09461b9ed15112dfec64035ac4d5d2bd98739c8ccc9a2",
+      "sha256_blob": "d9ba72e843655e5a16f09461b9ed15112dfec64035ac4d5d2bd98739c8ccc9a2",
+      "blob_matches": "raw"
+    },
+    {
+      "path": "docs/evidence/reviews/M1-M5-adversarial-security-review.json",
+      "kind": "review",
+      "note": "M1-M5 adversarial security review (the H2-xx findings)",
+      "bytes": 28934,
+      "sha256_raw": "539d604b5a1e3a6b93f333a5584d68993abf7cb690dd3e6f1d3bfe381c2e9e24",
+      "sha256_lf": "539d604b5a1e3a6b93f333a5584d68993abf7cb690dd3e6f1d3bfe381c2e9e24",
+      "sha256_blob": "539d604b5a1e3a6b93f333a5584d68993abf7cb690dd3e6f1d3bfe381c2e9e24",
+      "blob_matches": "raw"
+    },
+    {
+      "path": "docs/evidence/reviews/M2-surface-adversarial-security-review.json",
+      "kind": "review",
+      "note": "M2-surface adversarial review (H3-01 to H3-09), which re-opened F3's relabelling move",
+      "bytes": 54431,
+      "sha256_raw": "1b7cf08eb1786c0875c94ab7151bcfbf190116269be18d2ad2a2a2eb5b225ffd",
+      "sha256_lf": "1b7cf08eb1786c0875c94ab7151bcfbf190116269be18d2ad2a2a2eb5b225ffd",
+      "sha256_blob": "1b7cf08eb1786c0875c94ab7151bcfbf190116269be18d2ad2a2a2eb5b225ffd",
+      "blob_matches": "raw"
+    },
+    {
+      "path": "docs/evidence/reviews/M3-telemetry-load-adversarial-review.json",
+      "kind": "review",
+      "note": "M3 telemetry/load adversarial review (H4-01 to H4-10), source of the pending load rows",
+      "bytes": 19877,
+      "sha256_raw": "600a14d06adf31d4b73455c7115cfb8bb390e18dad51a4f725c4cdc4671e2ac6",
+      "sha256_lf": "600a14d06adf31d4b73455c7115cfb8bb390e18dad51a4f725c4cdc4671e2ac6",
+      "sha256_blob": "600a14d06adf31d4b73455c7115cfb8bb390e18dad51a4f725c4cdc4671e2ac6",
+      "blob_matches": "raw"
+    },
+    {
+      "path": "docs/evidence/reviews/M6-campaign-reproducibility-audit.json",
+      "kind": "review",
+      "note": "independent M6 campaign audit (I3-01 to I3-06) that reproduced C1-C4",
+      "bytes": 17593,
+      "sha256_raw": "e610187df5f16fa47d3245bd1aee543ef4c18d1e3095b77b3529e396a97a18d3",
+      "sha256_lf": "e610187df5f16fa47d3245bd1aee543ef4c18d1e3095b77b3529e396a97a18d3",
+      "sha256_blob": "e610187df5f16fa47d3245bd1aee543ef4c18d1e3095b77b3529e396a97a18d3",
+      "blob_matches": "raw"
+    },
+    {
+      "path": "benchmark/data/scenarios",
+      "kind": "dataset",
+      "note": "the 60 native scenario files whose per-file hashes the campaign's dataset.sha256 aggregates",
+      "members": 60,
+      "bytes": 233484,
+      "sha256_raw": "7e916a11981fa6444724dc78558e51561d32a3005b182862efb52b7c5f2cf735",
+      "sha256_lf": "4727ca1af5e2e05b863cdaa0c5a9922446d12bb040730268f4005b22f3c4ddb6",
+      "aggregate_convention": "sha256 over path-sorted (relative_path NUL per-file-sha256 LF) pairs, as benchmark/dataset.py computes dataset.sha256",
+      "matches_campaign_dataset_sha256": true
+    }
+  ],
+  "frozen_identity": {
+    "source_artifacts": [
+      "benchmark/runs/20261008T203656Z-m6-campaign/manifest.json",
+      "benchmark/runs/20261008T203656Z-m6-campaign/score.json"
+    ],
+    "source_note": "copied verbatim from the committed run artifacts, never recomputed here",
+    "campaign": {
+      "run_name": "20261008T203656Z-m6-campaign",
+      "run_created": "2026-10-08T20:37:04Z",
+      "schema_version": "aegisgraph-benchmark-run/v1",
+      "code": {
+        "branch": "feat/m6-campaign",
+        "commit": "818cf1f29795aa5d1e92b90fe4dfd4ed13174e03",
+        "commit_source": "git-rev-parse-HEAD",
+        "dirty": false
+      },
+      "dataset_sha256": "7e916a11981fa6444724dc78558e51561d32a3005b182862efb52b7c5f2cf735",
+      "dataset_scenario_count": 60,
+      "scenario_set_sha256": "e4f376b2057ead47ed41a527e9b680a1a4c092cd5c9328ec2399eadeb0d77b75",
+      "splits": [
+        "development",
+        "validation"
+      ],
+      "policy_set": {
+        "id": "aegisgraph-default",
+        "version": "1"
+      },
+      "policy_blob_sha256": "53d663b1853673da6ccfa0e4e673dbaa196bcf2517d6c1517aa1268fea9153f1",
+      "policy_set_count": 26,
+      "policy_source_blobs": {
+        "backend/aegisgraph/adapter.py": "7a4a28c8bd224415c924a4d18a962ee3e8601948636b4d20c3b322b32c979400",
+        "backend/aegisgraph/engine.py": "011111e10254d8cf148116e39a918216ca58bb7ba95cf217b39b1ea8bc1c4af2",
+        "backend/aegisgraph/policy.py": "a072f462da4a9dc0e2a2ea5468a536f16b4391a9cb7af62958af2287222cb1be"
+      },
+      "model_kind": "scripted",
+      "model_name": "scripted-scenario-plan",
+      "seed": 1729,
+      "temperature": null,
+      "max_tokens": null,
+      "dependency_lock": {
+        "hash_convention": "content-sha256-lf: sha256(bytes) with CRLF normalised to LF, no object header",
+        "path": "requirements.lock",
+        "present": true,
+        "sha256": "d0bf0f5504aa8c5da890c6913b2b4faa36f5e0476daced5ee7359eefd15730d3"
+      },
+      "artifact_hashes": {
+        "control.jsonl": "ea204a61e1c2fe0114548f5a3e4ba8f2069c720dc17a8694f3070e986811d4a5",
+        "outcomes.jsonl": "58b79e85d12c9683d660af7b59c4b7d0b066b15c0c65d60476725a95007198fd"
+      },
+      "limitations": [
+        "no model is available in this environment; the result measures the gateway under a scripted plan, not model behaviour",
+        "the reachability control is a harness-liveness check for scripted plans: it licenses a scenario, it does not show a model falls for the payload"
+      ]
+    },
+    "score": {
+      "deterministic_digest": "b6951afb6db8fde2dd029d1e964312094d853487ae79d1abfdde02dc08b2581d",
+      "outcome_count": 60,
+      "min_slice": 3,
+      "overall": {
+        "scenario_count": 60,
+        "attack_count": 30,
+        "reached_attacks": 30,
+        "attack_successes": 15,
+        "asr": 0.5,
+        "asr_excluding_errors": 0.5,
+        "benign_count": 30,
+        "benign_successes": 29,
+        "benign_task_success": 0.966667,
+        "false_block_rate": 0.055556,
+        "false_block_rate_scenarios": 0.041667,
+        "escalation_rate": 0.071429,
+        "defense_errors": 0,
+        "errored_attacks": 0,
+        "control_licensed": 30,
+        "control_excluded": 0,
+        "effectiveness_claim": true,
+        "decisions": 168,
+        "legitimate_actions": 54,
+        "legitimate_blocked": 3,
+        "rewrites": 0
+      }
+    }
+  },
+  "container_image": {
+    "source_artifact": "deploy/sbom/aegisgraph-image-sbom.json",
+    "image_id": "sha256:bb373f362f052ffa49f15a47ef5ffd72bb7665a275e0b79a9db54f1f6c5cb531",
+    "repository_digest": "aegisgraph@sha256:bb373f362f052ffa49f15a47ef5ffd72bb7665a275e0b79a9db54f1f6c5cb531",
+    "size_bytes": 73084467,
+    "user": "10001:10001",
+    "runtime_python": "3.12.15",
+    "package_count": 39,
+    "built_from_commit": "57596f304b726bbd08b1c6cbf4e605d16237fd7f",
+    "requirements_lock_sha256": "d0bf0f5504aa8c5da890c6913b2b4faa36f5e0476daced5ee7359eefd15730d3",
+    "note": "digest copied from the committed SBOM; the image was built at the SBOM's source commit, not rebuilt for this release"
+  },
+  "verification": {
+    "regenerate_manifest": "python scripts/release_manifest.py --commit <commit> --tag <tag> --out docs/evidence/release-manifest.json",
+    "rehash_every_entry": "python scripts/release_manifest.py --verify docs/evidence/release-manifest.json",
+    "single_file_raw": "sha256sum <path>   # must equal the entry's sha256_raw",
+    "single_file_committed_blob": "git show <commit>:<path> | sha256sum   # must equal sha256_blob (and sha256_raw whenever blob_matches is 'raw')",
+    "single_file_lf": "git show <commit>:<path> | tr -d '\\r' | sha256sum   # must equal sha256_lf",
+    "note": "every entry names the convention that produced each value; a Windows checkout with CRLF files must compare sha256_raw to the on-disk bytes and sha256_lf to the LF-normalised bytes, never the other way round"
+  }
+}
