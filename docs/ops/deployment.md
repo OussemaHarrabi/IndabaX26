@@ -37,7 +37,11 @@ failing assertions:
   `capabilities.drop: [ALL]`;
 - `automountServiceAccountToken: false`;
 - CPU/memory requests **and** limits on every container;
-- readiness **and** liveness probes on `/healthz`;
+- `readinessProbe` on `/readyz` (dependency-aware) and `livenessProbe`/`startupProbe`
+  on `/healthz` (liveness only);
+- the ConfigMap keeps the production posture (`AEGISGRAPH_ENV=production`,
+  `AEGISGRAPH_AUTH_MODE=required`, `AEGISGRAPH_METRICS_ENABLED=false`,
+  `AEGISGRAPH_LEGACY_UNAUTHENTICATED=false`);
 - the default-deny policy covers Ingress and Egress; the API policy's ingress
   ports are ⊆ {8080} and its egress ports ⊆ {53, 5432, 4317, 4318};
 - a PodDisruptionBudget with `minAvailable`/`maxUnavailable`;
@@ -56,7 +60,7 @@ kubectl kustomize deploy/k8s
 python scripts/validate_k8s_manifests.py --validator both
 # 9 × schema[kubernetes-validate] PASS
 # schema[kubeconform]: Summary: 9 resources found in 1 file - Valid: 9, Invalid: 0, Errors: 0, Skipped: 0
-# 29 × policy PASS → "all manifest checks passed"
+# 34 × policy PASS → "all manifest checks passed"
 ```
 
 Two independent schema validators agree on all 9 objects:
@@ -126,20 +130,72 @@ this value, in CI.
 
 ## Deploying with the schema
 
-The API's readiness is dependency-aware. `/healthz` is liveness only, so it stays
-the probe for the Deployment; `/readyz` additionally reports the authentication
-mode and whether the receipt store is durable and reachable — use it once M2 auth
-and `DATABASE_URL` are configured.
+**The deployment runs the API in production mode.** `deploy/k8s/configmap.yaml`
+sets `AEGISGRAPH_ENV=production`, `AEGISGRAPH_AUTH_MODE=required` and
+`AEGISGRAPH_METRICS_ENABLED=false` explicitly (H4-07), because the defaults are
+*development*: with `AEGISGRAPH_ENV` unset the pod would serve `/metrics` by
+default and accept `auth_mode=none`. In production the process validates its
+configuration **at import, before the server binds**, and exits non-zero on an
+unsafe one (`app.configure_configuration`). So the Secret must supply:
+
+| Secret key | Why |
+| --- | --- |
+| `DATABASE_URL` | production requires a durable receipt store (`AEGISGRAPH_ENV=production` refuses to start without it) |
+| a **token verifier** — `AEGISGRAPH_SERVICE_TOKENS` (JSON) or `AEGISGRAPH_JWKS` + `AEGISGRAPH_JWT_ISSUER` + `AEGISGRAPH_JWT_AUDIENCE` (the JWKS file must be mounted) | `AEGISGRAPH_AUTH_MODE=required` needs one; without it the process refuses to start |
+
+`AEGISGRAPH_METRICS_ENABLED=false` means the Prometheus scrape job for the API
+(see `deploy/observability/prometheus/prometheus.yml`) has no target in this
+deployment; set it to `true` deliberately if the cluster should scrape the API.
+
+Probes (H4-08): **readiness is `/readyz`**, which answers `503` while the receipt
+store is unreachable, so a pod whose datastore is down leaves the Service
+endpoints instead of staying in rotation and refusing decisions. Liveness and
+startup stay on `/healthz`, which is liveness-only by design — a dependency outage
+must never restart a healthy process.
+
+Both postures were reproduced against the shipped image with exactly the
+ConfigMap's environment (store deliberately unreachable):
+
+```
+$ docker run -d --read-only … \
+    -e AEGISGRAPH_ENV=production -e AEGISGRAPH_AUTH_MODE=required \
+    -e AEGISGRAPH_METRICS_ENABLED=false -e AEGISGRAPH_LEGACY_UNAUTHENTICATED=false \
+    -e DATABASE_URL='postgresql+psycopg://u:p@127.0.0.1:1/db' \
+    -e AEGISGRAPH_SERVICE_TOKENS='[{…"scopes":["decision:submit"]}]' aegisgraph:m4
+$ curl -s -o /dev/null -w '%{http_code}' .../healthz     -> 200   (liveness)
+$ curl -s -o /dev/null -w '%{http_code}' .../readyz      -> 503   (readiness)
+$ curl -s .../readyz
+  {"status":"degraded","ready":false,"dependencies":{"authentication":{"mode":"required",
+   "service_tokens_configured":1,"legacy_unauthenticated":false},
+   "receipt_store":{"durable":true,"reachable":false}, …}}
+$ curl -s -o /dev/null -w '%{http_code}' .../metrics     -> 404   (off in production)
+$ POST /v1/decision (well-formed)                        -> 404   (legacy refused)
+```
+
+Fail-closed startup is real, not aspirational: with the verifier missing the
+process refuses to bind —
+
+```
+aegisgraph.settings.ConfigurationError: AEGISGRAPH_AUTH_MODE=required needs a
+verifier: set AEGISGRAPH_JWT_ISSUER, AEGISGRAPH_JWT_AUDIENCE and AEGISGRAPH_JWKS,
+or configure AEGISGRAPH_SERVICE_TOKENS
+```
 
 Migrations are a separate, explicit step, never an init container racing the API:
 
 ```sh
 kubectl apply -k deploy/k8s
 kubectl -n aegisgraph create secret generic aegisgraph-secrets \
-  --from-literal=DATABASE_URL='postgresql+psycopg://user:secret@postgres:5432/aegisgraph'
+  --from-literal=DATABASE_URL='postgresql+psycopg://user:secret@postgres:5432/aegisgraph' \
+  --from-literal=AEGISGRAPH_SERVICE_TOKENS='[{"id":"client-a","tenant_id":"acme","sha256":"<lowercase sha256 of the token>","scopes":["decision:submit"]}]'
 kubectl -n aegisgraph wait --for=condition=complete job/aegisgraph-migrate --timeout=180s
 kubectl -n aegisgraph rollout status deploy/aegisgraph-api --timeout=120s
 ```
+
+The migration Job reads only `DATABASE_URL` from the Secret; the API also reads
+the verifier. `scripts/validate_k8s_manifests.py` asserts that the ConfigMap keeps
+the production posture and that the probes stay split, so a later edit cannot drop
+them silently.
 
 Re-running a migration after a schema change needs the Job recreated (Jobs are
 immutable in their pod template):
