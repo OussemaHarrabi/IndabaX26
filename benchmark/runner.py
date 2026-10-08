@@ -43,6 +43,9 @@ from benchmark.dataset import Dataset, load_dataset, scenario_set_hash
 from benchmark.schema import Scenario
 from benchmark.scoring import Outcome, StepVerdict, derive_outcome
 from benchmark.wire import build_plan_episode
+from benchmark.wire import policy_document as wire_policy_document
+from benchmark.wire import policy_document_digest as wire_policy_document_digest
+from benchmark.wire import policy_set_for as wire_policy_set_for
 
 MANIFEST_SCHEMA_VERSION = "aegisgraph-benchmark-run/v1"
 DEFAULT_RUNS_DIR = "benchmark/runs"
@@ -188,6 +191,7 @@ class RunConfig:
     max_tokens: int | None = None
     hardware_note: str = "unspecified host"
     lock_path: Path | None = None
+    auth: AuthConfig | None = None
 
     def slug(self) -> str:
         if self.config_slug:
@@ -233,12 +237,112 @@ class HttpResponse:
     latency_ms: float | None
 
 
+def _b64url_decode(value: str) -> bytes:
+    import base64
+
+    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+
+def unverified_jwt_subject(token: str) -> str | None:
+    """Read the ``sub`` claim of a JWT **without verifying it**.
+
+    This exists only so the run manifest can name the principal. It is never an
+    authorization decision — the gateway verifies the token — and an opaque
+    service token has no readable subject, so ``None`` is returned.
+    """
+
+    parts = token.split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        claims = json.loads(_b64url_decode(parts[1]).decode("utf-8"))
+    except Exception:
+        return None
+    if not isinstance(claims, dict):
+        return None
+    subject = claims.get("sub")
+    if isinstance(subject, str) and 0 < len(subject) <= 256:
+        return subject
+    return None
+
+
+def read_token(token: str | None, token_file: str | None) -> str:
+    """Resolve a bearer token from a literal or a file, without ever echoing it.
+
+    The file form is preferred because a literal token ends up in a shell history.
+    Whitespace is rejected rather than trimmed silently, so a wrapped or
+    multi-line file is reported instead of producing an unauthenticated run.
+    """
+
+    if token is not None and token_file is not None:
+        raise RunError("pass --auth-token or --auth-token-file, not both")
+    if token_file is not None:
+        path = Path(token_file)
+        if not path.is_file():
+            raise RunError(f"auth token file not found: {path}")
+        raw = path.read_bytes()
+        if b"\x00" in raw:
+            raise RunError(
+                f"{path} looks like UTF-16 (a shell redirect on Windows writes UTF-16); "
+                "write the token file as UTF-8 without a BOM"
+            )
+        try:
+            value = raw.decode("utf-8-sig")
+        except UnicodeDecodeError as error:
+            raise RunError(f"{path} is not valid UTF-8: {error}") from error
+    elif token is not None:
+        value = token
+    else:
+        raise RunError("no credential: pass --auth-token-file (preferred) or --auth-token")
+    value = value.strip()
+    if not value:
+        raise RunError("the auth token is empty")
+    if any(character.isspace() for character in value):
+        raise RunError("the auth token contains whitespace; is the file wrapped or multi-line?")
+    return value
+
+
+@dataclass(frozen=True)
+class AuthConfig:
+    """A bearer credential for the decision surface.
+
+    The token is a secret: it is never logged, never written to a manifest and
+    never reproduced by ``repr`` (the field is excluded and ``__repr__`` is
+    overridden), so neither a traceback nor a debug print can leak it.
+    """
+
+    token: str = field(repr=False)
+    header: str = "Authorization"
+    scheme: str = "Bearer"
+
+    def header_value(self) -> str:
+        return f"{self.scheme} {self.token}" if self.scheme else self.token
+
+    def metadata(self) -> dict[str, Any]:
+        """Non-secret metadata for the manifest: never the token, never its digest."""
+
+        return {
+            "mode": "bearer",
+            "header": self.header,
+            "scheme": self.scheme,
+            "principal": unverified_jwt_subject(self.token),
+            "principal_source": "unverified-jwt-sub-or-null",
+        }
+
+    def __repr__(self) -> str:
+        return (
+            f"AuthConfig(header={self.header!r}, scheme={self.scheme!r}, "
+            f"principal={unverified_jwt_subject(self.token)!r})"
+        )
+
+
 class HttpClient:
     """Minimal JSON-over-HTTP client. Standard library only, no hidden state."""
 
-    def __init__(self, base_url: str, timeout: float) -> None:
+    def __init__(self, base_url: str, timeout: float, auth: AuthConfig | None = None) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.auth = auth
 
     def get(self, path: str) -> HttpResponse:
         return self._call("GET", path, None)
@@ -253,6 +357,8 @@ class HttpClient:
         request = Request(url, data=body, method=method)
         if body is not None:
             request.add_header("Content-Type", "application/json")
+        if self.auth is not None:
+            request.add_header(self.auth.header, self.auth.header_value())
         started = time.perf_counter()
         try:
             with urlopen(request, timeout=self.timeout) as response:
@@ -389,6 +495,37 @@ class RunResult:
     control_outcomes: tuple[Outcome, ...]
 
 
+def _require_decision_status(
+    response: HttpResponse,
+    *,
+    surface: str,
+    path: str,
+    scenario_id: str,
+    step_id: int,
+    url: str,
+) -> None:
+    """Refuse to continue when a decision request did not answer 200.
+
+    A non-200 is never a verdict. Without this guard a deployment that required
+    authentication would answer ``401`` to every request, and a run full of
+    refusals would be scored as *attacks stopped* — the single most dangerous
+    possible failure mode for this project. The run aborts before the run
+    directory is created, so nothing is recorded.
+    """
+
+    if response.status == 200 and response.error is None:
+        return
+    detail = (response.error or "no response").strip()
+    raise RunError(
+        f"the {surface} did not answer 200: HTTP {response.status} on {path} at {url} "
+        f"for scenario {scenario_id!r} step {step_id} [{detail}]. "
+        "A non-2xx response is never recorded as a decision; the run was aborted before "
+        "any run directory was written. If the surface requires authentication, pass "
+        "--auth-token-file; if it refuses the policy set, publish it first with "
+        "scripts/bench_policies.py."
+    )
+
+
 def execute_run(config: RunConfig, dataset: Dataset | None = None) -> RunResult:
     """Run the dataset against the defence and the control, then write the run."""
 
@@ -399,7 +536,34 @@ def execute_run(config: RunConfig, dataset: Dataset | None = None) -> RunResult:
     if not selected:
         raise RunError(f"no scenarios match splits {config.splits} in {config.dataset_root}")
 
-    defense = HttpClient(config.defense_url, config.timeout)
+    # Fail fast on a name collision, before a single request is sent: a repeated
+    # invocation must not pay a full gateway pass or perturb the host's latency
+    # baseline for a concurrent measurement. The exclusive mkdir below remains the
+    # authoritative guard.
+    run_dir = config.runs_dir / config.run_name()
+    if run_dir.exists():
+        raise RunError(
+            f"refusing to overwrite an existing run directory: {run_dir} "
+            "(detected before any request was sent)"
+        )
+
+    # Every request pins the policy set its scenario needs, so the run records
+    # exactly which stored policy documents it depends on. Publishing them is a
+    # separate, auditable step (scripts/bench_policies.py).
+    policy_sets_used: set[str] = set()
+    policy_digests: dict[str, str] = {}
+    policy_bodies: dict[str, dict[str, Any]] = {}
+    for scenario in selected:
+        identity = wire_policy_set_for(scenario)
+        key = f"{identity['id']}:{identity['version']}"
+        policy_sets_used.add(key)
+        policy_digests[key] = wire_policy_document_digest(wire_policy_document(scenario))
+        policy_bodies[key] = wire_policy_document(scenario)
+    policy_blob_sha256 = hashlib.sha256(
+        json.dumps(policy_bodies, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+    defense = HttpClient(config.defense_url, config.timeout, config.auth)
     health = defense.get(HEALTH_PATH)
     if health.error is not None or health.status != 200:
         raise RunError(
@@ -431,6 +595,14 @@ def execute_run(config: RunConfig, dataset: Dataset | None = None) -> RunResult:
             defense_steps: list[StepVerdict] = []
             for request in build_plan_episode(scenario, run_id=run_id, plan=plan):
                 response = defense.post(GENERIC_PATH, request)
+                _require_decision_status(
+                    response,
+                    surface="defence",
+                    path=GENERIC_PATH,
+                    scenario_id=scenario.id,
+                    step_id=int(request["step_id"]),
+                    url=config.defense_url,
+                )
                 defense_steps.append(_verdict_from(response, int(request["step_id"])))
             outcomes.append(
                 derive_outcome(scenario, tuple(defense_steps), original_actions=original)
@@ -439,6 +611,14 @@ def execute_run(config: RunConfig, dataset: Dataset | None = None) -> RunResult:
             control_steps: list[StepVerdict] = []
             for request in build_plan_episode(scenario, run_id=run_id, plan=plan):
                 response = control.post(GENERIC_PATH, request)
+                _require_decision_status(
+                    response,
+                    surface="control",
+                    path=GENERIC_PATH,
+                    scenario_id=scenario.id,
+                    step_id=int(request["step_id"]),
+                    url=control_url,
+                )
                 control_steps.append(_verdict_from(response, int(request["step_id"])))
             control_outcomes.append(
                 derive_outcome(scenario, tuple(control_steps), original_actions=original)
@@ -447,10 +627,9 @@ def execute_run(config: RunConfig, dataset: Dataset | None = None) -> RunResult:
         if internal_control is not None:
             internal_control.stop()
 
-    run_dir = config.runs_dir / config.run_name()
     try:
         run_dir.mkdir(parents=True, exist_ok=False)
-    except FileExistsError as error:
+    except FileExistsError as error:  # pragma: no cover - the pre-flight check wins the race
         raise RunError(f"refusing to overwrite an existing run directory: {run_dir}") from error
 
     outcome_bytes = _jsonl([outcome.to_json() for outcome in outcomes])
@@ -476,7 +655,34 @@ def execute_run(config: RunConfig, dataset: Dataset | None = None) -> RunResult:
             "endpoint": GENERIC_PATH,
         },
         "control": {"url": control_url, "kind": control_kind},
+        "auth": (
+            config.auth.metadata()
+            if config.auth is not None
+            else {
+                "mode": "none",
+                "header": None,
+                "scheme": None,
+                "principal": None,
+                "principal_source": "no credential supplied",
+            }
+        ),
         "policy_set": (version.payload or {}).get("policy_set"),
+        "policy": {
+            "gate": "H5.2",
+            "blob_sha256": policy_blob_sha256,
+            "blob_sha256_source": (
+                "sha256 of the canonical {policy-set-id:version -> document} map the "
+                "requests pin, computed by the benchmark before any gateway call"
+            ),
+            "source": "scenario-derived, published to the tenant and pinned per request",
+            "publish_command": (
+                "python scripts/bench_policies.py publish --defense-url <url> --token-file <path>"
+            ),
+            "policy_set_count": len(policy_sets_used),
+            "policy_sets": sorted(policy_sets_used),
+            "document_digests": {key: value for key, value in sorted(policy_digests.items())},
+            "server_default": (version.payload or {}).get("policy_set"),
+        },
         "scenario_policy_sets": sorted(
             {
                 f"{scenario.policy_context.policy_id}/{scenario.policy_context.policy_version}"
@@ -564,4 +770,5 @@ __all__ = [
     "execute_run",
     "load_run",
     "model_adapter",
+    "read_token",
 ]
