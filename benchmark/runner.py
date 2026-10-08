@@ -58,10 +58,14 @@ POLICY_SOURCE_BLOBS: tuple[str, ...] = (
     "backend/aegisgraph/adapter.py",
 )
 
-#: The hashing convention for every policy hash this runner records: git's blob
-#: header, hashed with SHA-256 rather than git's default SHA-1 object name, so the
-#: value is comparable across freeze records without a bespoke tool.
-POLICY_HASH_CONVENTION = 'git-blob-sha256: sha256(b"blob <len>\\0" + content)'
+#: The hashing convention for **every** file and document hash this runner
+#: records: SHA-256 of the content bytes with CRLF normalised to LF, and no git
+#: object header. This is the convention ``scripts/generate_sbom.py`` uses for
+#: ``source.requirements_lock_sha256``, so the run manifest and the release SBOM
+#: agree about the same file on any platform: a Windows checkout and a Linux
+#: checkout produce the same value. A git *object* header would not — it is a
+#: different function of the same bytes.
+HASH_CONVENTION = "content-sha256-lf: sha256(bytes) with CRLF normalised to LF, no object header"
 DEFAULT_RUNS_DIR = "benchmark/runs"
 DEFAULT_TIMEOUT_SECONDS = 10.0
 GENERIC_PATH = "/api/v1/decisions"
@@ -455,6 +459,12 @@ def _verdict_from(response: HttpResponse, step_id: int) -> StepVerdict:
     )
 
 
+def _git_root() -> Path:
+    """The repository root this module lives in."""
+
+    return Path(__file__).resolve().parents[1]
+
+
 def _git_commit() -> str:
     try:
         result = subprocess.run(
@@ -487,47 +497,98 @@ def _git_branch() -> str:
     return branch if result.returncode == 0 and branch else "unknown"
 
 
-def git_blob_sha256(path: Path) -> str | None:
-    """The git blob hash of a file, or ``None`` when it cannot be read.
+def content_sha256(data: bytes) -> str:
+    """SHA-256 of content bytes with CRLF normalised to LF (see ``HASH_CONVENTION``)."""
 
-    Git's object hash is ``sha256(b"blob <len>\0" + content)``. Using it here
-    means a policy hash recorded by this runner is directly comparable with the
-    value git computes for the same content, so a freeze record and an unseal
-    record can be compared without a bespoke tool.
-    """
+    return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
 
+
+def _committed_bytes(path: Path, repo_root: Path | None) -> bytes | None:
+    """The bytes git stores for ``path``, or the working copy when that is impossible."""
+
+    if repo_root is not None:
+        try:
+            relative = path.resolve().relative_to(repo_root.resolve()).as_posix()
+        except ValueError:
+            relative = None
+        if relative is not None:
+            import subprocess
+
+            result = subprocess.run(
+                ["git", "show", f"HEAD:{relative}"],
+                capture_output=True,
+                cwd=repo_root,
+                timeout=30,
+                check=False,
+            )
+            if result.returncode == 0:
+                return result.stdout
     try:
-        data = path.read_bytes()
+        return path.read_bytes()
     except OSError:
         return None
-    header = f"blob {len(data)}\0".encode("ascii")
-    return hashlib.sha256(header + data).hexdigest()
+
+
+def content_sha256_file(path: Path, repo_root: Path | None = None) -> str | None:
+    """The portable content hash of a file, or ``None`` when it cannot be read.
+
+    Reading the committed bytes when git can supply them makes the value
+    independent of the checkout's line-ending configuration, which is what the
+    release SBOM records.
+    """
+
+    data = _committed_bytes(path, repo_root)
+    if data is None:
+        return None
+    return content_sha256(data)
+
+
+def _git_dirty(repo_root: Path) -> bool | None:
+    """Whether the working tree has uncommitted changes, or ``None`` if unknown."""
+
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            cwd=repo_root,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):  # pragma: no cover - environment dependent
+        return None
+    if result.returncode != 0:
+        return None
+    return bool(result.stdout.strip())
 
 
 def _policy_source_blobs(repo_root: Path) -> dict[str, Any]:
-    """Git blob hashes of the committed policy-implementing files."""
+    """Content hashes of the committed policy-implementing files."""
 
     blobs: dict[str, Any] = {}
     for relative in POLICY_SOURCE_BLOBS:
-        path = repo_root / relative
-        digest = git_blob_sha256(path)
-        blobs[relative] = digest if digest is not None else None
+        blobs[relative] = content_sha256_file(repo_root / relative, repo_root)
     missing = sorted(name for name, value in blobs.items() if value is None)
     return {
-        "convention": POLICY_HASH_CONVENTION,
+        "convention": HASH_CONVENTION,
         "blobs": blobs,
         "missing": missing,
         "missing_reason": (f"not present in this checkout: {missing}" if missing else None),
     }
 
 
-def _file_sha256(path: Path | None) -> dict[str, Any]:
+def _file_sha256(path: Path | None, repo_root: Path | None = None) -> dict[str, Any]:
+    """A file's portable content hash, with the convention recorded beside it."""
+
     if path is None or not path.is_file():
-        return {"path": None, "sha256": None, "present": False}
+        return {"path": None, "sha256": None, "present": False, "hash_convention": HASH_CONVENTION}
     return {
         "path": path.name,
-        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "sha256": content_sha256_file(path, repo_root),
         "present": True,
+        "hash_convention": HASH_CONVENTION,
     }
 
 
@@ -564,7 +625,7 @@ def _policy_blob_sha256(documents: dict[str, dict[str, Any]]) -> tuple[str | Non
         ).encode("utf-8")
     except (TypeError, ValueError) as error:  # pragma: no cover - defensive
         return None, f"the policy documents are not JSON-serialisable: {error}"
-    return hashlib.sha256(f"blob {len(canonical)}\0".encode("ascii") + canonical).hexdigest(), None
+    return content_sha256(canonical), None
 
 
 def _require_decision_status(
@@ -607,6 +668,13 @@ def execute_run(config: RunConfig, dataset: Dataset | None = None) -> RunResult:
     )
     if not selected:
         raise RunError(f"no scenarios match splits {config.splits} in {config.dataset_root}")
+
+    # The code identity is captured *before* the run directory exists, so the
+    # directory this run creates cannot make the tree look dirty, and a run taken
+    # with uncommitted changes says so instead of claiming a commit it did not use.
+    code_commit = _git_commit()
+    code_commit_source = "git-rev-parse-HEAD" if code_commit != "unknown" else "unavailable"
+    code_dirty = _git_dirty(_git_root())
 
     # Fail fast on a name collision, before a single request is sent: a repeated
     # invocation must not pay a full gateway pass or perturb the host's latency
@@ -717,7 +785,12 @@ def execute_run(config: RunConfig, dataset: Dataset | None = None) -> RunResult:
             "immutable": True,
             "created_with": "mkdir(exist_ok=False)",
         },
-        "code": {"commit": _git_commit(), "branch": _git_branch()},
+        "code": {
+            "commit": code_commit,
+            "commit_source": code_commit_source,
+            "branch": _git_branch(),
+            "dirty": code_dirty,
+        },
         "defense": {
             "url": config.defense_url,
             "health": {"status": health.status},
@@ -747,7 +820,7 @@ def execute_run(config: RunConfig, dataset: Dataset | None = None) -> RunResult:
                 "canonical {policy-set-id:version -> document} map, computed by the "
                 "benchmark before any gateway call"
             ),
-            "hash_convention": POLICY_HASH_CONVENTION,
+            "hash_convention": HASH_CONVENTION,
             "source_blobs": policy_source_blobs,
             "source": "scenario-derived, published to the tenant and pinned per request",
             "publish_command": (
@@ -786,7 +859,7 @@ def execute_run(config: RunConfig, dataset: Dataset | None = None) -> RunResult:
             "python": sys.version.split()[0],
             "machine": platform.machine(),
         },
-        "dependency_lock": _file_sha256(config.lock_path),
+        "dependency_lock": _file_sha256(config.lock_path, _git_root()),
         "artifacts": {
             "outcomes.jsonl": hashlib.sha256(outcome_bytes).hexdigest(),
             "control.jsonl": hashlib.sha256(control_bytes).hexdigest(),
