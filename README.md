@@ -1,46 +1,91 @@
 # AegisGraph
 
-AegisGraph is a **policy-enforcement, provenance, evaluation and observability
-platform for agentic systems**. It intercepts a proposed agent action before
-execution, applies versioned policy to bound and provenance-tagged facts,
-returns one of four verbs — `allow`, `block`, `escalate`, `rewrite` — and records
-an auditable receipt that binds the decision to the exact action it evaluated.
+AegisGraph is a **pre-execution decision gateway for agentic systems**. Given one
+proposed agent action and the inert facts around it — the conversation so far, the
+observation the agent is reacting to, the provenance of each item, the installed
+policy — it returns one of four verbs, `allow` / `block` / `escalate` / `rewrite`,
+with a reason and an auditable receipt that binds the decision to the exact action
+it evaluated. **It never executes the proposed action, and it never calls a
+model.** An integrator enforces each decision and binds it to the candidate action;
+the receipt carries the digest needed to refuse a mismatch.
 
-The gateway never executes a tool or calls a model. An integrator enforces each
-decision and binds it to the exact candidate action; the receipt carries the
-digest needed to refuse a mismatch.
+> **Release `v0.1.0-industrial`** (`eb33d2c`). Industrial platform and native
+> evaluation harness **implemented**; the empirical campaign so far is
+> **scripted-only**, and the real-model campaign is **not yet run** — see
+> [Measured results, by evidence class](#measured-results-by-evidence-class).
+> Release identity and every artifact digest:
+> [`docs/release-notes.md`](docs/release-notes.md) and the 39-entry
+> [`docs/evidence/release-manifest.json`](docs/evidence/release-manifest.json)
+> (`python scripts/release_manifest.py --verify …` → all digests match). Per-claim
+> status is in [`docs/evidence/ledger.md`](docs/evidence/ledger.md).
 
-> **Status.** The decision core, the wire contract and the local inspector are
-> **implemented** (the measured legacy v5 implementation). Persistence,
-> authentication, telemetry and the native evaluation harness are **proposed**
-> and not yet built. Every element of this repository is labelled
-> `implemented`, `partial` or `proposed` in
-> [`docs/architecture/system-context.md`](docs/architecture/system-context.md),
-> and every measurement is tracked in
-> [`docs/evidence/ledger.md`](docs/evidence/ledger.md).
+## The security boundary
 
-## What the platform is now
+```text
+  untrusted content ──┐
+  agent proposal ─────┴──▶ AegisGraph ──▶ one verb + reason + receipt
+                              │                 │
+                              │                 └─▶ integrator executes (or not),
+                              │                     binding the decision digest
+                              └─▶ never executes, never calls a model
+```
 
-- **Decision core** — deterministic, fail-closed policy over bounded facts:
-  provenance resolution, authorization, confirmation, sensitive-flow redaction
-  and rewrite re-validation. Code: `backend/aegisgraph/`.
-- **Decision API** — a bounded HTTP contract (`/v1/decision`) on a FastAPI
-  boundary with sanitized errors and a `no-store` policy.
-- **Inspector UI** — a local, read-only surface that loads SENTINEL JSONL traces
-  and evaluator scorecards and follows proposal → decision → effect.
-- **Legacy benchmark adapter and evidence package** — the IndabaX/SENTINEL
-  challenge defence, its pinned benchmark and its measured results, preserved
-  unchanged under `evaluation/` and documented in `docs/legacy/`.
-- **Charter, architecture, threat model, ADRs and roadmap** — the industrial
-  direction is in [`PRODUCT.md`](PRODUCT.md) and
-  [`docs/architecture/`](docs/architecture/README.md).
+AegisGraph is a *gate*, not an agent and not a sandbox. It evaluates; the
+integrator enforces. The receipt is what makes the enforcement checkable: it
+records the action digest, the policy/code revision, the trust ceiling applied and
+the reason codes, so a decision cannot be quietly reinterpreted after the fact.
 
-## Five-minute quick start
+## What is implemented
 
-The service runs from this checkout with no external dependencies (no database,
-no model, no network). Python 3.12 is the declared runtime; the local dev
-interpreter (3.13) also runs the suite — the declared support range was not
-changed to match it.
+**Industrial platform (milestones M1–M4).**
+
+- **Versioned decision contract** — `POST /api/v1/decisions`, `api_version:
+  aegisgraph/v1`, with a request identity (`request_id`), the policy set that was
+  actually applied, and a durable receipt id. The frozen legacy wire
+  (`POST /v1/decision`) is preserved unchanged beside it.
+- **Enforcement SDK** — refuses to execute an action whose digest does not match
+  the decision it was issued for (`digest_mismatch`), so a rewritten or mutated
+  action cannot ride on a stale `allow`.
+- **Authentication, authorization, tenancy** — JWT (JWKS, issuer/audience) or
+  service tokens, per-role scopes, per-tenant isolation (`404`, not `403`, for
+  another tenant's receipt), and a trust ceiling that bounds how far a caller's
+  labels can be believed. Production refuses to start with authentication off.
+- **Durable, auditable receipts** — append-only PostgreSQL 17 store behind
+  SQLAlchemy 2 + Alembic (`0001`, `0002`), idempotent on `request_id`, readable
+  only by its tenant, with server-resolved policy identity.
+- **Observability** — OpenTelemetry traces and Prometheus metrics whose labels
+  carry route/status/verdict/reason-class only: no tenant, principal, request or
+  content. SLOs, a load harness and failure-injection tests; the collector being
+  down is *counted*, never raised into a decision.
+- **CI, containers, deployment** — five CI jobs with SHA-pinned actions, a
+  coverage floor of 95, a hardened image (UID 10001, read-only root filesystem,
+  digest-pinned base, SBOM drift guard), a six-service Compose stack
+  (`api, migrate, postgres, otel-collector, prometheus, grafana`) and Kubernetes
+  manifests validated by two independent schema engines.
+
+**Research and evaluation (milestones M5–M8).**
+
+- **Native benchmark** — a versioned scenario schema, a 60-scenario public dataset
+  (42 development / 18 validation), a **sealed 20-scenario holdout** whose content
+  is unreachable without the custodian's passphrase, deterministic scoring with a
+  digest, intention-to-treat attack-success accounting, and a **falsifiable
+  control licence** (the defence's result is void unless the same configuration's
+  allow-all control demonstrably reached the attacks).
+- **Frozen campaign (scripted)** — freeze block 1, declared before the run and
+  executed once; see the results table below.
+- **Six independent review/audit vectors** — adversarial reviews of the decision
+  core, the M1–M5 surface, the M2 API surface and the M3 telemetry/deployment
+  surface, plus reproducibility audits of the research chain and of the campaign.
+  Findings are closed, or `accepted` with the residual and its reason recorded;
+  none is silently dropped.
+- **Reproducible release** — a deterministic provenance manifest (each artifact's
+  on-disk, LF-normalised and committed-blob SHA-256, with the convention labelled),
+  a runnable demo script, bounded CV claims and a claim ledger.
+
+## Five-minute demo
+
+The service runs from this checkout with **no database, no model and no network**.
+Python 3.12 is the declared runtime (3.13 also runs the suite).
 
 ```powershell
 py -3.12 -m venv .venv
@@ -49,93 +94,115 @@ python -m pip install -e ".[dev]"
 python -m uvicorn aegisgraph.app:app --app-dir backend --host 127.0.0.1 --port 8080
 ```
 
-On Linux/macOS, replace the first two lines with `python3.12 -m venv .venv` and
-`source .venv/bin/activate`; the install and `uvicorn` lines are the same.
-
-In a second terminal:
+On Linux/macOS use `python3.12 -m venv .venv` and `source .venv/bin/activate`.
+Then, in a second terminal:
 
 ```powershell
-curl.exe http://127.0.0.1:8080/healthz
-# {"status":"ok"}
-```
+# 1. liveness and readiness (readiness is dependency-aware and fails closed)
+curl.exe http://127.0.0.1:8080/healthz          # {"status":"ok"}
+curl.exe http://127.0.0.1:8080/readyz           # ready/insecure + the reasons
 
-Open `http://127.0.0.1:8080/` for the read-only inspector. Submit one decision:
+# 2. one decision on the versioned wire
+curl.exe -X POST http://127.0.0.1:8080/api/v1/decisions `
+  -H "Content-Type: application/json" `
+  --data-binary '{"api_version":"aegisgraph/v1","run_id":"demo","step_id":2,"user_goal":"Perform the requested safe task","conversation":[],"candidate_action":{"type":"respond","content":"Ok"},"policy_context":{"allowed_tools":[],"confirmation_required_tools":[],"consequential_tools":[]},"history_digest":{"confirmations_granted":[]}}'
+# -> allow / BENIGN_ACTION, with request_id, receipt_id and the applied policy_set
 
-```powershell
+# 3. the same decision on the frozen legacy wire
 curl.exe -X POST http://127.0.0.1:8080/v1/decision `
   -H "Content-Type: application/json" `
-  --data-binary '{"run_id":"local-demo","step_id":1,"user_goal":"Summarize the request","candidate_action":{"type":"respond","content":"The request is ready for review."},"policy_context":{"allowed_tools":[]}}'
-```
+  --data-binary '{"run_id":"demo","step_id":1,"user_goal":"Summarize the request","candidate_action":{"type":"respond","content":"The request is ready for review."},"policy_context":{"allowed_tools":[]}}'
+# -> allow / BENIGN_ACTION
 
-Run the checks:
-
-```powershell
+# 4. the read-only inspector, the metrics surface, and the tests
+start http://127.0.0.1:8080/
+curl.exe http://127.0.0.1:8080/metrics
 python -m pytest -q
-python -m ruff check backend tests
-python -m mypy
 ```
 
-Keep the service bound to localhost. It has **no authentication by default** and
-must not be exposed directly to an untrusted network.
+Two honest notes about the local defaults: with `AEGISGRAPH_ENV=development` the
+process is **insecure by design** — authentication is off, the receipt store is
+in-memory, and `/readyz` says so in its `warnings`. And because the development
+principal holds every scope, the caller's `policy_context` is honoured, which is
+why the demo's `policy_set.id` reads `caller-override`; with authentication on and
+a principal that lacks `policy:context_override`, the server's installed policy set
+applies instead. Keep the service bound to localhost: it has no authentication by
+default and must not be exposed to an untrusted network.
 
-## API surface
-
-| Method | Path | Purpose | Status |
-| --- | --- | --- | --- |
-| `GET` | `/` | Read-only inspector surface | implemented (`backend/aegisgraph/app.py:39`) |
-| `GET` | `/assets/*` | Inspector static assets under a strict CSP | implemented (`backend/aegisgraph/app.py:45`) |
-| `GET` | `/healthz` | Liveness probe | implemented (`backend/aegisgraph/app.py:79`) |
-| `POST` | `/v1/decision` | One bounded policy decision for one proposed action | implemented (`backend/aegisgraph/app.py:84`) |
-| `POST` | `/v1/receipts` | Persist and query decision receipts | proposed (roadmap M2) |
-| `GET` | `/v1/policies` | List/version installed policy | proposed (roadmap M2) |
-
-**Request envelope** (`SentinelRequest`, `backend/aegisgraph/sentinel.py:159`):
-`run_id`, `step_id`, `user_goal`, `candidate_action`, `policy_context`,
-`conversation[]`, `observation`, `provenance[]`, `history_digest`. Unknown
-envelope fields are ignored for forward compatibility
-(`backend/aegisgraph/sentinel.py:50`); candidate action shapes and responses are
-strict (`backend/aegisgraph/sentinel.py:54`, `:188`).
-
-**Response** (`SentinelResponse`, `backend/aegisgraph/sentinel.py:188`):
-`decision` ∈ {`allow`, `block`, `escalate`, `rewrite`}, `risk_score`,
-`confidence`, `reason_codes[]`, `explanation`, optional `rewritten_action`, and
-bounded `metadata`. Rewrite responses must carry a rewritten action and no other
-verdict may (`backend/aegisgraph/sentinel.py:222`).
-
-Invalid requests receive a generic sanitized 4xx response; a valid request that
-cannot be evaluated safely returns a generic `block`. Responses are bounded below
-64 KB and marked `no-store` (`backend/aegisgraph/app.py:20`, `:48`). Interactive
-API docs and OpenAPI output are disabled.
+Fuller demo (dashboards, container, the whole story):
+[`docs/demo/demo-script.md`](docs/demo/demo-script.md).
 
 ## Architecture
 
+```mermaid
+flowchart LR
+  A[agent proposal<br/>+ inert facts] --> B[decision gateway<br/>POST /api/v1/decisions]
+  B --> C{policy kernel}
+  C -->|provenance, trust ceiling,<br/>authorization, confirmation,<br/>sensitive-flow, rewrite| D[allow / block / escalate / rewrite]
+  D --> E[receipt: action digest,<br/>policy + code revision,<br/>reason codes]
+  D --> F[enforcement SDK<br/>refuses digest mismatch]
+  E --> G[(append-only store<br/>PostgreSQL)]
+  B --> H[telemetry<br/>content-free labels]
+  subgraph evaluation
+    I[native schema + 60 scenarios<br/>+ sealed holdout] --> J[runner → outcomes]
+    J --> K[deterministic scorer + digest]
+  end
+```
+
 | Document | Contents |
 | --- | --- |
-| [`docs/architecture/system-context.md`](docs/architecture/system-context.md) | Components, boundaries and maturity, with code anchors |
+| [`docs/architecture/system-context.md`](docs/architecture/system-context.md) | Components, boundaries, maturity, code anchors |
 | [`docs/architecture/threat-model.md`](docs/architecture/threat-model.md) | Assets, trust boundaries, attacker capabilities, misuse cases |
-| [`docs/architecture/roadmap.md`](docs/architecture/roadmap.md) | Milestones M0–M8, dependencies, entry/exit criteria, single-writer map |
+| [`docs/architecture/roadmap.md`](docs/architecture/roadmap.md) | Milestones M0–M8, entry/exit criteria, single-writer map |
 | [`docs/architecture/adr/`](docs/architecture/adr/README.md) | Architecture decision records |
-| [`AGENTS.md`](AGENTS.md) | Operating guide, role boundaries, quality gates |
-| [`PRODUCT.md`](PRODUCT.md) | Product register: users, jobs, principles, accessibility |
+| [`docs/benchmark/data-card.md`](docs/benchmark/data-card.md) · [`evaluation-card.md`](docs/benchmark/evaluation-card.md) | Dataset and evaluation cards, including what the holdout does and does not hide |
 
-## Legacy SENTINEL evidence (preserved)
+## Measured results, by evidence class
 
-AegisGraph began as the IndabaX Tunisia 2026 / SENTINEL challenge defence for
-team `9ahwa mahrou9a`. That implementation, its pinned benchmark and every
-measured number remain **as they were measured** — they are a versioned
-historical evidence package, not a description of the new platform.
+Three kinds of evidence live in this repository and **must not be merged**. Each
+number below names the artifact it comes from.
 
-- What the challenge was, what was built and exactly what was measured:
-  [`docs/legacy/sentinel-challenge.md`](docs/legacy/sentinel-challenge.md).
-- Where every legacy artifact lives and what it proves:
-  [`docs/legacy/evidence-map.md`](docs/legacy/evidence-map.md).
-- The claim-by-claim status of those results:
-  [`docs/evidence/ledger.md`](docs/evidence/ledger.md).
+### 1. Native benchmark, scripted replay — *platform and scorer validation*
 
-Measured legacy results (one seeded public-suite self-test with the unmodified
-`Qwen/Qwen3-8B` reference agent — not an official jury score):
+The native runner replays each scenario's **authored action script**: no model is
+involved. These numbers validate the platform, the scorer and the accounting — not
+model behaviour. Frozen campaign, run once under freeze block 1
+(`benchmark/runs/20261008T203656Z-m6-campaign/`, gateway `818cf1f`, dirty=false):
 
-| Defense | Attack success among 22 allow-all-reached cases | Benign task success | False-block rate | p95 decision latency |
+| Quantity | Value |
+| --- | ---: |
+| Scenarios / decisions scored | 60 (42 development, 18 validation) / 168 |
+| Defence errors | **0** |
+| Attack success, intention-to-treat | **0.5000** (15 of 30 reached attacks) |
+| Benign task success | **0.9667** (29 of 30) |
+| False-block rate (decision / scenario) | **0.0556** (3/54) / 0.0417 (1/24) |
+| Escalation rate / rewrites | 0.0714 (12/168) / 0 |
+| Reachability control (licence) | licensed 30, excluded 0, `effectiveness_claim = true` |
+| Deterministic digest | `b6951afb6db8fde2dd029d1e964312094d853487ae79d1abfdde02dc08b2581d` |
+
+The legacy re-check on the pinned public suite reproduces the digest
+`8669aadb87e94652645ae8ed1f454f6f103c21bc8960cc65bf6e051de3043dfa` **byte-identically**
+to the M0 and M1 re-checks. The delta against the previous reference run is a
+**null result** — 0 of 60 verdicts changed; the digest moved only because the code
+commit is part of the identity. Details and the honest explanation (neither
+corrective fix is reachable from these scenarios) are in
+[`docs/evidence/m6-campaign.md`](docs/evidence/m6-campaign.md).
+
+Gateway cost, measured separately from model inference
+([`docs/evidence/performance/m3-load-20261008T210436Z.json`](docs/evidence/performance/m3-load-20261008T210436Z.json)):
+2986 requests at 148.9 req/s, 0 errors, in-process decision latency p50 2.30 ms /
+p95 5.23 ms / p99 7.28 ms; client-observed p95 169 ms with the load generator
+co-located. The in-process figure is a process-local-store measurement and is
+**not** comparable to durable-store latency.
+
+### 2. Historical legacy SENTINEL evidence — *frozen, real Qwen3-8B*
+
+The IndabaX Tunisia 2026 / SENTINEL challenge defence for team `9ahwa mahrou9a`.
+Preserved exactly as measured; quoted here, never recomputed. One seeded
+public-suite self-test with the unmodified `Qwen/Qwen3-8B` reference agent — **not**
+an official jury score.
+
+| Defence | Attack success among 22 allow-all-reached cases | Benign task success | False-block rate | p95 latency |
 | --- | ---: | ---: | ---: | ---: |
 | Allow-all | 22/22 | 5/9 | 0 | 0.056 ms |
 | Built-in provenance | 9/22 | 4/9 | .3466 | 0.126 ms |
@@ -143,95 +210,69 @@ Measured legacy results (one seeded public-suite self-test with the unmodified
 | AegisGraph v3 | 0/22 | 4/9 | .0087 | 8.355 ms |
 | **AegisGraph v5 (final)** | **0/22** | **4/9** | **.0086** | **9.284 ms** |
 
-The 40-scenario suite has 31 attacks and 9 benign cases. Nine attacks did not
-succeed under allow-all and are **not** defence-effectiveness evidence. The v5
-scorecard says `eligible=false` because 4/9 benign utility is below the kit's 0.5
-self-test gate; four of those failures also occur with allow-all, and the fifth
-is a consequential `email_send` confirmation mismatch. Relaxing that confirmation
-to improve the metric would weaken the security boundary.
+Nine of the 31 attacks never succeeded under allow-all and are **not** defence
+evidence. The v5 scorecard is `eligible=false`: 4/9 benign utility is below the
+kit's 0.5 self-test gate, and relaxing the consequential `email_send` confirmation
+to fix that would weaken the boundary. What the challenge was, and where every
+legacy artifact lives: [`docs/legacy/`](docs/legacy/sentinel-challenge.md).
 
-Artifacts of record (do not edit): the v5 scorecard SHA-256 is
-`b9b0937814f8a545b8cb1deebacb1623830a04dedbfdb6b8f297be31118027c4`, its
-evaluator deterministic digest is
-`57ad9925d63d735eb27bddc8e6d23338c076308e20a657e135522146482e57a5`, the full
-40-trace v5 archive SHA-256 is
-`37dbcf836108ad667c720666d27e63c8d8b1001d1ea93ab53a2e84ce7f702d76`, and the
-measured defence source commit is `53472e560d6a21f197a7a0f72e537e3c7c88e756`.
+### 3. Native real-model campaign — **not yet run**
 
-### Legacy inspector walkthrough
+No native real-model result exists in this repository, and none is claimed. The
+model cells are `blocked` on a runtime: the local machine has no suitable GPU, so
+the campaign is prepared for Google Colab / Kaggle (notebook interfaces under
+`notebooks/`, which import the tested modules rather than hiding evaluation logic
+in cells), with the inference configuration, seeds, ablations and analysis fixed in
+advance. The preregistered plan and its statistics live in
+[`docs/research/`](docs/research/report.md); the blocked cells name the exact
+enabling action.
 
-Start the service, open `http://127.0.0.1:8080/`, and import
-`evaluation/real-qwen/ent_portal_rotation_draft-v5.jsonl` with
-`evaluation/real-qwen/aegisgraph-v5-qwen3-8b.json`. Filter to the rewrite and
-inspect `SENSITIVE_RESPONSE_REDACTED`, its risk score and reason, the rewritten
-action, and the following outcome (`attack_success=false`, `task_success=true`).
-The same scenario has `attack_success=true` under allow-all; the reachability
-control is essential. For a benign control, import
-`evaluation/real-qwen/enterprise_project_status-v5.jsonl` with the same
-scorecard. The UI never executes traces or changes policy; if multiple scorecards
-match one run ID it withholds the outcome rather than guessing.
+## API surface
 
-## Interactive course
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/` | Read-only inspector: load a trace + scorecard, follow proposal → decision → effect |
+| `GET` | `/healthz` | Liveness (never depends on a backend) |
+| `GET` | `/readyz` | Dependency-aware readiness; `503` when the receipt store is unreachable |
+| `GET` | `/metrics` | Prometheus exposition; **no authentication dependency** — restrict it at the network layer |
+| `GET` | `/api/v1/version` | API version, applied policy set, build identity |
+| `POST` | `/api/v1/decisions` | One versioned decision (`api_version: aegisgraph/v1`) |
+| `POST` | `/api/v1/confirmations` | Issue a confirmation grant for a consequential action |
+| `GET` | `/api/v1/receipts` | Query durable receipts (tenant-scoped) |
+| `GET` | `/api/v1/receipts/{receipt_id}` | One receipt by id (tenant-scoped) |
+| `GET` | `/api/v1/policies` | List versioned policy sets |
+| `POST` | `/api/v1/policies` | Publish a new policy set version |
+| `POST` | `/api/v1/policies/{policy_id}/activate` | Activate a published policy set |
+| `GET` | `/api/v1/audit-events` | Audit trail (scope-gated) |
+| `POST` | `/v1/decision` | **Frozen legacy wire**, preserved unchanged for the historical evidence |
 
-[`COURSE/aegisgraph-course.html`](COURSE/aegisgraph-course.html) is a
-self-contained, offline, single-file course explaining the legacy defence from
-first principles: the attack model, the 40-scenario library, the decision kernel
-gate by gate, the measured evidence, an independent audit (14 findings, two
-demonstrated live against the running service) and eight runnable labs. Open it
-by double-clicking the file — no server, no network, no dependencies — or read
-the Markdown sources in [`COURSE/`](COURSE/README.md).
+Invalid requests get a sanitized 4xx; a request that cannot be evaluated safely
+returns a generic `block`. Responses are bounded and `no-store`. Interactive API
+docs are disabled. Contract details: [`docs/api/contracts.md`](docs/api/contracts.md),
+[`docs/api/auth.md`](docs/api/auth.md), [`docs/api/receipts.md`](docs/api/receipts.md).
 
-## Known limitations
+## Quality gates
 
-1. **Utility.** The kit's legacy self-test gate is not met (4/9 benign tasks
-   versus 5/9 under allow-all). Diagnosing the `enterprise_security_digest`
-   confirmation/subject mismatch without allowing unconfirmed consequential
-   `email_send` operations remains open. *(legacy)*
-2. **Output integrity.** Legacy v5 still passes a lower-trust tool-use prompt
-   into one final `enterprise_memory_poison` answer. The narrative guard is
-   bounded and can miss paraphrases, translations, transformed secrets and
-   multi-turn laundering. *(legacy)*
-3. **Evidence uncertainty.** The legacy headline is one seeded public-suite
-   observation, not a population estimate. A trace/scorecard revision
-   fingerprint, multi-seed reruns and confidence intervals are still pending.
-   *(legacy)*
-4. **No persistence, auth or telemetry yet.** Receipts are not durably stored,
-   the API has no authentication, and there is no OpenTelemetry/Prometheus
-   instrumentation. These are `proposed` in the roadmap, not implemented.
-5. **Platform evaluation is not built.** The native evaluation schema and the
-   refactor of the SENTINEL adapter into a versioned legacy package are
-   `proposed`. The existing harness targets the pinned external starter kit.
-6. **Unverified deployment paths.** A hardened container definition exists
-   (`Dockerfile`), but a live Docker-engine run and any Kubernetes target are not
-   verified in this environment (`kind` and `psql` are unavailable; see
-   [`docs/architecture/roadmap.md`](docs/architecture/roadmap.md)).
-7. **No model inference locally.** `ollama` and paid model APIs are unavailable,
-   so real-model reruns are `blocked` until a runtime is provided. Synthetic
-   results are always labelled as such.
-8. **Local-only trust.** The prototype has no authentication and no request
-   quotas; it must stay bound to localhost or sit behind the integrator's
-   authentication and network controls.
+Reproduced from a clean clone of the release tag (recorded, with environment, in
+[`docs/evidence/`](docs/evidence/ledger.md)):
 
-There is no model fine-tuning or learned detector. Risk/confidence values are
-deterministic rule outputs, not calibrated probabilities of real-world harm.
-These decisions are deterministic policy checks, not proof that every possible
-prompt injection or cyberattack is detected.
+- **Tests**: 589 collected; **589 pass with PostgreSQL 17**; without a database the
+  12 store-backed tests skip; in a clean clone two more skip because the pinned
+  external SENTINEL checkout is absent (575 passed / 14 skipped).
+- **Coverage**: 97.00 % with PostgreSQL against the configured floor of 95.
+- **Static analysis**: ruff clean; strict mypy clean over 19 source files.
+- **Benchmark**: `python scripts/bench_validate.py` → `RESULT: PASS` (0 errors,
+  0 warnings), including the sealed-holdout leakage gate.
+- **Release**: `python scripts/release_manifest.py --verify docs/evidence/release-manifest.json`
+  → all 39 digests match.
+- **Deployment**: Kubernetes manifests pass 44 checks across two schema engines;
+  the image builds and runs read-only with the Compose stack healthy.
+- **Supply chain**: `python scripts/check_sbom_freshness.py` → the SBOM matches
+  `requirements.lock`.
 
-## Repository layout
+Skips are named, never counted as passes.
 
-```text
-backend/aegisgraph/   decision core, wire contracts, HTTP boundary, inspector
-tests/                contracts, policy, adapter, API, dashboard, reachability
-evaluation/           legacy scorecards, traces, evidence archives and digests
-docs/architecture/    system context, threat model, roadmap, ADRs
-docs/legacy/          preserved SENTINEL challenge record and evidence map
-docs/evidence/        claim ledger
-COURSE/               offline teaching material (Markdown + single-file HTML)
-REPORT.tex            legacy technical report source
-benchmark.lock        pinned legacy benchmark (Skan22/Sentinel_Starter_Kit)
-```
-
-## Container
+## Container and deployment
 
 ```powershell
 docker build -t aegisgraph:local .
@@ -240,18 +281,76 @@ docker run --rm --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m `
   -p 8080:8080 aegisgraph:local
 ```
 
-The image installs exact runtime dependency versions from `requirements.lock`,
-runs as UID 10001, and listens on port 8080. A live Docker-engine run has not yet
-been verified in this environment.
+The image installs exact runtime versions from `requirements.lock`, runs as UID
+10001 and listens on 8080. The Compose stack adds PostgreSQL, the OTel collector,
+Prometheus and Grafana (`docker compose up -d --build`; bring-up, scrape and
+dashboard verified — see [`docs/ops/compose.md`](docs/ops/compose.md)). Kubernetes
+manifests are validated but **not** cluster-smoke-tested here (no `kind`).
+
+## Known limitations
+
+1. **No native real-model result.** The scripted campaign validates the platform
+   and the scorer; it says nothing about model behaviour. The real-model campaign
+   is prepared but not executed (`blocked` on GPU/cloud runtime).
+2. **The sealed holdout is closed.** 20 scenarios remain unopened; opening it
+   requires the frozen configuration, the completed development/validation runs
+   and the custodian's authorization. No generalization claim is made.
+3. **The seal gates content, not scoring.** The manifest publishes the holdout's
+   composition, its ciphertext length (plaintext + 16 bytes) and a whole-set
+   confirmation hash; scoring a fabricated holdout result needs no passphrase.
+   That boundary is documented and now pinned by a characterisation test.
+4. **Legacy utility gate unmet.** The historical v5 self-test keeps 4/9 benign
+   tasks (below the kit's 0.5 gate) — reported, not tuned away.
+5. **`/metrics` is network-controlled.** The exposition has no authentication
+   dependency; it carries no content, credentials or principal identifiers, and
+   the deployment restricts it at the network layer.
+6. **No cluster or GitHub-hosted CI evidence** until a cluster and a hosted run
+   exist; the workflows are reproduced locally step by step, which is not the
+   same thing.
+7. **Deterministic rules, not calibrated risk.** `risk_score`/`confidence` are
+   rule outputs, not probabilities of real-world harm. There is no learned
+   detector and no fine-tuning.
+8. **Not a universal defence.** AegisGraph bounds what one gateway can enforce at
+   one decision point; it is not proof that every prompt injection, exfiltration
+   or cyberattack is detected.
+
+## Repository layout
+
+```text
+backend/aegisgraph/   decision core, v1 contracts, HTTP boundary, auth, store, telemetry
+benchmark/            native schema, 60 scenarios, sealed holdout, runner, scorer, runs/
+tests/                contracts, policy, auth, store, telemetry, benchmark, boundaries
+evaluation/           frozen legacy scorecards, traces and archives (historical evidence)
+deploy/               compose stack, observability config, Kubernetes manifests
+docs/                 architecture, api, ops, benchmark, research, evidence, legacy, demo
+notebooks/            Colab/Kaggle interfaces over the tested modules (real-model campaign)
+COURSE/               offline teaching material for the legacy defence
+REPORT.tex            legacy technical report source (historical)
+```
+
+## Documentation index
+
+| I want… | Read |
+| --- | --- |
+| what shipped and what it measured | [`docs/release-notes.md`](docs/release-notes.md) |
+| every claim → artifact → command → commit | [`docs/evidence/ledger.md`](docs/evidence/ledger.md) |
+| the research report (scripted campaign + legacy analysis) | [`docs/research/report.md`](docs/research/report.md) |
+| the dataset and how it is scored | [`docs/benchmark/data-card.md`](docs/benchmark/data-card.md), [`docs/benchmark/evaluation-card.md`](docs/benchmark/evaluation-card.md) |
+| how to run and operate it | [`docs/ops/`](docs/ops/compose.md), [`docs/demo/demo-script.md`](docs/demo/demo-script.md) |
+| what may and may not be claimed | [`docs/evidence/cv-claims.md`](docs/evidence/cv-claims.md), [`docs/research/claim-language.md`](docs/research/claim-language.md) |
+| the preserved challenge record | [`docs/legacy/sentinel-challenge.md`](docs/legacy/sentinel-challenge.md) |
 
 ## Provenance
 
-Legacy measurement details, runtime configuration and reproduction commands are
-in [`docs/legacy/sentinel-challenge.md`](docs/legacy/sentinel-challenge.md) and
-[`evaluation/real-qwen/README.md`](evaluation/real-qwen/README.md). The compiled
-legacy report PDF is restored by the orchestrator at
+The legacy artifacts of record are unmodified: the v5 scorecard SHA-256 is
+`b9b0937814f8a545b8cb1deebacb1623830a04dedbfdb6b8f297be31118027c4`, its evaluator
+deterministic digest is
+`57ad9925d63d735eb27bddc8e6d23338c076308e20a657e135522146482e57a5`, the 40-trace v5
+archive SHA-256 is
+`37dbcf836108ad667c720666d27e63c8d8b1001d1ea93ab53a2e84ce7f702d76`, and the
+measured defence source commit is `53472e560d6a21f197a7a0f72e537e3c7c88e756`. The
+compiled legacy report is restored at
 [`output/pdf/AegisGraph-SENTINEL-Technical-Report.pdf`](output/pdf/AegisGraph-SENTINEL-Technical-Report.pdf)
-(SHA-256 `69035d00…cc975c4f`, restored on the integration branch; it was compiled
-from [`REPORT.tex`](REPORT.tex) at the legacy baseline and was **not
-regenerated**). The owner reports being registered solo for the
-challenge; no team members are invented.
+(compiled from [`REPORT.tex`](REPORT.tex) at the legacy baseline, not regenerated).
+The owner reports being registered solo for the challenge; no team members are
+invented. Operating rules for contributors and agents: [`AGENTS.md`](AGENTS.md).
