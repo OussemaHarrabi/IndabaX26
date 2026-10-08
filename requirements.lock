@@ -1,13 +1,35 @@
 # Exact runtime dependency pins for the Python 3.12 image; refresh deliberately, never float in CI.
+#
+# Refresh procedure (M2 added the persistence/auth stack):
+#   docker run --rm python:3.12-slim sh -c "pip install --quiet --disable-pip-version-check \
+#     '<the ranges from pyproject.toml>' && pip freeze" | grep -viE '^(pip|setuptools|wheel)'
+#
+# License review (2026-10-08): alembic MIT, annotated-doc MIT, annotated-types MIT, anyio MIT,
+# cffi MIT, click BSD-3-Clause, cryptography Apache-2.0 OR BSD-3-Clause, fastapi MIT, h11 MIT,
+# idna BSD-3-Clause, Mako MIT, MarkupSafe BSD-3-Clause, psycopg/psycopg-binary LGPL-3.0-or-later
+# (used as an unmodified library dependency; no static linking, no modification), pycparser BSD-3-Clause,
+# pydantic MIT, pydantic_core MIT, PyJWT MIT, SQLAlchemy MIT, starlette BSD-3-Clause,
+# typing-inspection MIT, typing_extensions PSF-2.0, uvicorn BSD-3-Clause.
+# Vulnerability review: `python -m pip_audit -r requirements.lock --strict` (see docs/ops/ci.md).
+alembic==1.20.0
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
+cffi==2.1.1
 click==8.2.1
+cryptography==50.0.2
 fastapi==0.141.1
 h11==0.16.0
 idna==3.20
+Mako==1.4.3
+MarkupSafe==3.0.4
+psycopg==3.3.6
+psycopg-binary==3.3.6
+pycparser==3.1
 pydantic==2.13.5
 pydantic_core==2.46.5
+PyJWT==2.15.1
+SQLAlchemy==2.1.4
 starlette==1.6.0
 typing-inspection==0.4.4
 typing_extensions==4.16.0
