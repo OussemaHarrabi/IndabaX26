@@ -1,4 +1,10 @@
-"""Runner tests: a live gateway, an immutable run directory, a full manifest."""
+"""Runner tests: a live gateway, an immutable run directory, a full manifest.
+
+The stub gateway at the bottom of this file exists for one purpose: to prove that
+a non-2xx response can never become a verdict. A run full of ``401``s must fail
+loudly and write nothing, because the alternative — a table that looks like
+*attacks stopped* — is the most dangerous failure this project can have.
+"""
 
 from __future__ import annotations
 
@@ -7,11 +13,15 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
 
+from benchmark.policies import collect_policy_sets, publish_plan
 from benchmark.runner import (
+    AuthConfig,
+    HttpClient,
     RunConfig,
     RunError,
     ScriptedAdapter,
@@ -19,6 +29,7 @@ from benchmark.runner import (
     execute_run,
     load_run,
     model_adapter,
+    read_token,
 )
 from benchmark.scoring import score
 
@@ -43,8 +54,15 @@ def running_gateway() -> Iterator[str]:
     if not server.started:
         raise RuntimeError("the gateway did not start")
     port = server.servers[0].sockets[0].getsockname()[1]
+    url = f"http://127.0.0.1:{port}"
+    # The gateway resolves the policy identity server-side (M2), so the policy
+    # sets the selection pins must exist for the tenant before the run. In
+    # development the principal holds every scope, so the test publishes them the
+    # same way the documented flow does.
+    plan = collect_policy_sets(DATA_ROOT, VALIDATION_SPLITS)
+    publish_plan(HttpClient(url, 10.0), plan)
     try:
-        yield f"http://127.0.0.1:{port}"
+        yield url
     finally:
         server.should_exit = True
         thread.join(timeout=15)
@@ -154,3 +172,226 @@ def test_the_unavailable_model_adapter_fails_closed_with_the_exact_command() -> 
 def test_an_unknown_model_adapter_is_rejected() -> None:
     with pytest.raises(RunError, match="unknown model adapter"):
         model_adapter("gpt-9")
+
+
+class StubGateway:
+    """A minimal origin server that answers every decision request with one status.
+
+    It exists to test the failure path: what the runner does when the surface
+    refuses to decide. Every request is recorded, so a test can assert that
+    nothing was sent when it should not have been.
+    """
+
+    def __init__(self, decision_status: int = 200, detail: str = "stub") -> None:
+        self.decision_status = decision_status
+        self.detail = detail
+        self.requests: list[tuple[str, dict[str, str]]] = []
+        outer = self
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, format: str, *args: object) -> None:
+                """Silence the access log."""
+
+            def _send(self, status: int, payload: dict[str, object]) -> None:
+                body = json.dumps(payload).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self) -> None:
+                outer.requests.append((self.path, dict(self.headers)))
+                if self.path == "/healthz":
+                    self._send(200, {"status": "ok"})
+                elif self.path == "/api/v1/version":
+                    self._send(
+                        200,
+                        {
+                            "api_version": "aegisgraph/v1",
+                            "policy_set": {"id": "stub-default", "version": "1"},
+                            "build": {"service": "stub", "version": "0", "commit": "stub"},
+                        },
+                    )
+                else:
+                    self._send(404, {"detail": "Not found"})
+
+            def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length") or 0)
+                self.rfile.read(length)
+                outer.requests.append((self.path, dict(self.headers)))
+                if outer.decision_status != 200:
+                    self._send(
+                        outer.decision_status,
+                        {"detail": outer.detail, "code": f"STUB_{outer.decision_status}"},
+                    )
+                    return
+                self._send(
+                    200,
+                    {
+                        "decision": "allow",
+                        "risk_score": 0.0,
+                        "confidence": 1.0,
+                        "reason_codes": ["STUB_ALLOW"],
+                        "explanation": None,
+                        "rewritten_action": None,
+                        "metadata": {},
+                        "api_version": "aegisgraph/v1",
+                        "request_id": "0" * 32,
+                        "receipt_id": "0" * 32,
+                        "policy_set": {"id": "stub-default", "version": "1"},
+                        "action_digest": "0" * 24,
+                        "execution_digest": "0" * 24,
+                        "decided_at": "2026-01-01T00:00:00Z",
+                        "valid_until": "2026-01-01T00:01:00Z",
+                    },
+                )
+
+        self._httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._httpd.daemon_threads = True
+        self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
+
+    @property
+    def url(self) -> str:
+        return f"http://127.0.0.1:{self._httpd.server_address[1]}"
+
+    def decision_requests(self) -> list[tuple[str, dict[str, str]]]:
+        return [item for item in self.requests if item[0] == "/api/v1/decisions"]
+
+    def __enter__(self) -> StubGateway:
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self._httpd.shutdown()
+        self._httpd.server_close()
+        self._thread.join(timeout=5)
+
+
+def test_a_401_is_never_recorded_as_a_verdict(tmp_path: Path) -> None:
+    with (
+        StubGateway(decision_status=401, detail="an Authorization header is required") as stub,
+        pytest.raises(RunError) as caught,
+    ):
+        execute_run(_config(stub.url, tmp_path))
+
+    message = str(caught.value)
+    assert "HTTP 401" in message
+    assert "/api/v1/decisions" in message
+    assert "never recorded as a decision" in message
+    assert "--auth-token-file" in message
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_503_is_never_recorded_as_a_verdict(tmp_path: Path) -> None:
+    with (
+        StubGateway(decision_status=503, detail="no verifier") as stub,
+        pytest.raises(RunError, match="HTTP 503"),
+    ):
+        execute_run(_config(stub.url, tmp_path))
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_refused_request_names_the_scenario_and_the_step(tmp_path: Path) -> None:
+    with (
+        StubGateway(decision_status=422, detail="policy set is not stored") as stub,
+        pytest.raises(RunError) as caught,
+    ):
+        execute_run(_config(stub.url, tmp_path))
+
+    message = str(caught.value)
+    assert "for scenario '" in message
+    assert "step 0" in message
+    assert "bench_policies.py" in message
+
+
+def test_the_auth_header_is_sent_and_the_token_is_never_recorded(tmp_path: Path) -> None:
+    token = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJiZW5jaC1jbGllbnQifQ.signature"
+    auth = AuthConfig(token=token, header="X-Service-Token", scheme="")
+    with StubGateway() as stub:
+        result = execute_run(_config(stub.url, tmp_path, auth=auth))
+
+    sent = [headers.get("X-Service-Token") for _, headers in stub.decision_requests()]
+    assert sent and all(value == token for value in sent)
+
+    manifest_text = (result.run_dir / "manifest.json").read_text(encoding="utf-8")
+    assert token not in manifest_text
+    assert result.manifest["auth"] == {
+        "mode": "bearer",
+        "header": "X-Service-Token",
+        "scheme": "",
+        "principal": "bench-client",
+        "principal_source": "unverified-jwt-sub-or-null",
+    }
+
+
+def test_a_run_without_a_credential_records_that_it_had_none(tmp_path: Path) -> None:
+    with StubGateway() as stub:
+        result = execute_run(_config(stub.url, tmp_path))
+
+    assert result.manifest["auth"]["mode"] == "none"
+    assert result.manifest["auth"]["principal"] is None
+    assert result.manifest["policy"]["gate"] == "H5.2"
+    assert len(result.manifest["policy"]["blob_sha256"]) == 64
+    assert result.manifest["policy"]["policy_set_count"] >= 1
+
+
+def test_a_run_directory_collision_is_detected_before_any_request(tmp_path: Path) -> None:
+    (tmp_path / "20260101T000000Z-pytest").mkdir()
+    with StubGateway() as stub:
+        with pytest.raises(RunError, match="detected before any request was sent"):
+            execute_run(_config(stub.url, tmp_path))
+        assert stub.decision_requests() == []
+
+
+def test_the_token_reader_refuses_blank_and_wrapped_values(tmp_path: Path) -> None:
+    path = tmp_path / "token"
+    path.write_text("wrapped\nvalue\n", encoding="utf-8")
+    with pytest.raises(RunError, match="whitespace"):
+        read_token(None, str(path))
+
+    empty = tmp_path / "empty"
+    empty.write_text("   \n", encoding="utf-8")
+    with pytest.raises(RunError, match="empty"):
+        read_token(None, str(empty))
+
+    with pytest.raises(RunError, match="not both"):
+        read_token("a", str(path))
+
+    with pytest.raises(RunError, match="not found"):
+        read_token(None, str(tmp_path / "absent"))
+
+    good = tmp_path / "good"
+    good.write_text("abc.def.ghi\n", encoding="utf-8")
+    assert read_token(None, str(good)) == "abc.def.ghi"
+
+
+def test_the_policy_blob_hash_uses_the_git_blob_convention(tmp_path: Path) -> None:
+    """The H5.2 gate value must be comparable with a freeze record."""
+
+    import hashlib
+
+    with StubGateway() as stub:
+        result = execute_run(_config(stub.url, tmp_path))
+
+    policy = result.manifest["policy"]
+    documents = {f"{identity}:1": document for identity, document in _pinned_documents()}
+    canonical = json.dumps(
+        {key: documents[key] for key in sorted(documents)}, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    expected = hashlib.sha256(b"blob %d\0" % len(canonical) + canonical).hexdigest()
+
+    assert policy["gate"] == "H5.2"
+    assert policy["blob_sha256"] == expected
+    assert policy["blob_sha256_reason"] is None
+    assert policy["hash_convention"].startswith("git-blob-sha256:")
+    assert policy["source_blobs"]["blobs"]["backend/aegisgraph/policy.py"] is not None
+    assert policy["source_blobs"]["missing"] == []
+
+
+def _pinned_documents() -> list[tuple[str, dict[str, object]]]:
+    plan = collect_policy_sets(DATA_ROOT, VALIDATION_SPLITS)
+    return [(key.split(":")[0], plan.documents[key]) for key in plan.documents]
