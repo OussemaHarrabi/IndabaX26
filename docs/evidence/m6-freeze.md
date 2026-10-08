@@ -151,6 +151,9 @@ the JSON/JSONL files marked `-text` in `.gitattributes` do not. The table below 
 every entry with the convention it was taken under, so a later auditor does not have
 to guess. The decision digest is computed from the parsed outcomes and is independent
 of line endings, which is why a CRLF checkout and an LF checkout print the same digest.
+Markdown files are *not* marked `-text`, so for the two `README.md` entries the hash is
+of the committed blob; a working-tree copy on a checkout with `core.autocrlf=true`
+hashes differently, which is a property of the checkout rather than of the artifact.
 
 Artifact hashes, each labelled with the convention it was taken under:
 
@@ -161,6 +164,6 @@ Artifact hashes, each labelled with the convention it was taken under:
 | `control.jsonl` | `ea204a61e1c2fe0114548f5a3e4ba8f2069c720dc17a8694f3070e986811d4a5` | `content-sha256-lf` (the file is stored with LF, so raw bytes and the normalised value coincide) |
 | `score.json` | `05f22292002cbd6e0739d5d6705227a34ca275e0167da971b7d5fc68172dd447` | **raw bytes on disk** (the working copy has CRLF; the `content-sha256-lf` value is `d3b21dc9d01a2efda306aba33dbd275147ad86cfcdf6e66bc58f8b63c79c8441`) |
 | `score.txt` | `d9fec910ded9378cedd3c3ab22c38d49f6a8690dcf83f5d360d49bfeb0206984` | **raw bytes on disk** (the working copy has CRLF; the `content-sha256-lf` value is `59a7c3ea88ef93b3725779b2c56609a73f7d2f34645fabfeffdc5cc6321ec638`) |
-| `README.md` | `94b8aed58f05abdeac1d17dad2b130c2f9cf431fee899cdcec6fbc51eb242c71` | `content-sha256-lf` (the file is stored with LF, so raw bytes and the normalised value coincide) |
+| `README.md` | `94b8aed58f05abdeac1d17dad2b130c2f9cf431fee899cdcec6fbc51eb242c71` | `content-sha256-lf` of the **committed blob** (`git show <commit>:<path> \| sha256sum`); `.md` is not marked `-text` in `.gitattributes`, so a working-tree copy on a `core.autocrlf=true` checkout hashes differently (`ca8d2139…`) |
 | `evaluation/m6-recheck/aegisgraph-mock-m6-818cf1f.json` | `2af5e8473f60bdeefc4a76227cf2b7744df7f01de782b5a164eeeca223a744d6` | **raw bytes on disk** (the working copy has CRLF; the `content-sha256-lf` value is `6c04cb5f2e36ae6dfc38e514b3141cf87a1ee0c6b3018db1b7f952769fcc42b5`) |
-| `evaluation/m6-recheck/README.md` | `f44fd03ab28ea960bbf20801480925e518975206fe6a4bfe02c05dede6ac55c8` | `content-sha256-lf` (the file is stored with LF, so raw bytes and the normalised value coincide) |
+| `evaluation/m6-recheck/README.md` | `f44fd03ab28ea960bbf20801480925e518975206fe6a4bfe02c05dede6ac55c8` | `content-sha256-lf` of the **committed blob** (same caveat: a working-tree copy on a `core.autocrlf=true` checkout hashes `98118be5…`) |
