@@ -91,7 +91,40 @@ for the exact commits.
   path; legacy wire contract byte-compatible; a digest-mismatched action is
   refused; an escalated action executes only after a matching confirmation.
 - **Risk:** shared contracts have the highest blast radius — single writer only.
+- **Security exit:** the F4–F7 regression criteria are covered by tests (see the
+  findings map immediately below); F1–F3 stay open by design until M2.
 - **ADR:** ADR-0006.
+
+### Security findings → milestones
+
+The M0 adversarial review produced 10 findings, `F1`–`F10`, registered with their
+severities, preconditions and per-finding regression criteria in
+[`../evidence/security-findings.md`](../evidence/security-findings.md). That
+register is the source of record (orchestrator-owned; read-only here); this map
+only assigns each finding to the milestone that closes it.
+
+| Finding | Severity | Subject | Closed in |
+| --- | --- | --- | --- |
+| F1 | high (critical if internet-reachable) | Unauthenticated decision boundary; caller supplies every security-relevant input | M2 |
+| F2 | high | Confirmation self-granted inside the same envelope | M2 |
+| F3 | high | Attacker-declared trust/sensitivity labels and policy facts | M2 |
+| F4 | high | Algorithmic-complexity DoS in claim scanning | **M1** |
+| F5 | medium | Unbounded request body | **M1** |
+| F6 | medium | Non-injective canonical-digest matching; unbound, unexpiring, reusable grants | **M1** (new surface only) |
+| F7 | medium | No decision identity, receipt or audit record at the wire boundary | **M1** partially (identity + emitted record); M2 owns the durable store |
+| F8 | low | Dependency pins carry no hashes | M4 |
+| F9 | medium (evidence fidelity) | Suite environment differs from the shipped image | M3 (CI runs the suite in the image) / M4 |
+| F10 | low | Application directory writable by the runtime user | M4 |
+
+**M1 closes F4, F5, F6 on the new surface and F7 partially** (identity plus one
+emitted decision record; the append-only store is M2's). **M1 leaves open**
+F1, F2 and F3, which M2 closes with authenticated, tenant-scoped policy and
+server-issued grants — an unauthenticated body cap or digest binding is not an
+authorization control. F8 and F10 close in M4 (hashed dependency pins, read-only
+root filesystem); F9 remains open until CI runs the suite inside the built image
+(M3/M4). F6's **legacy** matching rule is deliberately unchanged in M1: any change
+there requires a new evaluation artifact, never an edit of the frozen scorecards
+in [`../evidence/ledger.md`](../evidence/ledger.md).
 
 ### M2 — Auth + policy + audit store
 
