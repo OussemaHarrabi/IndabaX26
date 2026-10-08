@@ -16,7 +16,7 @@ SHELL := /bin/sh
 IMAGE ?= aegisgraph:local
 COVERAGE_FAIL_UNDER ?= 95
 
-.PHONY: help gates lint typecheck test audit bandit image smoke sbom migrate \
+.PHONY: help gates lint typecheck test audit bandit image smoke sbom sbom-check migrate \
         k8s-validate k8s-validate-both compose-config stack-up stack-down stack-logs stack-ps clean
 
 help:
@@ -61,6 +61,9 @@ smoke: image ## run the hardened read-only smoke test
 
 sbom: ## emit the SBOM / dependency inventory for $(IMAGE)
 	python scripts/generate_sbom.py --image $(IMAGE)
+
+sbom-check: ## fail if the committed SBOM describes a different requirements.lock
+	python scripts/check_sbom_freshness.py
 
 k8s-validate: ## render, schema-validate and policy-check the manifests
 	python scripts/validate_k8s_manifests.py
