@@ -505,10 +505,37 @@ class ScoreReport:
         }
 
 
+_LATENCY_KEYS = frozenset(
+    {"latency_count", "latency_p50_ms", "latency_p90_ms", "latency_p95_ms", "latency_p99_ms"}
+)
+
+
+def _decision_projection(payload: dict[str, Any]) -> dict[str, Any]:
+    """Strip timing from a report payload.
+
+    The digest identifies the **decisions**, not the host: latency is excluded for
+    the same reason the legacy evaluator excludes it. Two runs of the same
+    gateway revision on the same data therefore share a digest even when they run
+    on different machines, and a differing digest means the verdicts differed.
+    """
+
+    def strip(bucket: dict[str, Any]) -> dict[str, Any]:
+        return {key: value for key, value in bucket.items() if key not in _LATENCY_KEYS}
+
+    projection = dict(payload)
+    projection.pop("deterministic_digest", None)
+    for key in ("overall", "control"):
+        if isinstance(projection.get(key), dict):
+            projection[key] = strip(projection[key])
+    for key in ("by_domain", "by_attack_family", "by_domain_family"):
+        section = projection.get(key)
+        if isinstance(section, dict):
+            projection[key] = {name: strip(bucket) for name, bucket in section.items()}
+    return projection
+
+
 def _report_digest(payload: dict[str, Any]) -> str:
-    body = dict(payload)
-    body.pop("deterministic_digest", None)
-    blob = json.dumps(body, sort_keys=True, separators=(",", ":"))
+    blob = json.dumps(_decision_projection(payload), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
