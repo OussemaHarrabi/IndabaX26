@@ -301,6 +301,65 @@ def policy_checks(documents: list[dict[str, Any]]) -> None:
             "digest recorded by CI (docs/ops/deployment.md)"
         )
 
+    _check_migration_job(documents)
+
+
+def _check_migration_job(documents: list[dict[str, Any]]) -> None:
+    """The M2 schema must be applied by a job built from the same image."""
+
+    jobs = _by_kind(documents, "Job")
+    migrate = [j for j in jobs if j["metadata"]["name"] == "aegisgraph-migrate"]
+    _record(bool(migrate), "migration Job present")
+    if not migrate:
+        return
+
+    pod_spec = migrate[0]["spec"]["template"]["spec"]
+    container = pod_spec["containers"][0]
+    _record(
+        container.get("command") == ["python", "-m", "alembic", "upgrade", "head"],
+        "migration Job runs `alembic upgrade head`",
+    )
+    api_image = next(
+        c["image"]
+        for d in _by_kind(documents, "Deployment")
+        for c in d["spec"]["template"]["spec"]["containers"]
+    )
+    _record(
+        container.get("image") == api_image,
+        "migration Job uses the same image as the API",
+    )
+    _record(
+        any(
+            source.get("secretRef", {}).get("name") == "aegisgraph-secrets"
+            for source in container.get("envFrom", [])
+        ),
+        "migration Job reads DATABASE_URL from the secret (not a ConfigMap)",
+    )
+    security = container.get("securityContext", {})
+    _record(
+        security.get("readOnlyRootFilesystem") is True
+        and security.get("allowPrivilegeEscalation") is False
+        and security.get("capabilities", {}).get("drop") == ["ALL"],
+        "migration Job is hardened like the API container",
+    )
+
+    policies = [
+        p
+        for p in _by_kind(documents, "NetworkPolicy")
+        if p["metadata"]["name"] == "aegisgraph-migrate"
+    ]
+    _record(bool(policies), "migration Job has its own egress policy")
+    if policies:
+        egress_ports = {
+            port.get("port")
+            for rule in policies[0]["spec"].get("egress", [])
+            for port in rule.get("ports", [])
+        }
+        _record(
+            egress_ports <= {53, 5432},
+            f"migration Job egress limited to DNS and PostgreSQL (got {sorted(egress_ports)})",
+        )
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)

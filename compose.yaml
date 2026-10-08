@@ -28,9 +28,13 @@ services:
     ports:
       - "${AEGISGRAPH_BIND_ADDRESS:-127.0.0.1}:${AEGISGRAPH_PORT:-8080}:8080"
     environment:
-      # D5/D7: the legacy unauthenticated surface stays off outside explicit dev.
-      AEGISGRAPH_LEGACY_UNAUTHENTICATED: "false"
+      # D5/D7: off by default. For a local demo only, set
+      # AEGISGRAPH_LEGACY_UNAUTHENTICATED=true in .env (never outside loopback).
+      AEGISGRAPH_LEGACY_UNAUTHENTICATED: "${AEGISGRAPH_LEGACY_UNAUTHENTICATED:-false}"
       AEGISGRAPH_LOG_LEVEL: "${AEGISGRAPH_LOG_LEVEL:-info}"
+      # Durable receipts (M2). Assembled from the same variables the postgres
+      # service uses, so the service and the migration step can never disagree.
+      DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:?set POSTGRES_USER in .env}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-aegisgraph}"
       # Point the exporter at the collector, but never require it to be present.
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
       OTEL_SERVICE_NAME: "aegisgraph-api"
@@ -65,11 +69,42 @@ services:
         condition: service_healthy
         # Absent or unhealthy PostgreSQL must not stop the API from starting.
         required: false
+      migrate:
+        # In the normal path the API waits for the schema to exist; if the
+        # migration is absent or fails, the API still starts (and /readyz
+        # reports the store honestly).
+        condition: service_completed_successfully
+        required: false
+    networks:
+      - aegisgraph
+
+  # One-shot schema migration (M2). Runs from the *same image* as the API, so the
+  # migration and the service can never be different revisions. Needs .env.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aegisgraph:local
+    restart: "no"
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:?set POSTGRES_USER in .env}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-aegisgraph}"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - aegisgraph
 
   postgres:
-    image: postgres@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c
+    # PostgreSQL 17, the same major version CI and M2's migration docs use.
+    image: postgres@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
     restart: unless-stopped
     environment:
       POSTGRES_USER: "${POSTGRES_USER:?set POSTGRES_USER in .env}"

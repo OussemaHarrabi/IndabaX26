@@ -9,11 +9,17 @@ in this environment. No "works on Kubernetes" claim is made. This is ADR-0005's
 
 ```sh
 # The pod fails closed until the Secret exists (values are never committed).
+# DATABASE_URL is required for the M2 durable receipt store.
 kubectl apply -k deploy/k8s
 kubectl -n aegisgraph create secret generic aegisgraph-secrets \
-  --from-literal=AEGISGRAPH_BINDING_TOKEN=<value>
+  --from-literal=DATABASE_URL='postgresql+psycopg://user:secret@postgres:5432/aegisgraph'
+kubectl -n aegisgraph wait --for=condition=complete job/aegisgraph-migrate --timeout=180s
 kubectl -n aegisgraph rollout status deploy/aegisgraph-api --timeout=120s
 ```
+
+`kustomize build` renders **9 objects**. The one-shot `aegisgraph-migrate` Job runs
+`python -m alembic upgrade head` from the same image as the API; recreate it
+(`kubectl delete job aegisgraph-migrate`) after any schema change.
 
 Before applying to a real cluster, replace the `0.1.0` placeholder tag with the
 digest CI recorded (`artifacts/image-digest.txt`, uploaded as `container-evidence`):
