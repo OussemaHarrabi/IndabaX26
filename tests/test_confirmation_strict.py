@@ -100,6 +100,33 @@ def test_strict_mode_rejects_malformed_grants(grant: str) -> None:
     assert decision.reason_codes == ("CONFIRMATION_REQUIRED",)
 
 
+def test_grant_fields_must_be_ascii_decimal() -> None:
+    """H2-04: ``str.isdigit`` is true for superscripts that ``int`` rejects."""
+
+    digest = "0" * 24
+    superscript = "\u00b2"  # isdigit() is True, int() raises ValueError
+    arabic_indic = "\u0663"  # isdigit() is True and int() silently returns 3
+
+    assert superscript.isdigit() and arabic_indic.isdigit()
+    assert parse_confirmation_grant(f"{RUN_ID}:{superscript}:{digest}:99") is None
+    assert parse_confirmation_grant(f"{RUN_ID}:1:{digest}:{superscript}") is None
+    assert parse_confirmation_grant(f"{RUN_ID}:{arabic_indic}:{digest}:99") is None
+    assert parse_confirmation_grant(f"{RUN_ID}:1:{digest}:9{superscript}") is None
+    assert parse_confirmation_grant(f"{RUN_ID}:1:{digest}:99") is not None
+
+    # A grant with a non-decimal step or expiry is not granted, so the action
+    # escalates instead of being allowed.
+    for grant in (
+        f"{RUN_ID}:{superscript}:{digest}:{int(time.time()) + 300}",
+        f"{RUN_ID}:{STEP_ID}:{digest}:{superscript}",
+    ):
+        decision = decide(
+            _request(confirmations=[grant]), confirmation_mode=ConfirmationMode.STRICT
+        )
+        assert decision.verdict == "escalate"
+        assert decision.reason_codes == ("CONFIRMATION_REQUIRED",)
+
+
 def test_strict_mode_rejects_an_expired_grant() -> None:
     request = _request(confirmations=[])
     expired = _bound_grant(request, expires_at=int(time.time()) - 1)
