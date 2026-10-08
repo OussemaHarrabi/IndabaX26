@@ -124,8 +124,12 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      # --provenance=false --sbom=false: BuildKit's default provenance/attestation
+      # manifest records build metadata, so the manifest-list digest varies between
+      # builds even when the content does not. Disabling both makes the recorded
+      # digest the reproducible content digest.
       - name: Build the image
-        run: docker build -t "${IMAGE_NAME}" .
+        run: docker buildx build --provenance=false --sbom=false --load -t "${IMAGE_NAME}" .
 
       - name: Record the image digest (build artifact)
         run: |

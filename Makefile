@@ -41,8 +41,8 @@ audit: ## pip-audit against the shipped pins
 bandit: ## static security scan
 	python -m bandit -r backend -q --severity-level medium
 
-image: ## build the hardened image
-	docker build -t $(IMAGE) .
+image: ## build the hardened image (reproducible content digest)
+	docker build --provenance=false --sbom=false -t $(IMAGE) .
 
 smoke: image ## run the hardened read-only smoke test
 	docker run --rm -d --name aegisgraph-smoke --read-only \

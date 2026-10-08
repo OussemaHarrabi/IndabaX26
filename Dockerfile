@@ -17,9 +17,15 @@
 # versions but not hashes (finding F8); hash pinning is proposed in the M4
 # handoff and is deliberately not applied here because requirements.lock is owned
 # by the orchestrator and is outside this milestone's write scope.
+#
+# The base image is pinned by digest (the manifest-list digest for
+# python:3.12-slim on 2026-10-08) so the build cannot silently pick up a new base.
+# Build with `--provenance=false --sbom=false` for a reproducible image digest:
+# BuildKit's default provenance attestation records build metadata, so the
+# manifest-list digest varies between builds even when the content does not.
 
 # --- stage 1: resolve and install the exact dependency set ---------------------
-FROM python:3.12-slim AS builder
+FROM python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1
@@ -31,7 +37,7 @@ COPY requirements.lock ./requirements.lock
 RUN python -m pip install --no-cache-dir --target=/install --requirement requirements.lock
 
 # --- stage 2: minimal runtime ---------------------------------------------------
-FROM python:3.12-slim AS runtime
+FROM python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
