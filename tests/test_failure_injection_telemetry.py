@@ -130,6 +130,10 @@ def test_readiness_is_liveness_plus_the_receipt_store_only(
     healthy = client.get("/readyz")
     assert healthy.status_code == 200
     assert healthy.json()["dependencies"]["receipt_store"]["reachable"] is True
+    # Readiness is about serving traffic: the insecurity warnings (authentication is
+    # off in this configuration) must not make a working process unready (H4-09).
+    assert healthy.json()["ready"] is True
+    assert healthy.json()["insecure"] is True
 
     # Collector down: no effect on either probe; telemetry is not a dependency.
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", REFUSED_ENDPOINT)

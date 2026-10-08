@@ -346,7 +346,7 @@ async def readyz() -> JSONResponse:
     # ``ready`` means "this process can serve traffic", which is what a probe needs.
     # ``insecure`` and ``warnings`` say whether it is serving *safely*; a process
     # with authentication off is ready but not production-safe (H3-05).
-    ready = reachable and bool(warnings) is not None
+    ready = reachable
     insecure = bool(warnings)
     body = {
         "status": "ready" if ready else "degraded",
