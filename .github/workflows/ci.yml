@@ -159,11 +159,19 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          # Full history: the SBOM freshness check verifies that the manifest's
+          # recorded source.commit is an ancestor of HEAD.
+          fetch-depth: 0
 
       - name: Set up Python (for the SBOM script)
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+
+      # Guard: the committed SBOM must describe the lock at this revision. Runs
+      # before the build so a stale manifest fails fast instead of after 25 minutes.
+      - name: Check SBOM freshness against requirements.lock
+        run: python scripts/check_sbom_freshness.py
 
       # --provenance=false --sbom=false: BuildKit's default provenance/attestation
       # manifest records build metadata, so the manifest-list digest varies between
@@ -205,6 +213,13 @@ jobs:
           health="$(curl -fsS http://127.0.0.1:18080/healthz)"
           test "${health}" = '{"status":"ok"}' || { echo "unexpected healthz: ${health}"; exit 1; }
           echo "healthz: ${health}"
+
+          # M3: the Prometheus surface is on by default in development.
+          metrics_status="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/metrics)"
+          test "${metrics_status}" = "200" || { echo "unexpected /metrics status: ${metrics_status}"; exit 1; }
+          curl -fsS http://127.0.0.1:18080/metrics | grep -q '^# TYPE ' \
+            || { echo "/metrics returned no exposition"; exit 1; }
+          echo "metrics: HTTP ${metrics_status}"
 
           decision="$(curl -fsS -X POST http://127.0.0.1:18080/v1/decision \
             -H 'Content-Type: application/json' \

@@ -50,27 +50,29 @@ header, not merely tolerated.
 docker build --provenance=false --sbom=false -t aegisgraph:m4 .
 ```
 
-Built at commit `4350af3` against `requirements.lock` whose git blob SHA-256 is
-`b49b8c5d328f5823f07f5aa96bbc63572376e857a982bff2050781d57b5f93fd` (23 pinned
-packages; `git show 4350af3:requirements.lock | sha256sum`):
+Built at commit `57596f3` against `requirements.lock` whose content SHA-256 (LF,
+git blob) is
+`d0bf0f5504aa8c5da890c6913b2b4faa36f5e0476daced5ee7359eefd15730d3` — **39 pinned
+entries** (`git show 57596f3:requirements.lock | sha256sum`):
 
 ```
-#16 exporting config sha256:ab1fc8bc087cc482edefc14c350bb8966b5d19933ad39d5f476b6faa4e7f086a done
-#16 naming to docker.io/library/aegisgraph:m4 done
-docker image inspect -> id=sha256:f36f6e1e51ba9df381d37315224d4d0909e087c62313960153cbdfb10b97e5aa size=69404249
+#16 exporting manifest sha256:bb373f362f052ffa49f15a47ef5ffd72bb7665a275e0b79a9db54f1f6c5cb531 done
+#16 exporting config sha256:041d91defb721324117d1e0e68dc54ed0f620f903142dff5a1cea154690fbb32 done
+docker image inspect -> id=sha256:bb373f362f052ffa49f15a47ef5ffd72bb7665a275e0b79a9db54f1f6c5cb531 size=73084467
 ```
+
+Two consecutive builds produced the same ID.
 
 **Rule: any recorded image ID must name the lock revision (and the commit) it was
-built from.** An image ID alone is meaningless across revisions — `requirements.lock`
-gained the whole M2 stack (alembic, SQLAlchemy, psycopg, cryptography, PyJWT) and
-the digest moved with it.
+built from.** An image ID alone is meaningless across revisions: the lock went
+23 → 39 entries (M2 added the persistence/auth stack; M3 added `opentelemetry-*`
+and `prometheus-client`), and the digest moved with it. `scripts/check_sbom_freshness.py`
+enforces the same rule for the SBOM in CI.
 
 `--provenance=false --sbom=false` is deliberate: BuildKit's default provenance
 attestation records build metadata, so the *manifest-list* digest changes between
-builds even when the content does not (an un-flagged build of an earlier revision
-produced `sha256:9b033e3d…`). With attestations off, `docker image inspect
---format '{{.Id}}'` is a content digest, verified stable across two consecutive
-builds of this revision (the same `f36f6e1e…` both times).
+builds even when the content does not. With attestations off, `docker image
+inspect --format '{{.Id}}'` is a content digest.
 
 ### The digest is tied to the build context, not only to the commit
 
@@ -78,14 +80,12 @@ A content-addressed image digest also absorbs the bytes *and the modification
 times* of whatever the context materialized. Building the same commit from a
 different context gives a different ID, which is expected and not a defect:
 
-| Context | Image ID | Size (B) |
+| Context (same commit `57596f3`, same lock `d0bf0f55…`) | Image ID | Size (B) |
 | --- | --- | --- |
-| This Windows worktree (`backend/*.py` materialized CRLF by `core.autocrlf=true`) | `sha256:f36f6e1e…` | 69,404,249 |
-| Committed `Dockerfile` (no `alembic.ini`), same CRLF worktree | `sha256:bf154b87…` | 69,415,410 |
-| `git archive` context, LF line endings (`git -c core.autocrlf=false`) | `sha256:a7404539…` | 69,055,315 |
-| Another reviewer's build of the same commit | `sha256:77f51aca…` | 69,138,507 |
+| This Windows worktree (`backend/*.py` materialized CRLF by `core.autocrlf=true`) | `sha256:bb373f36…` | 73,084,467 |
+| `git archive` context, LF line endings (`git -c core.autocrlf=false`) | `sha256:08595cbc…` | 72,738,608 |
 
-So the *portable* provenance triple is **(commit, lock blob hash, exact build
+So the *portable* provenance triple is **(commit, lock content hash, exact build
 command)**; the image ID is the checksum of the artifact you actually built and
 must travel with those three. Shrinking this variance is proposed in the M4
 handoff: `.gitattributes` `eol=lf` rules for source files (or building from a
@@ -112,6 +112,24 @@ left to the development default, and the throwaway container still needs no
 credentials and no database. `/healthz` is liveness only — the dependency-aware
 signal is `/readyz`, which reports the authentication mode and whether the receipt
 store is durable and reachable.
+
+### `GET /metrics` (M3)
+
+The image serves a Prometheus exposition endpoint at `/metrics`. It is **on by
+default in development and off in production**; `AEGISGRAPH_METRICS_ENABLED`
+overrides either way. Verified in the smoke container:
+
+```
+$ curl -s -o /dev/null -w '%{http_code} %{content_type}' http://127.0.0.1:18090/metrics
+200 text/plain; version=1.0.0; charset=utf-8
+$ curl -s http://127.0.0.1:18090/metrics | head -2
+# HELP aegisgraph_requests_total HTTP requests handled, by route template, method and status.
+# TYPE aegisgraph_requests_total counter
+```
+
+The CI smoke asserts `/healthz`, `/metrics` and one decision. The scrape is
+excluded from its own request counters, so a `/metrics` poll does not perturb the
+series.
 
 Observed hardening proof inside the running container:
 
@@ -151,15 +169,20 @@ cannot modify `aegisgraph/`, drop a `sitecustomize.py`, or reinstall a package.
 
 | Artifact | Value |
 | --- | --- |
-| Source revision | `4350af3` (integration HEAD; M2 merged) |
-| Lock revision (**primary identity**) | `requirements.lock` blob SHA-256 `b49b8c5d328f5823f07f5aa96bbc63572376e857a982bff2050781d57b5f93fd` (23 packages, 1399 bytes) |
+| Source revision | `57596f3` (integration HEAD at build time; M3 merged) |
+| Lock revision (**primary identity**) | `requirements.lock` content SHA-256 `d0bf0f5504aa8c5da890c6913b2b4faa36f5e0476daced5ee7359eefd15730d3` (39 pinned entries) |
 | Image reference built locally | `aegisgraph:m4` |
-| **Image ID (content digest)** at that lock revision, built in this environment | `sha256:f36f6e1e51ba9df381d37315224d4d0909e087c62313960153cbdfb10b97e5aa` |
-| Config digest | `sha256:ab1fc8bc087cc482edefc14c350bb8966b5d19933ad39d5f476b6faa4e7f086a` |
+| **Image ID (content digest)** at that lock revision, built in this environment | `sha256:bb373f362f052ffa49f15a47ef5ffd72bb7665a275e0b79a9db54f1f6c5cb531` |
+| Config digest | `sha256:041d91defb721324117d1e0e68dc54ed0f620f903142dff5a1cea154690fbb32` |
 | Base image | `python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f` |
-| Size | 69,404,249 bytes |
-| SBOM manifest (`deploy/sbom/aegisgraph-image-sbom.json`) | sha256 `14949d1b921cf5dca0cd2c55b12508f84d93205371ad066addc239a0b3144143` |
-| Dependency inventory (`deploy/sbom/aegisgraph-image-sbom.requirements.txt`) | sha256 `e4539d17fbcfc892e907fb83eab67c81ea025ed7de9d9a6065eb323e31dfac3e` |
+| Size | 73,084,467 bytes |
+| SBOM manifest (`deploy/sbom/aegisgraph-image-sbom.json`) | sha256 `142273255283014cc99214466f5bb2cf2305bac35edfeda83be0bf3ae4909572` |
+| Dependency inventory (`deploy/sbom/aegisgraph-image-sbom.requirements.txt`) | sha256 `e7b307190f694cda027f474ab7de7ab3ddf043de9f9f64e6ba214b84acfee8ad` |
+
+The SBOM records `source.commit = 57596f3` and
+`source.requirements_lock_sha256 = d0bf0f55…`, i.e. it names exactly the revision
+and lock it describes. `scripts/check_sbom_freshness.py` fails CI when that stops
+being true (see `docs/ops/ci.md`).
 
 Both SBOM digests are **git blob** digests: `git show HEAD:<path> | sha256sum`.
 `.gitattributes` marks `*.json` as `-text`, so the manifest's blob bytes are

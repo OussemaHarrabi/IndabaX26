@@ -11,7 +11,7 @@ GitHub-hosted runner is marked **unverified** with the reason.
 | --- | --- | --- |
 | `quality` | `ruff`, strict `mypy`, and `pytest` with the coverage gate, against a PostgreSQL 17 service (so the `db` tests run) | `make gates` (see the database note below) |
 | `security` | no known CVEs in the shipped pins; no medium+ static findings | `make audit && make bandit` |
-| `container` | image builds; runs under `--read-only`; serves `/healthz` and one decision; no writable app code; digest + SBOM recorded | `make smoke && make sbom` |
+| `container` | image builds; runs under `--read-only`; serves `/healthz`, `/metrics` and one decision; no writable app code; digest + SBOM recorded; the committed SBOM matches the lock | `make smoke && make sbom && make sbom-check` |
 | `kubernetes` | manifests render, schema-validate and satisfy the hardening invariants | `make k8s-validate` |
 | `compose` | the Compose stack parses and interpolates | `make compose-config` |
 
@@ -47,34 +47,66 @@ nothing is deployed. `.env` is removed afterwards (`rm -f .env`) and is never
 committed or uploaded. This is exactly why `compose.yaml` uses the `:?`
 interpolation form: the check would fail closed if the variable were absent.
 
+### SBOM freshness guard
+
+`scripts/check_sbom_freshness.py` recomputes the `requirements.lock` content hash
+(LF/git-blob) and the pinned-entry count and compares both with the values recorded
+in the committed `deploy/sbom/aegisgraph-image-sbom.json`. It runs as its own step
+in the `container` job, before the build, so a stale manifest fails in seconds
+instead of after a 25-minute job. It also verifies that the SBOM's `source.commit`
+is an ancestor of HEAD (the manifest is necessarily committed one revision after
+the inputs it describes, so equality is not required — an unreachable commit is).
+
+Observed before and after regenerating at the M3 revision:
+
+```
+# BEFORE (stale SBOM, must fail)
+lock (HEAD):    d0bf0f5504aa8c5da890c6913b2b4faa36f5e0476daced5ee7359eefd15730d3  (39 pinned entries)
+lock (in SBOM): b49b8c5d328f5823f07f5aa96bbc63572376e857a982bff2050781d57b5f93fd  (23 entries)
+FAIL: the committed SBOM is stale; regenerate it at this revision:
+  - requirements.lock content hash drifted: ...
+  - pinned entry count drifted: SBOM records 23, HEAD has 39
+exit=1
+
+# AFTER (regenerated, must pass)
+lock (HEAD):    d0bf0f5504aa8c5da890c6913b2b4faa36f5e0476daced5ee7359eefd15730d3  (39 pinned entries)
+lock (in SBOM): d0bf0f5504aa8c5da890c6913b2b4faa36f5e0476daced5ee7359eefd15730d3  (39 entries)
+PASS: the SBOM matches the lock at HEAD.
+exit=0
+```
+
 ## Coverage gate: the exact measurement and the ratchet rule
 
 The gate is `python -m pytest -q --cov=aegisgraph --cov-report=term-missing
 --cov-fail-under="${COVERAGE_FAIL_UNDER}"`, run against a PostgreSQL 17 service.
 
-- **Measured at commit `4350af3`** (2026-10-08, `python:3.12-slim`, PostgreSQL 17,
-  the `db`-marked tests enabled): **454 collected, 452 passed, 2 skipped →
-  2612 / 2709 statements = 96.42 %** (97 missed). The two skips need the
-  untracked `.sentinel_reference` checkout, which a clean clone does not have.
-- **With no database** the 12 `db` tests skip and the ratio collapses to
-  **2514 / 2709 = 92.80 %** (195 missed). That is why the floor is also the guard
+- **Measured at commit `57596f3`** (2026-10-08, `python:3.12-slim`, PostgreSQL 17,
+  `git` on PATH): **569 passed, 2 skipped → 3009 / 3108 statements = 96.81 %**
+  (99 missed). The two skips need the untracked `.sentinel_reference` checkout,
+  which a clean clone does not have.
+- **With no database** the 12 `db` tests skip and the ratio drops to
+  **2914 / 3108 = 93.76 %** (194 missed). The floor is therefore also the guard
   that the database tests actually ran: a silent skip cannot pass at 95.
-- `COVERAGE_FAIL_UNDER` is set to **95** in the workflow `env:` block, below the
-  measured 96.42 % but above the no-database ratio. The floor is a **ratchet**: it
-  may only move up. Lowering it requires a written justification in the same
-  commit. (Before M2 the same suite measured 94.73 % at `33f96cc`, with no
-  database tests at all; the floor was 94 then and is raised, never lowered.)
-- A reviewer building the same commit with the `.sentinel_reference` checkout
-  present measured 96.68 % (2619/2709); the 0.26 pt difference is exactly the two
-  `.sentinel_reference` tests.
+- `COVERAGE_FAIL_UNDER` is set to **95**, below the measured 96.81 % and above the
+  no-database ratio. The floor is a **ratchet**: it may only move up; lowering it
+  requires a written justification in the same commit. History: 94.73 % at
+  `33f96cc` (pre-M2, no database tests, floor 94), 96.42 % at `4350af3` (M2,
+  floor raised to 95), 96.81 % at `57596f3` (M3).
+- The suite **shells out to `git`**: `benchmark/runner.py` hashes committed blobs
+  to build a run manifest. `ubuntu-latest` has git, so the job is unaffected, but
+  a container-based runner must install it — without git, 14 benchmark tests fail
+  with `FileNotFoundError: [Errno 2] No such file or directory: 'git'`. This was
+  observed while reproducing the gate locally and is recorded here so the next
+  person does not misread it as a repository defect.
 - Reproduce both figures locally (see `docs/ops/compose.md` for the database):
 
   ```sh
   export AEGISGRAPH_TEST_DATABASE_URL='postgresql+psycopg://aegisgraph:local-only@127.0.0.1:15532/aegisgraph'
-  python -m alembic upgrade head                 # DATABASE_URL, see docs/ops/migrations.md
-  python -m pytest -q --cov=aegisgraph --cov-report=term-missing   # 96.42 %
-  unset AEGISGRAPH_TEST_DATABASE_URL
-  python -m pytest -q --cov=aegisgraph --cov-report=term           # 92.80 %, gate fails
+  export DATABASE_URL="$AEGISGRAPH_TEST_DATABASE_URL"
+  python -m alembic upgrade head                 # see docs/ops/migrations.md
+  python -m pytest -q --cov=aegisgraph --cov-report=term-missing   # 96.81 %
+  unset AEGISGRAPH_TEST_DATABASE_URL DATABASE_URL
+  python -m pytest -q --cov=aegisgraph --cov-report=term           # 93.76 %, gate fails
   ```
 
 ## Reproducing each gate locally
