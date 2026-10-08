@@ -15,10 +15,12 @@ if str(REPO_ROOT) not in sys.path:
 from benchmark.runner import (  # noqa: E402
     DEFAULT_RUNS_DIR,
     DEFAULT_TIMEOUT_SECONDS,
+    AuthConfig,
     RunConfig,
     RunError,
     execute_run,
     model_adapter,
+    read_token,
 )
 
 
@@ -40,6 +42,27 @@ def main(argv: list[str] | None = None) -> int:
         help="override the run-directory timestamp (YYYYMMDDTHHMMSSZ)",
     )
     parser.add_argument("--control-url", default=None, help="external allow-all control origin")
+    credential = parser.add_mutually_exclusive_group()
+    credential.add_argument(
+        "--auth-token",
+        default=None,
+        help="bearer token for the decision surface (prefer --auth-token-file)",
+    )
+    credential.add_argument(
+        "--auth-token-file",
+        default=None,
+        help="file containing the bearer token; never appears in a shell history",
+    )
+    parser.add_argument(
+        "--auth-header",
+        default="Authorization",
+        help="header name carrying the credential (default: Authorization)",
+    )
+    parser.add_argument(
+        "--auth-scheme",
+        default="Bearer",
+        help="scheme prefixing the credential (default: Bearer; use '' for a raw token)",
+    )
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--seed", type=int, default=1729)
     parser.add_argument("--temperature", type=float, default=None)
@@ -60,6 +83,18 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    auth = None
+    if args.auth_token is not None or args.auth_token_file is not None:
+        try:
+            auth = AuthConfig(
+                token=read_token(args.auth_token, args.auth_token_file),
+                header=args.auth_header,
+                scheme=args.auth_scheme,
+            )
+        except RunError as error:
+            print(f"run failed: {error}", file=sys.stderr)
+            return 1
+
     try:
         config = RunConfig(
             defense_url=args.defense_url,
@@ -76,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
             max_tokens=args.max_tokens,
             hardware_note=args.hardware_note,
             lock_path=Path(args.lock),
+            auth=auth,
         )
         result = execute_run(config)
     except RunError as error:
@@ -84,6 +120,10 @@ def main(argv: list[str] | None = None) -> int:
     print(f"run directory: {result.run_dir}")
     print(f"scenarios:     {len(result.outcomes)}")
     print(f"manifest:      {result.run_dir / 'manifest.json'}")
+    print(f"auth mode:     {result.manifest['auth']['mode']} "
+          f"(header={result.manifest['auth']['header']}, "
+          f"principal={result.manifest['auth']['principal']})")
+    print(f"policy blob:   {result.manifest['policy']['blob_sha256']}")
     print(json.dumps(result.manifest["artifacts"], indent=2, sort_keys=True))
     return 0
 

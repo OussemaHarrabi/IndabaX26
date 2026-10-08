@@ -78,7 +78,12 @@ def test_benign_control_must_not_declare_an_attack_step_or_vague_expectation() -
 
     document = _control()
     document["utility_criterion"]["expectation"] = "not_allowed"
-    with pytest.raises(ValidationError, match="concrete utility expectation"):
+    with pytest.raises(ValidationError, match="must be 'allowed' or 'escalated'"):
+        Scenario.model_validate(document)
+
+    document = _control()
+    document["utility_criterion"]["expectation"] = "blocked"
+    with pytest.raises(ValidationError, match="must be 'allowed' or 'escalated'"):
         Scenario.model_validate(document)
 
 
