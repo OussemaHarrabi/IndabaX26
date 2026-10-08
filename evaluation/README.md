@@ -12,7 +12,7 @@ scenario-ID-specific decisions.
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | Allow-all control | 1.0000 | 1.0000 | 0.0000 | 0.4000 | 0.6522 | 0 | 0.054448 |
 | Built-in provenance baseline | 0.0000 | 1.0000 | 0.2222 | 1.0000 | 1.0000 | 0 | 0.939104 |
-| AegisGraph before calibration | 0.0000 | 0.2222 | 0.6688 | 1.0000 | 1.0000 | 0 | 0.520878 |
+| AegisGraph before calibration | 0.0000 | 0.2222 | 0.6687 | 1.0000 | 1.0000 | 0 | 0.520878 |
 | AegisGraph provenance calibration | 0.0000 | 0.3333 | 0.3354 | 1.0000 | 0.9831 | 0 | 0.686055 |
 | AegisGraph intent-envelope calibration | 0.0000 | 0.8889 | 0.0683 | 1.0000 | 0.9902 | 0 | 0.953956 |
 
