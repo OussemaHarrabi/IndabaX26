@@ -169,7 +169,20 @@ def test_request_policy_set_must_name_a_stored_policy_and_the_default_is_the_ser
 
     assert unbacked.status_code == 422
     assert unbacked.json()["code"] == "POLICY_SET_UNKNOWN"
-    assert default["policy_set"] == api_v1.DEFAULT_POLICY_SET.model_dump(mode="json")
+    # H3-04: with nothing stored the caller's own document decides, so the identity
+    # is derived from that document rather than naming a policy the server does not hold.
+    assert default["policy_set"]["id"] == "caller-override"
+    assert len(default["policy_set"]["version"]) == 32
+
+    # When the server does hold the default policy set, its own identity is reported.
+    from aegisgraph.settings import load_settings
+    from m2_support import seed_policy_set
+
+    seed_policy_set(load_settings().default_tenant)
+    stored = client.post(
+        "/api/v1/decisions", json=_request({"type": "respond", "content": "Ok"})
+    ).json()
+    assert stored["policy_set"] == api_v1.DEFAULT_POLICY_SET.model_dump(mode="json")
 
 
 def test_version_endpoint_reports_api_policy_and_build_identity() -> None:

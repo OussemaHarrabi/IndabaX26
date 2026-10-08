@@ -16,12 +16,14 @@ authorization rules of M2:
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable, Mapping
 from contextlib import suppress
 from typing import Annotated
 
 from fastapi import Depends, Request
 
+from aegisgraph.adapter import IMPLICIT_ROLE_TRUST, UNATTRIBUTED_TRUST
 from aegisgraph.auth import (
     INSUFFICIENT_SCOPE,
     SCOPE_POLICY_CONTEXT_OVERRIDE,
@@ -30,12 +32,20 @@ from aegisgraph.auth import (
     Principal,
     resolve_principal,
 )
-from aegisgraph.contracts import PolicyIdentity, TrustLevel
+from aegisgraph.contracts import PolicyIdentity, TrustLevel, thaw_json
 from aegisgraph.sentinel import SentinelRequest
 from aegisgraph.settings import Settings, load_settings
-from aegisgraph.store import ReceiptStore, open_store
+from aegisgraph.store import ReceiptStore, canonical_json, open_store
 
 POLICY_SET_UNKNOWN = "POLICY_SET_UNKNOWN"
+POLICY_CONTEXT_INVALID = "POLICY_CONTEXT_INVALID"
+OVERRIDE_POLICY_ID = "caller-override"
+"""Identity reported when a caller's own document decides under the override scope.
+
+The version is the first 32 hex characters of the SHA-256 of the canonical JSON of
+that document, so the identity is content-addressed: two different documents give
+two different identities and no caller string ever appears verbatim (H3-04).
+"""
 
 
 class ProblemError(Exception):
@@ -100,14 +110,22 @@ def require_any_scope(*alternatives: str) -> Callable[[Principal], Principal]:
 
 
 def assert_trust_ceiling(principal: Principal, request: SentinelRequest) -> None:
-    """Refuse a request asserting a provenance trust level above the ceiling (D2).
+    """Refuse a request whose induced trust labels exceed the ceiling (D2, H3-01).
 
     ``TrustLevel`` is ordered most-trusted first, so a level whose rank is *lower*
     than the ceiling's rank claims more trust than the caller is allowed to assert.
     A caller may always claim *less* trust: that only makes the engine stricter.
+
+    The check covers the labels the request can *induce*, not only the ones it
+    declares: a conversation item with no provenance ids is labelled by the adapter
+    from its role (``user`` becomes ``authenticated_user``, ``agent``/``safety``/
+    ``human`` become ``trusted_internal``, anything else becomes
+    ``untrusted_internal``). Reading only the declared labels let a caller place
+    hostile text in a ``user``-role item and have it treated as authenticated user
+    intent, which re-opened the F3 relabelling move.
     """
 
-    declared = _declared_trust_levels(request)
+    declared = _induced_trust_levels(request)
     offending = [
         level for level in declared if _rank(level) < _rank(principal.trust_ceiling)
     ]
@@ -121,14 +139,16 @@ def assert_trust_ceiling(principal: Principal, request: SentinelRequest) -> None
         )
 
 
-def declared_trust_ceiling(request: SentinelRequest) -> TrustLevel | None:
-    """Return the highest trust level the request declares, if any."""
+def induced_trust_ceiling(request: SentinelRequest) -> TrustLevel | None:
+    """Return the most trusted label this request can induce, if any."""
 
-    levels = _declared_trust_levels(request)
+    levels = _induced_trust_levels(request)
     return max(levels, key=_rank) if levels else None
 
 
-def _declared_trust_levels(request: SentinelRequest) -> list[TrustLevel]:
+def _induced_trust_levels(request: SentinelRequest) -> list[TrustLevel]:
+    """Every trust label the adapter would assign while evaluating this request."""
+
     levels: list[TrustLevel] = []
     for record in request.provenance:
         try:
@@ -139,6 +159,12 @@ def _declared_trust_levels(request: SentinelRequest) -> list[TrustLevel]:
     if least is not None:
         with suppress(ValueError):
             levels.append(TrustLevel(least))
+    for item in request.conversation:
+        if not item.provenance_ids:
+            levels.append(IMPLICIT_ROLE_TRUST.get(item.role, UNATTRIBUTED_TRUST))
+    observation = request.observation
+    if observation is not None and not observation.provenance_ids:
+        levels.append(UNATTRIBUTED_TRUST)
     return levels
 
 
@@ -172,25 +198,20 @@ def effective_policy(
 
     override = principal.has(SCOPE_POLICY_CONTEXT_OVERRIDE)
     if policy_set is None:
-        if not override:
-            stored_default = store.get_policy_set(
-                principal.tenant_id, default_policy_set.id, default_policy_set.version
-            )
-            if stored_default is None:
-                raise ProblemError(
-                    POLICY_SET_UNKNOWN,
-                    f"policy set {default_policy_set.id!r} version "
-                    f"{default_policy_set.version!r} is not stored for this tenant",
-                    status_code=422,
-                )
-            return (
-                PolicyIdentity(id=stored_default.id, version=stored_default.version),
-                stored_default.document,
-            )
-        return (
-            PolicyIdentity(id=default_policy_set.id, version=default_policy_set.version),
-            policy_context,
+        stored_default = store.get_policy_set(
+            principal.tenant_id, default_policy_set.id, default_policy_set.version
         )
+        if stored_default is not None:
+            identity = PolicyIdentity(id=stored_default.id, version=stored_default.version)
+            return (identity, policy_context) if override else (identity, stored_default.document)
+        if not override:
+            raise ProblemError(
+                POLICY_SET_UNKNOWN,
+                f"policy set {default_policy_set.id!r} version "
+                f"{default_policy_set.version!r} is not stored for this tenant",
+                status_code=422,
+            )
+        return override_policy_identity(policy_context), policy_context
     stored = store.get_policy_set(principal.tenant_id, policy_set.id, policy_set.version)
     if stored is None:
         raise ProblemError(
@@ -203,15 +224,38 @@ def effective_policy(
     return (identity, policy_context) if override else (identity, stored.document)
 
 
+def override_policy_identity(document: Mapping[str, object]) -> PolicyIdentity:
+    """Derive a content-addressed identity for a document used under the override scope.
+
+    The caller's document decided, so the identity must describe *it*, not a name the
+    caller chose. The version is the SHA-256 of the canonical JSON of the document,
+    truncated to 32 hex characters, so the identity is deterministic and reproducible
+    by the caller (it can compute the same value for ``enforce(expected_policy=...)``).
+    """
+
+    try:
+        encoded = canonical_json(thaw_json(document)).encode("utf-8")
+    except (TypeError, ValueError) as error:
+        raise ProblemError(
+            POLICY_CONTEXT_INVALID,
+            "the policy context is not canonicalisable (non-finite number or unsupported value)",
+            status_code=422,
+        ) from error
+    return PolicyIdentity(id=OVERRIDE_POLICY_ID, version=hashlib.sha256(encoded).hexdigest()[:32])
+
+
 __all__ = [
+    "OVERRIDE_POLICY_ID",
+    "POLICY_CONTEXT_INVALID",
     "POLICY_SET_UNKNOWN",
     "PrincipalDep",
     "ProblemError",
     "SettingsDep",
     "StoreDep",
     "assert_trust_ceiling",
-    "declared_trust_ceiling",
     "effective_policy",
+    "induced_trust_ceiling",
+    "override_policy_identity",
     "principal_dependency",
     "require_any_scope",
     "require_scopes",

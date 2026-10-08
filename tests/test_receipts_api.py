@@ -350,6 +350,9 @@ def test_an_unavailable_receipt_store_fails_closed_with_503(
     class BrokenStore:
         durable = True
 
+        def get_policy_set(self, tenant_id: str, policy_id: str, version: str) -> None:
+            return None
+
         def store_receipt(self, record: ReceiptRecord) -> ReceiptRecord:
             raise RuntimeError("the store is unavailable")
 
@@ -524,3 +527,49 @@ def test_an_omitted_request_id_is_generated_by_the_server(auth: AuthHarness) -> 
     assert len(generated) == 32
     assert generated != second.json()["request_id"]
     assert first.json()["receipt_id"] != generated
+
+
+def test_a_replay_returns_the_stored_decision_byte_for_byte(auth: AuthHarness) -> None:
+    """H3-02 regression: a replay is the stored decision, not a fresh evaluation."""
+
+    seed_policy_set(TENANT, document=POLICY)
+
+    first = _submit(auth, request_id="replay-identical")
+    replay = _submit(auth, request_id="replay-identical")
+
+    assert first.status_code == 200
+    assert replay.status_code == 200
+    assert replay.json() == first.json()
+    store = open_store(load_settings())
+    stored = store.get_receipt(TENANT, first.json()["receipt_id"])
+    assert stored is not None
+    assert stored.decision_body == first.json()
+    assert stored.verdict == first.json()["decision"]
+    assert stored.reason_codes == tuple(first.json()["reason_codes"])
+    assert stored.policy_set_version == first.json()["policy_set"]["version"]
+
+
+def test_a_receipt_that_cannot_be_reconstructed_is_refused(auth: AuthHarness) -> None:
+    """A stored row without a decision body is refused, never answered afresh."""
+
+    from aegisgraph.adapter import canonical_action
+    from aegisgraph.sentinel import SentinelCandidateAction
+
+    seed_policy_set(TENANT, document=POLICY)
+    payload = decision_payload(request_id="replay-unreconstructible")
+    action = canonical_action(SentinelCandidateAction.model_validate(payload["candidate_action"]))
+    store = open_store(load_settings())
+    store.store_receipt(
+        replace(
+            _receipt_record(request_id="replay-unreconstructible"),
+            receipt_id="0" * 32,
+            action_digest=action.digest(),
+            execution_digest=action.execution_digest(),
+            decision_body={},
+        )
+    )
+
+    response = _submit(auth, request_id="replay-unreconstructible")
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "RECEIPT_NOT_RECONSTRUCTIBLE"
