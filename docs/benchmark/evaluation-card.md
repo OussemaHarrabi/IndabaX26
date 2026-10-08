@@ -74,7 +74,7 @@ python scripts/bench_policies.py publish \
 # 4. run against the authenticated surface
 python scripts/bench_run.py --defense-url http://127.0.0.1:8091 --model scripted \
   --splits development,validation --auth-token-file /tmp/decision.jwt \
-  --timestamp 20261008T210000Z --config-slug m2-authenticated-full
+  --timestamp 20261008T230000Z --config-slug m2-authenticated-full
 ```
 
 Why the benchmark publishes policy sets instead of asserting policy facts:
@@ -100,7 +100,7 @@ written to a manifest or hashed.
 A deployment *without* authentication (development mode) can still be driven
 without the credential flags, and without step 3 if the run pins no policy set —
 but the runner pins one per scenario, so publish first either way. The committed
-reference run in `benchmark/runs/20261008T210000Z-m2-authenticated-full/`
+reference run in `benchmark/runs/20261008T230000Z-m2-authenticated-full/`
 documents this flow end to end, with its commands, hashes and table.
 
 ## 3. Run the benchmark
@@ -114,12 +114,12 @@ python scripts/bench_run.py \
   --defense-url http://127.0.0.1:8080 \
   --model scripted \
   --splits development,validation \
-  --timestamp 20261008T210000Z \
+  --timestamp 20261008T230000Z \
   --config-slug local-m1 \
   --hardware-note "local dev host"
 
 # 3. score the run
-python scripts/bench_score.py --run benchmark/runs/20261008T210000Z-local-m1
+python scripts/bench_score.py --run benchmark/runs/20261008T230000Z-local-m1
 ```
 
 The run writes `benchmark/runs/<timestamp>-<config-slug>/` containing:
@@ -147,19 +147,29 @@ the worst possible failure mode for a security benchmark.
 | Field | Why it is there |
 | --- | --- |
 | `run.name`, `run.created`, `run.created_with` | identity and the immutability mechanism |
-| `code.commit`, `code.branch` | which gateway revision was measured |
+| `code.commit`, `code.commit_source`, `code.branch`, `code.dirty` | which gateway revision was measured, how the commit was resolved, and whether the tree had uncommitted changes at run time (`dirty: true` means the run did not come from exactly that commit; the run's README must then name the dirty paths) |
 | `defense.url`, `defense.health`, `defense.version`, `defense.endpoint` | the surface under test, including its declared policy set |
 | `auth.mode`, `auth.header`, `auth.scheme`, `auth.principal`, `auth.principal_source` | that a credential was used and which principal it named. Never the token, never its digest. `principal` is the unverified JWT `sub` or `null` |
-| `policy.gate` (`"H5.2"`), `policy.blob_sha256`, `policy.blob_sha256_reason`, `policy.blob_sha256_source`, `policy.hash_convention` | the policy-blob-hash gate. `blob_sha256` is a git blob hash (`sha256(b"blob <len>\0" + content)`) over the canonical `{id:version -> document}` map the requests pinned; if it cannot be computed the field is `null` and `blob_sha256_reason` says why, rather than the field being omitted |
-| `policy.source_blobs.blobs` | git blob hashes of the committed files that turn a policy document into a decision (`backend/aegisgraph/policy.py`, `engine.py`, `adapter.py`). **This is what a freeze/unseal comparison needs**: a document can be unchanged while the code applying it is not. `policy.source_blobs.missing` lists any file absent from the checkout |
+| `policy.gate` (`"H5.2"`), `policy.blob_sha256`, `policy.blob_sha256_reason`, `policy.blob_sha256_source`, `policy.hash_convention` | the policy-blob-hash gate. `blob_sha256` is the content hash of the canonical `{id:version -> document}` map the requests pinned, under the manifest's one hash convention; if it cannot be computed the field is `null` and `blob_sha256_reason` says why, rather than the field being omitted |
+| `policy.source_blobs.blobs` | content hashes of the committed files that turn a policy document into a decision (`backend/aegisgraph/policy.py`, `engine.py`, `adapter.py`). **This is what a freeze/unseal comparison needs**: a document can be unchanged while the code applying it is not. `policy.source_blobs.missing` lists any file absent from the checkout |
 | `policy.policy_sets`, `policy.document_digests`, `policy.publish_command`, `policy.server_default` | the pinned sets, their per-set digests, the command that publishes them, and the server's default identity |
 | `policy_set`, `scenario_policy_sets` | the identity the server declared, and the per-scenario policy documents |
 | `dataset.root`, `dataset.sha256`, `dataset.file_hashes` | the exact data bytes |
+
+**One hash convention.** Every hash the manifest records — `dependency_lock`,
+`policy.blob_sha256`, `policy.source_blobs` — uses
+`content-sha256-lf: sha256(bytes) with CRLF normalised to LF, no object header`,
+written into the manifest beside the values. The runner reads the *committed* bytes
+through git when it can, so a Windows checkout and a Linux checkout produce the
+same value, and `dependency_lock.sha256` is directly comparable with
+`source.requirements_lock_sha256` in `deploy/sbom/aegisgraph-image-sbom.json`. Two
+artifacts that hash the same file with different conventions would disagree across
+platforms, which is precisely what a freeze comparison cannot afford.
 | `scenario_set.sha256`, `.splits`, `.scenario_ids` | the exact selection evaluated |
 | `model.*` | who proposed the actions and with what settings |
 | `seed`, `temperature`, `max_tokens` | sampling parameters; `null` with a note when the adapter is scripted |
 | `hardware.*` | host note, platform, interpreter, machine |
-| `dependency_lock.*` | the lock file's SHA-256, so an environment drift is visible |
+| `dependency_lock.path`, `.sha256`, `.present`, `.hash_convention` | the lock file's content hash and the convention it was taken under, so an environment drift is visible **and comparable with the release SBOM** |
 | `control.*` | the reachability control origin and kind |
 | `artifacts.*` | SHA-256 of `outcomes.jsonl` and `control.jsonl`; `load_run` re-checks them |
 | `limitations[]` | what this run does not license, in the manifest itself |
@@ -331,14 +341,14 @@ a utility oracle for controls.
 
 ## 8a. The reference run
 
-The committed artifact `benchmark/runs/20261008T210000Z-m2-authenticated-full/`
+The committed artifact `benchmark/runs/20261008T230000Z-m2-authenticated-full/`
 is a real run of the committed dataset against the **authenticated** M2 gateway
-(`a1cdfbc9af941dc37fda13dca30bcf4a6b331b0e`, policy set `aegisgraph-default/1`),
+(`a94ce6f8003989884be2fb40d06dc99ac721763c`, policy set `aegisgraph-default/1`),
 scripted adapter, splits `development,validation`, 60 scenarios, dataset
 `7e916a11…`, scenario set `e4f376b2…`, policy blob
-`80a5dfeb257142cb8a28517f4e3206acbe32d50530767b9e892b5f788a875151`. Its decision
+`53d663b1853673da6ccfa0e4e673dbaa196bcf2517d6c1517aa1268fea9153f1`. Its decision
 digest is
-`843b20f0f1a92f8a6e28f727d9b24982e6063b8bce70c29a07a0c36c4e13556d`; the run
+`8d79f032d3018ed0618088b004094d1ba30dfe14605390f375e560b5c04aee13`; the run
 licensed all 30 attacks (`control_licensed = 30`, `control_excluded = 0`,
 `effectiveness_claim = true`). Its README carries the exact commands; re-running
 on another host must reproduce the digest and may move the latencies.
