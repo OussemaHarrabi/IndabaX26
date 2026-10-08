@@ -260,3 +260,38 @@ def test_the_confirmation_surface_refuses_unknown_fields(auth: AuthHarness) -> N
     )
 
     assert response.status_code == 422
+
+
+def test_issuing_twice_returns_the_stored_grant(auth: AuthHarness, prepared: str) -> None:
+    """H3-03 regression: the response and the audit event report the persisted row."""
+
+    first = _issue(auth, execution_digest=prepared, ttl_seconds=60)
+    second = _issue(auth, execution_digest=prepared, ttl_seconds=3600)
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert second.json() == first.json()
+
+    store = open_store(load_settings())
+    assert store.grant_exists(
+        TENANT,
+        run_id=RUN_ID,
+        step_id=STEP_ID,
+        execution_digest=prepared,
+        now=datetime.now(UTC),
+    )
+    events = [
+        event
+        for event in client.get(
+            "/api/v1/audit-events?limit=50",
+            headers=auth.header(role="auditor", tenant=TENANT),
+        ).json()["items"]
+        if event["event_type"] == "confirmation_grant_issued"
+    ]
+    assert len(events) == 2
+    assert datetime.fromisoformat(events[0]["details"]["expires_at"]) == datetime.fromisoformat(
+        first.json()["expires_at"].replace("Z", "+00:00")
+    )
+    assert datetime.fromisoformat(events[1]["details"]["expires_at"]) == datetime.fromisoformat(
+        first.json()["expires_at"].replace("Z", "+00:00")
+    )

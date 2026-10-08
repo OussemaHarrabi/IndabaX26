@@ -387,6 +387,12 @@ def _freeze_json(value: JsonValue) -> object:
     return value
 
 
+def thaw_json(value: object) -> JsonValue:
+    """Return a plain JSON value from frozen model state (public helper)."""
+
+    return _thaw_json(value)
+
+
 def _thaw_json(value: object) -> JsonValue:
     if isinstance(value, Mapping):
         return {str(key): _thaw_json(item) for key, item in value.items()}

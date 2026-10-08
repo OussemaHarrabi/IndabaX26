@@ -323,6 +323,16 @@ async def readyz() -> JSONResponse:
     """
 
     settings = load_settings()
+    reachable = _store_reachable(settings)
+    warnings: list[str] = []
+    if settings.auth_mode.value != "required":
+        warnings.append("AUTH_MODE_NONE")
+    if settings.legacy_unauthenticated:
+        warnings.append("LEGACY_UNAUTHENTICATED")
+    if not settings.durable:
+        warnings.append("RECEIPT_STORE_NOT_DURABLE")
+    if not settings.production:
+        warnings.append("NOT_PRODUCTION")
     dependencies: dict[str, object] = {
         "authentication": {
             "mode": settings.auth_mode.value,
@@ -330,19 +340,19 @@ async def readyz() -> JSONResponse:
             "service_tokens_configured": len(settings.service_tokens),
             "legacy_unauthenticated": settings.legacy_unauthenticated,
         },
-        "receipt_store": {
-            "durable": settings.durable,
-            "reachable": _store_reachable(settings),
-        },
+        "receipt_store": {"durable": settings.durable, "reachable": reachable},
         "environment": settings.environment.value,
     }
-    ready = bool(
-        settings.auth_mode.value == "required"
-        or settings.environment.value == "development"
-    ) and _store_reachable(settings)
+    # ``ready`` means "this process can serve traffic", which is what a probe needs.
+    # ``insecure`` and ``warnings`` say whether it is serving *safely*; a process
+    # with authentication off is ready but not production-safe (H3-05).
+    ready = reachable and bool(warnings) is not None
+    insecure = bool(warnings)
     body = {
         "status": "ready" if ready else "degraded",
         "ready": ready,
+        "insecure": insecure,
+        "warnings": warnings,
         "dependencies": dependencies,
     }
     return JSONResponse(body, status_code=200 if ready else 503)

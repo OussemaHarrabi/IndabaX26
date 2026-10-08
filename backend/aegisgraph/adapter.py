@@ -2,9 +2,10 @@
 
 import hashlib
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import cast
+from types import MappingProxyType
+from typing import Final, cast
 
 from pydantic import JsonValue
 
@@ -19,6 +20,27 @@ from aegisgraph.contracts import (
 from aegisgraph.sentinel import SentinelCandidateAction, SentinelProvenanceRecord, SentinelRequest
 
 _MAX_CANONICAL_OBSERVATIONS = 128
+
+IMPLICIT_ROLE_TRUST: Final[Mapping[str, TrustLevel]] = MappingProxyType(
+    {
+        "user": TrustLevel.AUTHENTICATED_USER,
+        "agent": TrustLevel.TRUSTED_INTERNAL,
+        "safety": TrustLevel.TRUSTED_INTERNAL,
+        "human": TrustLevel.TRUSTED_INTERNAL,
+    }
+)
+"""The trust level a conversation item *without* provenance ids resolves to.
+
+Only the roles that take the adapter's *implicit* branch appear here; every other
+role (``tool``, ``memory``, an ``observation``) resolves through
+:data:`UNATTRIBUTED_TRUST` instead, which is the same label but keeps the
+``unattributed:`` source marker. The authorization boundary reads this mapping and
+falls back to :data:`UNATTRIBUTED_TRUST`, so the induced labels it checks are exactly
+the ones the adapter assigns (H3-01).
+"""
+
+UNATTRIBUTED_TRUST: Final[TrustLevel] = TrustLevel.UNTRUSTED_INTERNAL
+"""Trust assigned to evidence that carries neither provenance nor a trusted role."""
 
 
 @dataclass(frozen=True)
@@ -57,16 +79,14 @@ def adapt_request(request: SentinelRequest) -> AdaptedRequest:
         nonlocal complete
         identifiers = tuple(ids)
         if not identifiers:
-            if role in {"user", "agent", "safety", "human"}:
-                trust = (
-                    TrustLevel.AUTHENTICATED_USER if role == "user" else TrustLevel.TRUSTED_INTERNAL
-                )
+            implicit = IMPLICIT_ROLE_TRUST.get(role)
+            if implicit is not None:
                 observations.append(
                     Observation(
                         kind=_safe_kind(kind),
                         content=content,
                         source=f"implicit:{role}",
-                        trust_level=trust,
+                        trust_level=implicit,
                         sensitivity=Sensitivity.INTERNAL,
                     )
                 )
@@ -173,7 +193,7 @@ def _unattributed_observation(kind: str, content: str, role: str) -> Observation
         kind=_safe_kind(kind),
         content=content,
         source=_compact_source(f"unattributed:{role}"),
-        trust_level=TrustLevel.UNTRUSTED_INTERNAL,
+        trust_level=UNATTRIBUTED_TRUST,
         sensitivity=Sensitivity.INTERNAL,
     )
 

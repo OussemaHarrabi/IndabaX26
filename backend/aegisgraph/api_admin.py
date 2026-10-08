@@ -285,7 +285,14 @@ async def create_policy(
     """Store one immutable policy version and audit the change (D3, D6)."""
 
     document = dict(body.document)
-    encoded = canonical_json(document)
+    try:
+        encoded = canonical_json(document)
+    except (TypeError, ValueError) as error:
+        raise ProblemError(
+            POLICY_DOCUMENT_INVALID,
+            "the policy document is not canonicalisable (non-finite number or unsupported value)",
+            status_code=422,
+        ) from error
     if len(encoded.encode("utf-8")) > MAX_POLICY_DOCUMENT_BYTES:
         raise ProblemError(
             POLICY_DOCUMENT_TOO_LARGE,

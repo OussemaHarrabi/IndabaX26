@@ -278,13 +278,19 @@ def test_a_rotated_verification_key_is_picked_up_without_a_restart(
     ).status_code == 200
 
 
-def test_a_new_signing_key_is_found_without_waiting_for_the_cache_ttl(
-    auth: AuthHarness,
+def test_a_new_signing_key_is_found_when_the_cache_is_configured_to_re_read(
+    auth: AuthHarness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An unknown ``kid`` forces one refresh, which is how a key rollover lands."""
+    """An unknown ``kid`` forces a refresh; ``JWKS_TTL_SECONDS=0`` re-reads always.
+
+    The forced re-read is rate-bounded (H3-07), so a rollover that must be visible
+    immediately is configured with a zero TTL; with the default TTL the next
+    verification after the interval picks it up.
+    """
 
     from m2_support import generate_keypair, write_jwks
 
+    monkeypatch.setenv("AEGISGRAPH_JWKS_TTL_SECONDS", "0")
     seed_policy_set(TENANT)
     assert _submit(auth.header(role="decision_client", tenant=TENANT)).status_code == 200
 
@@ -614,3 +620,55 @@ def test_a_token_without_a_key_id_verifies_against_a_single_key_document(
     )
 
     assert response.status_code == 200
+
+
+def test_readiness_is_honest_about_an_insecure_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """H3-05: readiness reports whether the process is serving *safely*."""
+
+    monkeypatch.setenv("AEGISGRAPH_AUTH_MODE", "none")
+    monkeypatch.delenv("AEGISGRAPH_ENV", raising=False)
+
+    body = client.get("/readyz").json()
+
+    assert body["ready"] is True
+    assert body["insecure"] is True
+    assert "AUTH_MODE_NONE" in body["warnings"]
+    assert body["dependencies"]["authentication"]["mode"] == "none"
+
+
+def test_readiness_reports_a_secure_process_without_the_insecurity_warnings(
+    auth: AuthHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AEGISGRAPH_ENV", "production")
+    monkeypatch.setenv("AEGISGRAPH_LEGACY_UNAUTHENTICATED", "false")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://nobody:nothing@127.0.0.1:1/absent")
+
+    body = client.get("/readyz").json()
+
+    assert "AUTH_MODE_NONE" not in body["warnings"]
+    assert "LEGACY_UNAUTHENTICATED" not in body["warnings"]
+    assert "NOT_PRODUCTION" not in body["warnings"]
+
+
+def test_an_unknown_key_id_cannot_force_a_file_read_per_request(auth: AuthHarness) -> None:
+    """H3-07: a forced JWKS re-read is rate-bounded."""
+
+    from aegisgraph.auth import _CACHES
+
+    seed_policy_set(TENANT)
+    assert _submit(auth.header(role="decision_client", tenant=TENANT)).status_code == 200
+    cache = next(iter(_CACHES.values()))
+    before = cache.reads
+    bogus = auth.token(role="decision_client", tenant=TENANT, kid="not-a-published-key")
+
+    for _ in range(5):
+        response = client.post(
+            "/api/v1/decisions",
+            json=decision_payload(),
+            headers={"Authorization": f"Bearer {bogus}"},
+        )
+        assert response.status_code == 401
+
+    assert cache.reads - before <= 1
