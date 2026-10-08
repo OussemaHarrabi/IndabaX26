@@ -254,6 +254,7 @@ def test_published_schema_matches_the_live_generic_contract() -> None:
 
 def test_generic_boundary_fails_closed_without_leaking_internals(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     secret = "internal evaluator detail"
 
@@ -261,7 +262,10 @@ def test_generic_boundary_fails_closed_without_leaking_internals(
         raise RuntimeError(secret)
 
     monkeypatch.setattr(api_v1, "evaluate", explode)
-    response = client.post("/api/v1/decisions", json=_request({"type": "respond", "content": "Ok"}))
+    with caplog.at_level(logging.INFO, logger="aegisgraph.decision"):
+        response = client.post(
+            "/api/v1/decisions", json=_request({"type": "respond", "content": "Ok"})
+        )
 
     assert response.status_code == 200
     body = response.json()
@@ -269,3 +273,14 @@ def test_generic_boundary_fails_closed_without_leaking_internals(
     assert body["reason_codes"] == ["INTERNAL_EVALUATION_FAILED"]
     assert secret not in response.text
     assert set(body) == GENERIC_FIELDS
+
+    records = [
+        record
+        for record in caplog.records
+        if record.name == "aegisgraph.decision" and record.levelno == logging.INFO
+    ]
+    assert len(records) == 1
+    event = json.loads(records[0].getMessage())
+    assert event["verdict"] == "block"
+    assert event["reason_codes"] == ["INTERNAL_EVALUATION_FAILED"]
+    assert secret not in records[0].getMessage()
