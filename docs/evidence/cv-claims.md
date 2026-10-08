@@ -166,17 +166,27 @@ payload-adjacent field is destroyed, not that an audit row is removed.
 ## Capability: Observability and SLOs
 
 **M. The decision surface is measured on committed, immutable artifacts, and its SLOs are derived from that measurement.** `[ind-hybrid]` `[res-tech]`
-**Evidence.** `docs/evidence/performance/m3-load-20261008T193951Z.json` (its
-internal canonical digest `3dcd41453b28ceda017dac7cb49e1061a1b2174af822a90c48e25c58c547250d`,
-re-derived at this commit), `docs/ops/slo.md`, `docs/ops/load-testing.md`,
-`scripts/load_test.py`; `python scripts/load_test.py --token-file ... --concurrency 16 --duration 20 --server-log ...`;
-commit `7147eb3`. Observed: 4 256 requests, 212.354 req/s, in-process p50
-1.573 ms / p95 3.139 ms / p99 5.175 ms, 0 errors, verdict mix 3360 allow / 663
-block / 233 escalate.
+**Evidence.** `docs/evidence/performance/m3-load-20261008T210436Z.json` (sidecar
+`a8250f2fcfe0fdcda5a3b25b8ca2e6b578054b8d6f3ef357f39bbef36eee8b62`, equal to
+`sha256sum` of the committed blob; internal canonical digest
+`e437951890bce9837eb75e751fcb04f606ce513456e359bcf81102ded780ce89`),
+`docs/ops/slo.md`, `docs/ops/load-testing.md`, `scripts/load_test.py`;
+`python scripts/load_test.py --token-file ... --concurrency 16 --duration 20 --warm-up 40 --server-log ...`;
+commits `7147eb3` (first harness), `4136382`, `fe46e7d` (corrected harness and
+republished baseline).
+Observed: 2 986 measured requests (40 warm-up excluded,
+`service_side.counts_match_measured: true`), 148.938 req/s, 0 errors,
+`{"200": 2986}`, verdict mix 2368 allow / 455 block / 163 escalate; in-process p50
+2.302 ms / p95 5.227 ms / p99 7.283 ms. The earlier report
+`m3-load-20261008T193951Z.json` is **superseded and must not be quoted**: its
+service-side block covered 4 296 samples including the 40 warm-up requests, and its
+sidecar digest did not match the committed bytes.
 **Limitation.** One developer machine, one `uvicorn` process, in-process store, a
-20 s window — **not** production hardware, **not** a month of availability. The
-M3 telemetry row **P4** is now promoted to `verified` in the ledger, so the
-measurement is a ledger claim rather than an artifact-only observation.
+20 s window — **not** production hardware, **not** a month of availability; the
+corrected run is also slower (148.9 vs 212.4 req/s) because the host was busy, and
+the SLO targets are set above the worse run. The M3 telemetry row **P4** is
+promoted to `verified` in the ledger, so the measurement is a ledger claim rather
+than an artifact-only observation.
 
 **N. Telemetry is instrumented with content-free, bounded labels, and a telemetry or collector outage cannot change a decision or remove a healthy service from a load balancer.** `[ind-hybrid]`
 **Evidence.** `backend/aegisgraph/telemetry.py`, `tests/test_telemetry.py`
@@ -192,7 +202,11 @@ the verdict or reason codes, the failed export increments
 **Limitation.** The exporter and dashboards are verified on a single short-lived
 collector and a local Prometheus/Grafana, not under sustained production load;
 `record_exception=False` means a failure marks a span `ERROR` without attaching
-the exception, so a root cause is not in the trace.
+the exception, so a root cause is not in the trace. `/metrics` itself has **no
+authentication dependency on the route** — the control is port-level only
+(Compose publishes `127.0.0.1:8080`; the Kubernetes NetworkPolicy restricts
+ingress), so a deployment that exposes the API port to an untrusted network
+exposes the exposition with it.
 
 ## Capability: CI/CD and container hardening
 

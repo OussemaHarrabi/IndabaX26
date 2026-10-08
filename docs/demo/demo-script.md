@@ -503,7 +503,12 @@ aegisgraph_decision_latency_seconds_count 5.0
 ```
 
 The labels are bounded (`route`, `method`, `status`, `verdict`, `policy_id`) and
-carry no tenant, principal, request id, receipt id or content.
+carry no tenant, principal, request id, receipt id or content. Note the route has
+**no authentication dependency**: `/metrics` answers any caller that can reach the
+port, and the control is port-level only — Compose publishes `127.0.0.1:8080`, and
+the Kubernetes NetworkPolicy restricts ingress to the pod
+([`../ops/observability.md`](../ops/observability.md) §"`/metrics` is an internal
+surface"). Keep it on loopback or gate it at the proxy.
 
 **6b — the structured decision record**, one line per decision on the
 `aegisgraph.decision` logger (stdout), with no request content:
@@ -603,9 +608,15 @@ outputs are recorded in
 metrics for rates and latencies, one structured record per decision for
 correlation, and a durable receipt for audit — with no identity or content in
 the metric labels or span attributes, and telemetry is never a dependency of a
-decision. The load report and the derived SLOs are in
+decision. The measured baselines and the objectives derived from them are in
 [`../ops/slo.md`](../ops/slo.md) and
-[`../evidence/performance/m3-load-20261008T193951Z.json`](../evidence/performance/m3-load-20261008T193951Z.json).
+[`../evidence/performance/m3-load-20261008T210436Z.json`](../evidence/performance/m3-load-20261008T210436Z.json):
+2 986 measured requests (40 warm-up excluded, `counts_match_measured: true`) at
+148.938 req/s, 0 errors, `{"200": 2986}`, verdicts 2368 allow / 455 block / 163
+escalate, in-process p50 2.302 ms / p95 5.227 ms / p99 7.283 ms. The earlier
+report `m3-load-20261008T193951Z.json` is **superseded**: its service-side block
+covered 4 296 samples including the 40 warm-up requests, and its sidecar digest
+did not match the committed bytes.
 
 ## Tear-down
 
