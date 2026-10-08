@@ -2,6 +2,8 @@
 *
 !.gitignore
 
-# The committed reference run is an evidence artifact (see its README).
+# Committed evidence artifacts (see each directory's README).
 !20261008T230000Z-m2-authenticated-full/
 !20261008T230000Z-m2-authenticated-full/**
+!20261008T203656Z-m6-campaign/
+!20261008T203656Z-m6-campaign/**
