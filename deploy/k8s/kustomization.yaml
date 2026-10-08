@@ -1,0 +1,31 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: aegisgraph
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - networkpolicy-default-deny.yaml
+  - networkpolicy-api.yaml
+  - poddisruptionbudget.yaml
+
+# The only place the image is resolved. `image: aegisgraph` in deployment.yaml is
+# intentionally untagged and unpinned so this rewrite is the single source of
+# truth.
+#
+# Production MUST pin by digest, using the digest CI records in
+# `artifacts/image-digest.txt`:
+#
+#   cd deploy/k8s
+#   kustomize edit set image \
+#     aegisgraph=ghcr.io/oussemaharrabi/aegisgraph@sha256:<digest>
+#
+# The version tag below is a build-identifier placeholder, not a supported
+# deployment pin; see docs/ops/deployment.md for the justification.
+images:
+  - name: aegisgraph
+    newName: ghcr.io/oussemaharrabi/aegisgraph
+    newTag: "0.1.0"
