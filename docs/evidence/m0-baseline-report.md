@@ -44,7 +44,7 @@ Commands run in `.worktrees/integration`:
 | Tests | `python -m pytest -q` | **187 passed in 2.71 s** (repeat: 2.51 s with coverage) |
 | Lint | `python -m ruff check backend tests` | All checks passed |
 | Types | `python -m mypy` (strict, 8 files) | Success: no issues found |
-| Coverage | `python -m pytest -q --cov=aegisgraph --cov-report=term` | **95 % total** (1043 statements, 55 missed) |
+| Coverage | `python -m pytest -q --cov=aegisgraph --cov-report=term` | **94.73 % total** (988 of 1043 statements, 55 missed; pytest-cov prints the rounded `95 %`) |
 
 Coverage by file: `adapter.py` 99 %, `sentinel.py` 99 %, `app.py` 94 %, `engine.py` 94 %, `policy.py` 93 %,
 `contracts.py` 92 %, `__init__.py` 100 %.
@@ -154,6 +154,6 @@ conclusions (ASR 0, BTU 0.8889, FBR 0.0683) are unaffected because no scenario l
 | --- | --- |
 | Old benchmark remains reproducible | **pass with the bounded caveat above** (labels identical, digest not reproducible, revision unrecorded) |
 | New charter is clear | pass — Agent A package reviewed and merged (AGENTS.md, PRODUCT.md, README.md, `docs/architecture/**`, `docs/legacy/**`, `docs/evidence/ledger.md`) |
-| All baseline checks still pass | pass — 187 tests, ruff, strict mypy, 95 % coverage |
+| All baseline checks still pass | pass — 187 tests, ruff, strict mypy, 94.73 % coverage (988/1043; the CI floor is a ratchet set to 94 until M1 tests raise it) |
 
 
