@@ -1,0 +1,162 @@
+{
+  "findings": [
+    {
+      "id": "H2-01",
+      "title": "Per-request CPU is unbounded on the generic surface: the F4 'linear' email scan is recomputed once per (sentence x source) pair, giving single-request event-loop denial of service",
+      "severity": "high",
+      "confidence": "high",
+      "path_line": [
+        "backend/aegisgraph/engine.py:847-872 (`_email_addresses`, the F4 fix)",
+        "backend/aegisgraph/engine.py:874-899 (`_is_laundered_claim`; `source_addresses = _email_addresses(source)` at :893)",
+        "backend/aegisgraph/engine.py:783-790 (`clean()` splits the action text into sentences and calls `_is_laundered_claim` per sentence)",
+        "backend/aegisgraph/engine.py:827-830 (revalidation pass re-runs `clean()` on the rewritten action, doubling the work)"
+      ],
+      "threat_preconditions": [
+        "Unauthenticated network reachability to POST /api/v1/decisions (the deployment binds 0.0.0.0:8080 in Docker/compose/k8s; locally 127.0.0.1).",
+        "Body <= AEGISGRAPH_MAX_BODY_BYTES (default 1 MiB).",
+        "At least one evidence item attributed to an untrusted provenance record (trust_level untrusted_external / adversary_controlled) - `sources` is non-empty; plus a respond/memory_write action (or a side-effecting tool call using a narrative argument) whose text splits into many sentences under `_NARRATIVE_SENTENCE` ('X. ' sequences).",
+        "<=128 observations so `_select_security_relevant_observations` does not set evidence_truncated (128 sources is far above what the 1 MiB cap allows anyway)."
+      ],
+      "minimal_reproduction": [
+        "Server: `PYTHONPATH=backend python -m uvicorn aegisgraph.app:app --host 127.0.0.1 --port 8731` (default 1 MiB cap, single worker).",
+        "Body: `conversation` = N items, each `{\"role\":\"tool\",\"content\": <16000 chars>, \"provenance_ids\":[\"pI\"]}`, `provenance` = N records with `trust_level: \"untrusted_external\"`, `candidate_action` = `{\"type\":\"respond\",\"content\": \"A. \"*K}`, `policy_context` = `{\"allowed_tools\":[\"email_read\"]}`.",
+        "Measured (HTTP POST, wall clock): (1 source, 1000 sentences, 19.5 kB) -> 5.3 s; (4 sources, 1000 sentences, 68 kB) -> 13.4 s; (8 sources, 1000 sentences, 133 kB) -> 23.9 s; (1 plain source, 5300 sentences, 32.5 kB) -> 24.2 s; (4 sources, 5300 sentences, 81 kB) -> 38.4 s.",
+        "Call-count proof (monkeypatching `aegisgraph.engine._email_addresses` with a counter, in-process `decide()`): sources=2/sentences=100 -> 400 calls; 2/200 -> 800; 4/100 -> 800. i.e. exactly 2 x sources x sentences, each call scanning up to `_MAX_EMAIL_SCAN_CHARS` = 65536 characters of the source.",
+        "Benign control at the cap: 61 sources x 16 kB (993 kB body) with 20 sentences -> 4.1 s, proving the cost is the sentences x sources product, not the body size.",
+        "Extrapolation to the cap [INFERENCE from the measured linear scaling]: ~60 sources x 16 kB plus a 16 kB action text with ~5300 sentences gives ~318k sentence-source pairs -> several minutes (>=5 min) of blocked event loop for one 1 MiB request."
+      ],
+      "concrete_impact": "One unauthenticated ~130 kB request blocks the single uvicorn event loop for ~24 s; at the 1 MiB cap a single request stalls the whole gateway for minutes (all concurrent clients, including the benchmark runner and any health probe, see no response; container/K8s liveness probes would start failing). The F4 remediation bounded the work of one scan but not the number of scans, so the 'bounded work per request' property claimed in the `_email_addresses` docstring (engine.py:850-856) does not hold for the endpoint.",
+      "regression_acceptance_criterion": "After the fix, a request built as above with 4 untrusted 16 kB sources and 1000 sentences must be decided in < 2 s wall clock (13.4 s today) and the instrumented call count of the source-address extraction must be <= the number of distinct sources per request (400 today for that shape). Implementation options: memoize `_email_addresses(source)` per `AdaptedRequest` (functools.lru_cache is NOT safe on a per-request basis but the source tuple is stable within one `_evaluate` tree), or hoist the address extraction out of `_is_laundered_claim` into the per-source loop of `_redact_untrusted_authority`, and cap the total number of sentences scanned per request.",
+      "would_change_published_result": "No published number changes (the gates and the recorded benchmark runs use benign bodies), but it falsifies a shipped property (F4 'linear') and any grader that includes a resource-exhaustion probe against the generic surface would add a failure."
+    },
+    {
+      "id": "H2-02",
+      "title": "The policy identity in the receipt, the decision log and /api/v1/version's counterpart is caller-asserted and never validated, making the SDK's POLICY_MISMATCH check and the audit record vacuous",
+      "severity": "medium",
+      "confidence": "high",
+      "path_line": [
+        "backend/aegisgraph/api_v1.py:143 (`policy_set=request.policy_set or DEFAULT_POLICY_SET` - no comparison with any server-side policy identity)",
+        "backend/aegisgraph/api_v1.py:186 and 205 (the asserted identity is copied into both `_to_generic_response` and `_fail_closed_response`)",
+        "backend/aegisgraph/api_v1.py:227-246 (`_log_decision` writes the asserted `policy_set.id`/`version` into the structured decision record)",
+        "backend/aegisgraph/enforcement.py:110-121 (the SDK compares `policy_set.id`/`version` against `expected_policy`)",
+        "backend/aegisgraph/api_v1.py:125 (the /api/v1/version endpoint reports the constant `aegisgraph-default`/`1`)"
+      ],
+      "threat_preconditions": [
+        "Unauthenticated POST /api/v1/decisions (F1 class, tracked).",
+        "A relying party (the shipped SDK / a receipt consumer) trusts the receipt's `policy_set` field as evidence of which policy set produced the decision."
+      ],
+      "minimal_reproduction": [
+        "`curl -s -X POST http://127.0.0.1:8731/api/v1/decisions -H 'content-type: application/json' -d '{\"api_version\":\"aegisgraph/v1\",\"run_id\":\"r\",\"step_id\":0,\"user_goal\":\"g\",\"policy_set\":{\"id\":\"victim-prod-policy\",\"version\":\"99\"},\"candidate_action\":{\"type\":\"respond\",\"content\":\"x\"},\"policy_context\":{\"allowed_tools\":[\"email_read\"]}}'` -> response contains `\"policy_set\":{\"id\":\"victim-prod-policy\",\"version\":\"99\"}` while `GET /api/v1/version` returns `aegisgraph-default`/`1`.",
+        "With a self-written strict grant the same request is `allow` and the receipt is accepted by the SDK: `enforce(receipt, action, expected_policy=PolicyIdentity(id=\"victim-prod-policy\", version=\"99\"))` -> `EnforcementOutcome(allowed=True, reason=None)` (verified with the shipped `aegisgraph.enforcement` module).",
+        "A fully hand-written receipt never seen by the gateway (`decision:\"allow\"`, matching digests computed from the public `action_digest`/`exact_action_digest` functions, `valid_until:\"2099-01-01T00:00:00+00:00\"`, same spoofed `policy_set`) is likewise `allowed=True`."
+      ],
+      "concrete_impact": "The `policy_set` field cannot be used as an audit assertion: it is whatever the caller typed, on both the success and the fail-closed path, and it is written verbatim into the `aegisgraph.decision` log record. The SDK's `POLICY_MISMATCH` refusal - documented as protection against 'a receipt issued under a different policy set' - is unenforceable, because the caller picks the value being compared. Secondary: the M5 runner sends `policy_context.policy_id = \"bench_soc\"/\"bench_enterprise\"/\"bench_finance\"` (benchmark/wire.py:123-124, benchmark/data/scenarios/**) while every recorded receipt says `aegisgraph-default/1`; benchmark/runner.py:479-483 records both values side by side in the manifest, so the mismatch is already in the evidence.",
+      "regression_acceptance_criterion": "A decision request whose `policy_set` differs from the active server policy identity must be rejected (422/409) or ignored, and the response/log must always carry the server's own identity; a test asserts that `policy_set` echoed in the response equals `GET /api/v1/version`'s value for an arbitrary caller-supplied value, and that `enforce()` refuses a receipt whose `policy_set` does not equal the polling caller's pinned identity.",
+      "would_change_published_result": "No published number changes (the existing manifest already exposes the mismatch rather than hiding it), but it invalidates the 'policy identity' guarantee as an audit control."
+    },
+    {
+      "id": "H2-03",
+      "title": "Strict confirmation is self-attested: the caller writes every field of the grant and chooses its expiry, so a compromised client always obtains ALLOW for a consequential tool",
+      "severity": "medium",
+      "confidence": "high",
+      "path_line": [
+        "backend/aegisgraph/contracts.py:284-306 (`parse_confirmation_grant`: run_id/step_id/digest/expiry all come from the caller-supplied string)",
+        "backend/aegisgraph/contracts.py:308-325 (`confirmation_grant_binds`: `grant.expires_at > now_epoch`)",
+        "backend/aegisgraph/engine.py:651-679 (`_confirmation_is_granted`, STRICT branch)",
+        "backend/aegisgraph/adapter.py:139 (`confirmations_granted=frozenset(request.history_digest.confirmations_granted)` - the grant set is taken verbatim from the request body)",
+        "backend/aegisgraph/engine.py:608-623 (the confirmation gate that the forged grant bypasses)"
+      ],
+      "threat_preconditions": [
+        "Unauthenticated POST /api/v1/decisions.",
+        "Attacker knows (or computes) `exact_action_digest` of its own candidate action - it is a SHA-256 hash of public action fields, published in the repo and trivially recomputable.",
+        "No component of the system issues or stores confirmation grants: nothing in backend/, benchmark/ or scripts/ ever produces a `<run_id>:<step_id>:<execution_digest>:<expiry>` string except tests."
+      ],
+      "minimal_reproduction": [
+        "Baseline: POST an `email_send` tool call to an external address with `policy_context.allowed_tools=[\"email_send\"]` -> `200 {\"decision\":\"escalate\",\"reason_codes\":[\"CONFIRMATION_REQUIRED\"]}`.",
+        "Forgery: compute `d = exact_action_digest(canonical_action(action))` client-side and add `\"history_digest\":{\"confirmations_granted\":[\"run-h2:3:<d>:<now+99999>\"]}` -> `200 {\"decision\":\"allow\",\"reason_codes\":[\"CONFIRMATION_VERIFIED\"]}` for the same consequential action.",
+        "Binding matrix confirmed (each of these correctly falls back to escalate): wrong run_id, wrong step_id, wrong digest, expired (now-1).",
+        "Expiry is not bounded by the receipt window: grants with `expires_at = now+31536000` and `expires_at = 4102444800` (year 2100) are both accepted, while the receipt's `valid_until` is `decided_at + 60 s` (AEGISGRAPH_RECEIPT_TTL_SECONDS); the two are never compared.",
+        "A legacy bare canonical digest is correctly refused on the generic surface (falls back to escalate), so the STRICT mode does work as a binding - it just adds no authenticity."
+      ],
+      "concrete_impact": "The strict-confirmation control advertised for the generic surface (M1 summary: 'strict confirmation grants ... on the generic surface only') raises the bar against accidental digest reuse but cannot distinguish a legitimate approval from the request author's own annotation: a malicious or compromised client obtains `allow`/CONFIRMATION_VERIFIED for any consequential tool it is allowed to call (email_send, payment_execute, remediation_execute, ticket/incident closure), and a grant leaked once stays valid for the same (run_id, step_id, action) forever because the expiry is caller-chosen. This is the generic-surface instance of the F3 class (the legacy-surface counterpart is being closed by the in-flight M2 work); it should be de-duplicated against it.",
+      "regression_acceptance_criterion": "A confirmation grant must not be usable unless it was issued by the server: either the gateway signs grants (e.g. HMAC over run_id:step_id:execution_digest:expiry with a key not present on the client) or it keeps a server-side pending-confirmation record created by the escalation and consumed exactly once; additionally `expires_at` must be <= the receipt's `valid_until`. Regression test: the exact forged body above must return `escalate`, not `allow`; a replay of the same grant after `valid_until` must not produce allow.",
+      "would_change_published_result": "Potentially yes for the sealed holdout: seal.json lists a `confirmation_bypass` attack family, so holdout scenarios whose payload supplies its own grant would be scored as allowed rather than escalated, changing the published score of that family. Verified only on a synthetic email_send case (the holdout is sealed and was not opened)."
+    },
+    {
+      "id": "H2-04",
+      "title": "`parse_confirmation_grant` raises ValueError instead of returning None on non-decimal 'digits' (superscripts), violating its documented contract on a function reachable from request input",
+      "severity": "low",
+      "confidence": "high",
+      "path_line": [
+        "backend/aegisgraph/contracts.py:295-305 (`str.isdigit()` accepts superscripts but `int()` rejects them)",
+        "backend/aegisgraph/contracts.py:284-293 (docstring: 'Returns ``None`` for anything malformed')",
+        "backend/aegisgraph/contracts.py:308-325 (`confirmation_grant_binds` propagates the exception instead of returning False)",
+        "backend/aegisgraph/engine.py:668-676 (call site inside `_confirmation_is_granted`)",
+        "backend/aegisgraph/api_v1.py:150-156 (the exception is caught and converted to `INTERNAL_EVALUATION_FAILED`)"
+      ],
+      "threat_preconditions": [
+        "Attacker (or a buggy client) can put an arbitrary string into `history_digest.confirmations_granted` on POST /api/v1/decisions or /v1/decision (type list[str], no character restrictions)."
+      ],
+      "minimal_reproduction": [
+        "`python -c \"import sys; sys.path.insert(0,'backend'); from aegisgraph.contracts import parse_confirmation_grant as p; print(p('run:1:'+'a'*24+':\\u00b2'))\"` -> `ValueError: invalid literal for int() with base 10: '\\u00b2'` (expected `None`); the same happens with the superscript in the step field.",
+        "End-to-end: POST a normal consequential request with `history_digest.confirmations_granted = ['run-h2:3:<valid-digest>:\\u00b2']` -> `200 {\"decision\":\"block\",\"reason_codes\":[\"INTERNAL_EVALUATION_FAILED\"]}` and `aegisgraph.decision` logs one decision record plus `Generic decision failed (ValueError)`; the same request with a well-formed expired grant correctly returns `escalate`/CONFIRMATION_REQUIRED.",
+        "`confirmation_grant_binds` (public, re-exported in backend/aegisgraph/__init__.py:36-38) propagates the same exception instead of returning False."
+      ],
+      "concrete_impact": "No allow is produced - the boundary fails closed at the endpoint (block/INTERNAL_EVALUATION_FAILED) - so this is not a privilege escalation. The real defects are (a) a documented total function is partial, and (b) any integrator calling `confirmation_grant_binds` directly (the advertised SDK entry point) gets an exception where the contract promises a boolean refusal, which in a caller's `try/except` style code is exactly the shape that turns into a fail-open. A caller can also convert any decision into block/INTERNAL_EVALUATION_FAILED (its own request only).",
+      "regression_acceptance_criterion": "`parse_confirmation_grant('run:1:' + 'a'*24 + ':\\u00b2') is None` and `confirmation_grant_binds(...) is False` (use `str.isdecimal()` or a try/except around `int()`); an API test asserting that a grant with a superscript digit yields `escalate`/CONFIRMATION_REQUIRED, not INTERNAL_EVALUATION_FAILED.",
+      "would_change_published_result": "No."
+    },
+    {
+      "id": "H2-05",
+      "title": "`request_id` is documented as server-computed but is echoed verbatim from the caller, so the decision record's request identity is caller-chosen and non-unique",
+      "severity": "low",
+      "confidence": "high",
+      "path_line": [
+        "backend/aegisgraph/api_v1.py:5-8 (module docstring: 'a server-computed request and receipt identity') and :78-81 (`GenericDecisionRequest.request_id` accepts a caller value)",
+        "backend/aegisgraph/api_v1.py:141 (`request_id=request.request_id or uuid4().hex`)",
+        "backend/aegisgraph/api_v1.py:227-246 (the echoed value is written to the decision log)",
+        "backend/aegisgraph/api_v1.py:180-184 (no uniqueness or binding check on the echoed value)"
+      ],
+      "threat_preconditions": [
+        "Unauthenticated POST /api/v1/decisions; a log/audit consumer correlates decisions by `request_id`."
+      ],
+      "minimal_reproduction": [
+        "`POST /api/v1/decisions` with `\"request_id\": \"caller-supplied-1\"` returns `\"request_id\": \"caller-supplied-1\"` and the decision record on stdout carries the same string; raw client tests with `request_id` containing `\\n`, `\\r\\n`, U+2028, a space, or 129 characters are all rejected with 422 (the pattern is enforced, so no log injection is possible).",
+        "Two distinct requests carrying the same caller `request_id` produce two different `receipt_id`s and two log records with the same `request_id`."
+      ],
+      "concrete_impact": "Audit correlation is spoofable: any client can claim another run's or tenant's request identity, and the log's request identity is attacker-controlled (the only server-controlled correlation key is `receipt_id`). The module docstring's 'server-computed request ... identity' is inaccurate, and the adapter's legacy-surface canonical `request:<sha256(run_id|step_id)>` (backend/aegisgraph/adapter.py:176-181) is not used here.",
+      "regression_acceptance_criterion": "Either derive `request_id` server-side on the generic surface (as the adapter does for the legacy wire) and keep the caller field as a separate `client_request_id`, or amend the docstring/contract to state that `request_id` is caller-asserted; a test asserts that the returned `request_id` is not equal to an arbitrary attacker-supplied value when the field is server-computed, and the log's request identity is documented as unauthenticated.",
+      "would_change_published_result": "No."
+    },
+    {
+      "id": "H2-06",
+      "title": "M5 holdout passphrase confidentiality is not maintained by the harness: the custody record admits a transcript hand-over and the workspace transcript still holds the assignment",
+      "severity": "low",
+      "confidence": "high",
+      "path_line": [
+        "docs/evidence/m5-seal-custody.md:26-28 ('handed over once in its final message. That message is part of the orchestrator's session transcript, so the value should be treated as transcript-exposed')",
+        "docs/evidence/m5-seal-custody.md:19-22 (key held at C:/Users/oussa/.aegisgraph/holdout-passphrase.txt, 'mode 0600 where the platform honours it')",
+        "scripts/bench_seal.py:36-46 (passphrase source: AEGISGRAPH_HOLDOUT_PASSPHRASE or --passphrase-file; no --passphrase flag, so it is not in argv on the documented path)",
+        "verified leak site: history://AgentGM5 (the M5 agent's own persisted transcript)"
+      ],
+      "threat_preconditions": [
+        "Read access to the harness's session-transcript store (the same store the workspace exposes to every subsequent agent, and which the environment's cross-session recall tooling indexes).",
+        "The passphrase value passed through an agent's final message by the project's own custody procedure."
+      ],
+      "minimal_reproduction": [
+        "`grep -c 'AEGISGRAPH_HOLDOUT_PASSPHRASE' history://AgentGM5` -> 1; the matching line is a persisted `bash(cd ... && AEGISGRAPH_HOLDOUT_PASSPHRASE='<31 visible chars>…` transcript entry, i.e. the assignment survives in the session log (the transcript truncates the value at 31 of the 48 token_urlsafe(36) characters, so the full value is not reconstructible from this store; the value itself is deliberately not reproduced here).",
+        "`xd://mcp__deja_recall` for the passphrase returned no stored value (only an unrelated codex-session regex), so the cross-tool index currently does not hold it.",
+        "Negative controls that held: no committed file contains the value (`git grep -E \"AEGISGRAPH_HOLDOUT_PASSPHRASE='[A-Za-z0-9_-]{40,}\"` -> 0 hits; only `<custodian passphrase>` placeholders in docs and `unit-test-passphrase` in tmp-dir test fixtures); `python scripts/bench_seal.py open --passphrase-file <wrong>` -> `seal error: the passphrase is wrong or the sealed holdout was tampered with`; `verify --with-passphrase` with a wrong value -> `opened: false`, `ciphertext_matches: true`, RESULT: FAIL; `verify` with no passphrase is a hash-only check by design (`opened: false`); the staging directory used while sealing (`indabax/.audit-tmp/holdout-staging/`) is now empty; `bench_run.py` refuses the holdout split."
+      ],
+      "concrete_impact": "The 'sealed before freeze' assurance rests on a secret that has already transited an LLM transcript/log channel - the exact class of artifact the environment's own cross-session memory tooling is designed to index and replay. Anyone with read access to that store (or to a synced/indexed copy of it, as the custody note itself warns) can obtain the passphrase and open the 20-scenario holdout, undermining the custody claim even though the AES-256-GCM seal itself is sound. The custody record already prescribes rotation, so this is an acknowledged-but-unmitigated risk rather than a new discovery.",
+      "regression_acceptance_criterion": "Re-seal the holdout with a freshly generated passphrase that is never echoed into a command line, an agent message or a transcript (generate it into the 0600 file, or use `--passphrase-file` only), and add a check that neither the workspace transcript store nor the recall index contains the assignment; document the key-in-transcript exposure as closed. Verifiable test: `grep -c 'AEGISGRAPH_HOLDOUT_PASSPHRASE=' <transcript store>` returns 0 after the rotation.",
+      "would_change_published_result": "No measured number changes; it weakens the evidence-integrity claim attached to the sealed holdout (the holdout numbers themselves were not run in this session)."
+    }
+  ],
+  "summary": {
+    "scope": "Read-only adversarial review of the M1/M4/M5 boundary at commit 3353886 in .worktrees/integration, as instructed (not the legacy core). Covered: backend/aegisgraph/api_v1.py, app.py, sentinel.py, contracts.py, adapter.py, engine.py (test-relevant paths), enforcement.py, demo_tools.py; the decision-record logging path; Dockerfile, .dockerignore, .github/workflows/ci.yml, compose.yaml, deploy/compose/*, deploy/k8s/*; benchmark/runner.py, benchmark/seal.py, benchmark/wire.py, benchmark/adapters/sentinel.py, benchmark/data/holdout/*, scripts/bench_*.py, benchmark.lock, and the seal-custody docs. No file in the repository was modified, created or deleted (git status --porcelain is empty, diff --stat empty); all probes were written to C:/Users/oussa/oussema/probe_h2 (outside the repo) and deleted afterwards; the locally started uvicorn was stopped.",
+    "methods": "Static reading of the full files above plus targeted greps; then live probing: a local uvicorn (PYTHONPATH=backend, default 1 MiB body cap, single worker) driven by httpx and by raw sockets; instrumented in-process calls (monkeypatched `aegisgraph.engine._email_addresses` to count invocations); direct use of the shipped `aegisgraph.enforcement` SDK and `aegisgraph.contracts` helpers to drive `enforce`/`parse_confirmation_grant` across all eight RefusalReason classes; the seal CLI with a wrong passphrase; grep over the harness transcript store with the secret value redacted/withheld. Attempts that withstood (no finding): (1) body-size cap bypass - declared Content-Length over the cap, tiny Content-Length with a streamed 2 MB body, chunked with no Content-Length, duplicate Content-Length headers (10 vs 2 MB), Transfer-Encoding: chunked + Content-Length, negative and non-numeric Content-Length, exactly-cap boundary (accepted) and cap+1 (413), pipelined follow-up request after a 413 - no bypass and no request-desync observed (h11 rejects the malformed framings with 400; the pipelined request after a declared oversize body is either counted as body or correctly framed); (2) log injection / content leakage - `request_id` with \\n, \\r\\n, U+2028, spaces or >128 chars is rejected 422, and the decision record is built only from validated response fields via `json.dumps` (verified from the actual stdout records: no request content, no candidate action text, no canary/secret material, bounded ~400 B/record, one record per decision); (3) enforcement.py - all eight RefusalReason values are reachable in the documented order, `execute_guarded` never calls the executor on refusal, an action differing only in `final` or in `1` vs `1.0` / whitespace shares the canonical digest but not the exact digest and is refused by the two-digest check (cross-accept -> allowed=False); (4) strict-grant binding - wrong run_id, wrong step_id, wrong digest and expired grants all correctly fall back to escalate, and a legacy bare digest is refused on the generic surface; (5) infra - SHA-pinned actions, top-level `permissions: contents: read`, no `github.event.*`/`head_ref`/`inputs.*` in any `run:`, no `secrets.*`, digest-pinned base images and compose images, non-root uid 10001, read-only rootfs, cap_drop ALL, 127.0.0.1-bound published ports, fail-closed `${VAR:?}` secrets with no default credentials, artifact uploads limited to coverage.xml and artifacts/ (no secrets); (6) benchmark - `wire.build_request` sends no scenario id/family/split/expected outcome, run directories are created with `mkdir(exist_ok=False)` and a RunError guard, run names are `_slugify`-sanitized (no path traversal), `open_seal` cannot be opened without the passphrase and `verify_seal` without one is explicitly hash-only, and no passphrase value exists in any tracked file.",
+    "not_covered": "No authentication/authorization testing of the known F1/F2/F3 class (no auth exists on either surface by design at this commit; M2 is in flight) - I did not report it as a new finding, but H2-02/H2-03 are its consequences on the new surface. No load/multi-worker or TLS-terminated deployment testing (the DoS in H2-01 was measured on a single uvicorn worker as deployed). No ingress-nginx/soak testing of the K8s path (manifests are validated but never applied in this environment), no container escape/capability testing, no supply-chain verification of the pinned digests themselves, no coverage of `frontend/`, `evaluation/`, the OTel/Prometheus/Grafana data path, or the legacy SENTINEL adapter's own correctness (reviewed separately). The sealed holdout was NOT opened - all holdout statements are about the seal mechanism, custody and reachability, never about the 20 sealed scenarios' content. Absence of findings in an area is not a security claim: it means the specific attempts listed above failed.",
+    "residual_risk_statement": "The generic surface has no authentication, no rate limiting and no per-request resource budget (H2-01) at this commit; anyone who can reach the port can obtain allow receipts (including for consequential tools, H2-03) and choose the identity fields that land in the audit record (H2-02, H2-05). The service is not an authorization authority in its current state - `enforce()` is a binding check for an honest caller, not an authenticity check, and every input it compares (receipt fields, policy identity, digests, validity window) is derivable or settable by the same attacker who wrote the action; integrating it as a security boundary without M2's authentication/attestation work would be unsound. On the deployment side the posture is materially better than the application layer: non-root read-only containers, dropped capabilities, loopback-bound host ports, digest-pinned images and no committed secrets; the residual items there are the already-tracked hash-unpinned lockfile/CI tool installs (F8) and the floating `newTag: \"0.1.0\"` kustomize placeholder (documented as a prod digest-pin requirement). For M5, the AES-256-GCM seal and the exclusive run-directory discipline are sound, but the custody chain for the holdout passphrase passes through a session transcript (H2-06) and the project's own cross-session memory tooling is exactly the kind of store that can replay it; rotation is prescribed by the custody doc and remains the right action. Unknown-residual: I did not attempt to open the sealed holdout, so I cannot state whether any holdout scenario depends on the confirmation-bypass behaviour predicted in H2-03."
+  }
+}
