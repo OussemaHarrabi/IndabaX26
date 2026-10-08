@@ -15,6 +15,9 @@ data:
   # repository does not ship (see deploy/k8s/README.md).
   AEGISGRAPH_LEGACY_UNAUTHENTICATED: "false"
   AEGISGRAPH_LOG_LEVEL: "info"
+  # M2 durable receipts: the database URL embeds a password, so it lives in the
+  # `aegisgraph-secrets` Secret (key DATABASE_URL), NOT here. `DATABASE_URL`
+  # unset means the process-local store, which is only appropriate for a demo.
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
   OTEL_SERVICE_NAME: "aegisgraph-api"
   # Telemetry is best-effort: the API must start when the collector is absent.

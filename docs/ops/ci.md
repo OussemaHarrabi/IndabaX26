@@ -9,7 +9,7 @@ GitHub-hosted runner is marked **unverified** with the reason.
 
 | Job | What it proves | Local equivalent |
 | --- | --- | --- |
-| `quality` | `ruff`, strict `mypy`, and `pytest` with the coverage gate | `make gates` |
+| `quality` | `ruff`, strict `mypy`, and `pytest` with the coverage gate, against a PostgreSQL 17 service (so the `db` tests run) | `make gates` (see the database note below) |
 | `security` | no known CVEs in the shipped pins; no medium+ static findings | `make audit && make bandit` |
 | `container` | image builds; runs under `--read-only`; serves `/healthz` and one decision; no writable app code; digest + SBOM recorded | `make smoke && make sbom` |
 | `kubernetes` | manifests render, schema-validate and satisfy the hardening invariants | `make k8s-validate` |
@@ -47,37 +47,49 @@ nothing is deployed. `.env` is removed afterwards (`rm -f .env`) and is never
 committed or uploaded. This is exactly why `compose.yaml` uses the `:?`
 interpolation form: the check would fail closed if the variable were absent.
 
-## Coverage gate: the exact baseline and the ratchet rule
+## Coverage gate: the exact measurement and the ratchet rule
 
 The gate is `python -m pytest -q --cov=aegisgraph --cov-report=term-missing
---cov-fail-under="${COVERAGE_FAIL_UNDER}"`.
+--cov-fail-under="${COVERAGE_FAIL_UNDER}"`, run against a PostgreSQL 17 service.
 
-- **Measured baseline at commit `33f96cc`** (2026-10-08): **988 / 1043 statements
-  = 94.73 %** (55 missed). This is identical on the local Windows interpreter
-  (CPython 3.13.14) and inside `python:3.12-slim` (CPython 3.12.15), so the F9
-  environment difference does not change the ratio.
-- `pytest-cov` **prints** that as `95 %` because it rounds for display. A floor of
-  `95` therefore fails on the real baseline by three statements — verified:
-  `--cov-fail-under=95` exits non-zero with
-  `Required test coverage of 95% not reached. Total coverage: 94.73%`.
-- `COVERAGE_FAIL_UNDER` is set to **94** in the workflow `env:` block. The floor is
-  a **ratchet**: it may only move up. Lowering it requires a written justification
-  in the same commit. The 55 missing lines are defensive `raise ValueError`
-  branches in `backend/aegisgraph/{contracts,policy,engine,app}.py`; padding tests
-  purely to clear the number is explicitly rejected.
-- Reproduce the exact figure locally:
+- **Measured at commit `4350af3`** (2026-10-08, `python:3.12-slim`, PostgreSQL 17,
+  the `db`-marked tests enabled): **454 collected, 452 passed, 2 skipped →
+  2612 / 2709 statements = 96.42 %** (97 missed). The two skips need the
+  untracked `.sentinel_reference` checkout, which a clean clone does not have.
+- **With no database** the 12 `db` tests skip and the ratio collapses to
+  **2514 / 2709 = 92.80 %** (195 missed). That is why the floor is also the guard
+  that the database tests actually ran: a silent skip cannot pass at 95.
+- `COVERAGE_FAIL_UNDER` is set to **95** in the workflow `env:` block, below the
+  measured 96.42 % but above the no-database ratio. The floor is a **ratchet**: it
+  may only move up. Lowering it requires a written justification in the same
+  commit. (Before M2 the same suite measured 94.73 % at `33f96cc`, with no
+  database tests at all; the floor was 94 then and is raised, never lowered.)
+- A reviewer building the same commit with the `.sentinel_reference` checkout
+  present measured 96.68 % (2619/2709); the 0.26 pt difference is exactly the two
+  `.sentinel_reference` tests.
+- Reproduce both figures locally (see `docs/ops/compose.md` for the database):
 
   ```sh
-  python -m pytest -q --cov=aegisgraph --cov-report=term-missing
+  export AEGISGRAPH_TEST_DATABASE_URL='postgresql+psycopg://aegisgraph:local-only@127.0.0.1:15532/aegisgraph'
+  python -m alembic upgrade head                 # DATABASE_URL, see docs/ops/migrations.md
+  python -m pytest -q --cov=aegisgraph --cov-report=term-missing   # 96.42 %
+  unset AEGISGRAPH_TEST_DATABASE_URL
+  python -m pytest -q --cov=aegisgraph --cov-report=term           # 92.80 %, gate fails
   ```
 
 ## Reproducing each gate locally
 
 ```sh
-# quality
+# quality (needs PostgreSQL 17 for the `db` tests; see docs/ops/compose.md)
+python -m pip install -r requirements.lock && python -m pip install -e ".[dev]"
+python -m pip install pyyaml          # needed by tests/, not yet in the [dev] extra
+export DATABASE_URL='postgresql+psycopg://aegisgraph:local-only@127.0.0.1:15532/aegisgraph'
+export AEGISGRAPH_TEST_DATABASE_URL="$DATABASE_URL"
+python -m alembic upgrade head
+python -m pytest -q -m db                       # these must RUN, not skip
 python -m ruff check backend tests scripts
 python -m mypy
-python -m pytest -q --cov=aegisgraph --cov-report=term-missing --cov-fail-under=94
+python -m pytest -q --cov=aegisgraph --cov-report=term-missing --cov-fail-under=95
 
 # security (installs nothing into the project; tools are dev-only)
 python -m pip install pip-audit bandit
@@ -127,7 +139,17 @@ action surface minimal; no registry push happens in M4.
 | bandit | 1.9.4 |
 | kubernetes-validate | 1.36.0 |
 | kubeconform (pinned installer) | 0.7.0 |
+| PyYAML (installed explicitly by CI) | unpinned — latest at install time; see the proposal below |
+| PostgreSQL (CI service and Compose stack) | 17 |
 | Docker Engine / Compose | 29.6.2 / v5.3.1 |
+
+**Known gap:** `tests/test_benchmark_sentinel_adapter.py` imports PyYAML
+conditionally, but PyYAML is declared in neither `[project.optional-dependencies]
+dev` nor `requirements.lock`, so a developer following the README gets two skips
+and one failure. The `quality` job installs it explicitly to keep CI green.
+Adding `pyyaml` to the `[dev]` extra (or to the lock) is proposed in the M4
+handoff — `pyproject.toml` and `requirements.lock` are outside this change's
+write scope.
 
 ## What is not verified here
 
