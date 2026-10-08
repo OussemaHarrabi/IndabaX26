@@ -524,6 +524,10 @@ def _decision_projection(payload: dict[str, Any]) -> dict[str, Any]:
 
     projection = dict(payload)
     projection.pop("deterministic_digest", None)
+    # The configuration block names the run (timestamp, slug, commit): it is
+    # bookkeeping, not a metric, so it must not change the identity of a verdict
+    # set. The metrics themselves already encode the split and population.
+    projection.pop("configuration", None)
     for key in ("overall", "control"):
         if isinstance(projection.get(key), dict):
             projection[key] = strip(projection[key])
