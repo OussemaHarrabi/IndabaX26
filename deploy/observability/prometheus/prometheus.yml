@@ -1,0 +1,41 @@
+# The single Prometheus scrape configuration for the AegisGraph stack.
+#
+# This file is the only scrape config in the repository. It is mounted by
+# `compose.yaml` at /etc/prometheus/prometheus.yml. `docs/ops/observability.md`
+# owns the metric vocabulary; `docs/ops/compose.md` owns the bring-up.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    stack: aegisgraph-local
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:8889"]
+
+  # The collector's own internal telemetry (otelcol_* series) is on :8888.
+  - job_name: otel-collector-internal
+    static_configs:
+      - targets: ["otel-collector:8888"]
+
+  # The API's own Prometheus endpoint (M3), scraped over the Compose network.
+  #
+  # `GET /metrics` is served **on by default in development** and **off in
+  # production**; `AEGISGRAPH_METRICS_ENABLED` overrides either way
+  # (backend/aegisgraph/settings.py). The Compose stack runs the API in
+  # development (no `AEGISGRAPH_ENV` is set), so this job always has a target —
+  # but a production deployment must set `AEGISGRAPH_METRICS_ENABLED=true` or the
+  # scrape returns 404 and `up{job="aegisgraph-api"}` stays 0.
+  #
+  # The endpoint is an internal surface: it is reachable only on the Compose
+  # network and on loopback, never from the host port mapping (the API publishes
+  # only 8080).
+  - job_name: aegisgraph-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8080"]
