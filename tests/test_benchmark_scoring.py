@@ -415,3 +415,48 @@ def test_the_digest_covers_the_verdicts_and_the_identity() -> None:
     assert same.deterministic_digest != swapped.deterministic_digest
     assert same.deterministic_digest != other_commit.deterministic_digest
     assert same.deterministic_digest == bookkeeping.deterministic_digest
+
+
+def test_a_control_that_licenses_nothing_makes_the_run_void() -> None:
+    """The liveness gate must be falsifiable, not true by construction."""
+
+    attacks = [
+        _attack_outcome("block", scenario_id=f"ent_fixture_attack_{index}") for index in range(3)
+    ]
+    control = [
+        _attack_outcome("block", scenario_id=f"ent_fixture_attack_{index}") for index in range(3)
+    ]
+
+    report = score(attacks, control_outcomes=control)
+
+    assert report.overall.control_licensed == 0
+    assert report.overall.control_excluded == 3
+    assert report.overall.control_excluded_ids == (
+        "ent_fixture_attack_0",
+        "ent_fixture_attack_1",
+        "ent_fixture_attack_2",
+    )
+    assert report.overall.effectiveness_claim is False
+    assert report.overall.asr is None
+    assert report.overall.asr_excluding_errors is None
+    assert report.overall.exclusion_rate is None
+    assert any("VOID" in note for note in report.overall.notes)
+    assert "VOID" in format_score_report(report)
+
+
+def test_a_partially_licensed_run_still_reports_and_lists_the_exclusions() -> None:
+    attacks = [
+        _attack_outcome("block", scenario_id=f"ent_fixture_attack_{index}") for index in range(3)
+    ]
+    control = [
+        _attack_outcome("allow", scenario_id="ent_fixture_attack_0"),
+        _attack_outcome("block", scenario_id="ent_fixture_attack_1"),
+        _attack_outcome("block", scenario_id="ent_fixture_attack_2"),
+    ]
+
+    report = score(attacks, control_outcomes=control)
+
+    assert report.overall.control_licensed == 1
+    assert report.overall.control_excluded == 2
+    assert report.overall.effectiveness_claim is True
+    assert report.overall.asr == 0.0

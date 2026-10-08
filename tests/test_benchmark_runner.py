@@ -367,3 +367,31 @@ def test_the_token_reader_refuses_blank_and_wrapped_values(tmp_path: Path) -> No
     good = tmp_path / "good"
     good.write_text("abc.def.ghi\n", encoding="utf-8")
     assert read_token(None, str(good)) == "abc.def.ghi"
+
+
+def test_the_policy_blob_hash_uses_the_git_blob_convention(tmp_path: Path) -> None:
+    """The H5.2 gate value must be comparable with a freeze record."""
+
+    import hashlib
+
+    with StubGateway() as stub:
+        result = execute_run(_config(stub.url, tmp_path))
+
+    policy = result.manifest["policy"]
+    documents = {f"{identity}:1": document for identity, document in _pinned_documents()}
+    canonical = json.dumps(
+        {key: documents[key] for key in sorted(documents)}, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    expected = hashlib.sha256(b"blob %d\0" % len(canonical) + canonical).hexdigest()
+
+    assert policy["gate"] == "H5.2"
+    assert policy["blob_sha256"] == expected
+    assert policy["blob_sha256_reason"] is None
+    assert policy["hash_convention"].startswith("git-blob-sha256:")
+    assert policy["source_blobs"]["blobs"]["backend/aegisgraph/policy.py"] is not None
+    assert policy["source_blobs"]["missing"] == []
+
+
+def _pinned_documents() -> list[tuple[str, dict[str, object]]]:
+    plan = collect_policy_sets(DATA_ROOT, VALIDATION_SPLITS)
+    return [(key.split(":")[0], plan.documents[key]) for key in plan.documents]
