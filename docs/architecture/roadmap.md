@@ -16,9 +16,9 @@ omitted: each milestone gates on its exit criteria, not on a calendar.
 | --- | --- | --- | --- | --- | --- |
 | **M0** | Charter + baseline | Intake, baseline reproduced, charter, architecture, threat model, ADRs, legacy record, ledger skeleton | — | all | `implemented` (closed) |
 | **M1** | Contracts + enforcement | Native versioned contracts with a policy/code revision in every decision; legacy adapter isolated; enforcement binding and integration SDK | M0 | ADR-0006 | `implemented` — contract, enforcement SDK, bounded input and strict confirmation landed (`4013b59`, `7502df3`); legacy suite re-checked decision-identical |
-| **M2** | Auth + policy + audit store | Authentication and tenancy; versioned policy; durable append-only receipt/audit store | M1 | ADR-0001, ADR-0002 | `implemented` + **verified live by the orchestrator** (`7a87e8b`, merged at `4350af3`, corrective round `940ed13`): F1, F2 and F3's caller-authority half fixed (residual F3 accepted); with PostgreSQL 17 the suite is **472 passed / 96.84 %**, without a database **460 passed / 12 skipped**; the coverage floor was red at `4350af3` without a database and the CI `quality` job gains a PostgreSQL service with the floor moving to **95** (Agent E) |
+| **M2** | Auth + policy + audit store | Authentication and tenancy; versioned policy; durable append-only receipt/audit store | M1 | ADR-0001, ADR-0002 | `implemented` + **verified live by the orchestrator** (`7a87e8b`, merged at `4350af3`, corrective round `940ed13`): F1, F2 and F3's caller-authority half fixed (residual F3 accepted); with PostgreSQL 17 the suite is **497 passed / 96.85 % (2676/2763)** at `36a279a`, without a database **485 passed / 12 skipped**; the CI `quality` job now runs a PostgreSQL service and the floor is raised to **95** (`bf02ddc`), so a silent skip of the database tests cannot pass |
 | **M3** | Observability + reliability | OpenTelemetry, Prometheus, Grafana, SLOs, fail-closed guarantees under load | M1, M2 | ADR-0003 | `proposed` — the Compose stack already ships collector, Prometheus and Grafana services, but no instrumentation claim is verified |
-| **M4** | CI/CD + containers + deployment | Pipelines and gates; hardened Compose stack; Kubernetes manifests validated and smoke-tested | M1, M2 | ADR-0005 | `implemented` with two named gaps: **no GitHub-hosted CI run has ever executed**, and **no cluster smoke test** (`kind` absent) |
+| **M4** | CI/CD + containers + deployment | Pipelines and gates; hardened Compose stack; Kubernetes manifests validated and smoke-tested | M1, M2 | ADR-0005 | `implemented` with three named gaps: **no GitHub-hosted CI run has ever executed**, **no cluster smoke test** (`kind` absent), and **F9** — the suite must run *inside* the built image (CI now runs it with a PostgreSQL service, but not in the image) |
 | **M5** | Evaluation framework + benchmark data | Native evaluation schema authoritative; versioned legacy adapter; benchmark data + reachability gate | M1 | ADR-0004 | `implemented` — schema, 60-scenario dataset, deterministic scoring, sealed holdout; **scripted adapter only**, no holdout run |
 | **M6** | Empirical campaign | Real-model runs, multi-seed variance, component ablations, generalization | M2, M5 | ADR-0004 | `proposed` — blocked: no `ollama`, GPU or paid API |
 | **M7** | Independent review | Adversarial and security review of the new surfaces; reproducibility audit | M3, M4, M6 | all | `proposed` — the M0 review covered the pre-M1 boundary only |
@@ -156,14 +156,19 @@ milestone owns each finding.
   treat the caller as the source of truth for its own evidence, bounded by the
   ceiling (`docs/api/auth.md` §5–6). The corrective round closed the second
   review's policy-identity, confirmation-binding and `request_id` items
-  (H2-02/H2-03/H2-05; ledger P26–P28). With PostgreSQL 17 the suite is
-  **472 passed** at **96.84 %** coverage; without a database **460 passed, 12
-  skipped** (the 12 PostgreSQL tests skip without
-  `AEGISGRAPH_TEST_DATABASE_URL`). The coverage floor of 94 was **red** at
-  `4350af3` on such a machine (93.06 % = 2521/2709, and `ci.yml` starts no
-  database service — ledger P15); the CI `quality` job is being given a
-  PostgreSQL service and the floor moves to **95** (Agent E). `H2-01` (unbounded
-  per-request CPU) and `H2-04` remain open on this surface (ledger P25, P29).
+  `H2-02/H2-03/H2-05`; ledger P26–P28). With PostgreSQL 17 the suite is
+  **497 passed** at **96.85 %** coverage (2676/2763, `36a279a`); without a
+  database **485 passed, 12 skipped** (the `db`-marked tests skip without
+  `AEGISGRAPH_TEST_DATABASE_URL`). The coverage floor was **red** at `4350af3`
+  on such a machine (93.06 % = 2521/2709, and `ci.yml` started no service —
+  ledger P15); that is now fixed: the `quality` job starts a PostgreSQL 17
+  service and the floor is **95** (`bf02ddc`), which doubles as the guard that
+  the database tests actually ran (`docs/ops/ci.md`: 96.42 % (2612/2709) with
+  the service, 92.80 % (2514/2709) without). The second review is **closed on
+  this surface**: `H2-01` at `5480a77`/`36a279a` and `H2-04` at `5480a77`
+  (ledger P25, P29), `H2-02`/`H2-03`/`H2-05` at `940ed13` (P26–P28). With F1–F3,
+  only **F8** (`accepted`) and **F9** (`open` — the suite must run inside the
+  built image; see M4) remain from either review.
 - **Work:** OIDC/JWT for interactive principals plus scoped service tokens for
   machine callers (ADR-0002); per-tenant authorization on every read and write;
   an explicit policy store with versions and an audit trail; PostgreSQL +
@@ -190,20 +195,26 @@ milestone owns each finding.
   invariant holds under fault injection.
 - **ADR:** ADR-0003.
 
-### M4 — CI/CD + containers + deployment *(complete, two gaps named)*
+### M4 — CI/CD + containers + deployment *(complete, three gaps named)*
 
 - **Entry:** M1, M2.
-- **Status:** landed (`6e4f6b2`, `891483d`, `79f9e59`, `40404a0`, `3889f10`).
-  Verified here: the workflow defines five jobs with SHA-pinned actions and a
-  coverage floor of 94 (measured 95.03 % = 1358/1429 at `3353886`); the image
+- **Status:** landed (`6e4f6b2`, `891483d`, `79f9e59`, `40404a0`, `3889f10`;
+  CI reworked at `bf02ddc`). Verified here: the workflow defines five jobs with
+  SHA-pinned actions and a coverage floor of **95** (raised from 94 at `bf02ddc`;
+  measured 95.03 % = 1358/1429 at `3353886` under the old floor); the image
   builds reproducibly and runs non-root (uid 10001) with a read-only rootfs
   serving `/healthz` and a decision; `deploy/k8s` renders 7 objects and passes 7
   schema checks under two validators plus 22 policy assertions; the Compose
   configuration parses to five services; the SBOM digest reproduces. Numbers and
   caveats are in the ledger, section C.
 - **Gaps:** **no GitHub-hosted CI run has ever executed** (blocked: the workflow
-  is only reproducible locally until the branch is pushed), and **no cluster
-  smoke test** — `kind` is absent. Neither gap is papered over by a local run.
+  is only reproducible locally until the branch is pushed), **no cluster
+  smoke test** — `kind` is absent, and **F9 is still open**: the `quality` job
+  now runs the suite against a PostgreSQL 17 service with a floor of 95
+  (`bf02ddc`; 96.42 % (2612/2709) with the service, 92.80 % (2514/2709) without,
+  so a silent skip cannot pass), but running the suite **inside the built image**
+  remains the acceptance criterion. None of the three is papered over by a local
+  run.
 - **Work:** CI pipelines running tests, Ruff, mypy and the reachability gate;
   hardened Compose stack (service + PostgreSQL + Prometheus + Grafana); container
   image build and live run verification; Kubernetes manifests validated by schema
@@ -233,7 +244,14 @@ milestone owns each finding.
   section D.
 - **Caveats:** the only adapter that runs here is `scripted` — every number is a
   scripted number; the holdout is sealed and unrun; 20 holdout scenarios support
-  a direction, not a confidence interval.
+  a direction, not a confidence interval. An **independent research and
+  reproducibility audit** (2026-10-08) reproduced the published numbers and
+  raised 23 findings across the harness, the scoring, the splits and the
+  statistics; seven are closed and **16 are still `pending`**, several against
+  `benchmark/scoring.py`, `splits.py`, `schema.py` and `runner.py` (ledger
+  P30–P52) — including three whose research-side half landed at `6cbd79d` while
+  the benchmark artefact is unchanged. A clean-checkout dependency gap it
+  exposed is closed (P53).
 - **Work:** a native evaluation schema authoritative for platform claims; the
   legacy SENTINEL suite preserved behind a versioned, read-only adapter; the
   allow-all reachability control generalized into the native harness; benchmark
