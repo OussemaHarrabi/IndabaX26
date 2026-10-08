@@ -1,0 +1,111 @@
+{
+  "generated_by": {
+    "method": "docker image inspect + importlib.metadata inside the image",
+    "note": "syft unavailable; hash-bearing equivalent manifest",
+    "tool": "scripts/generate_sbom.py",
+    "tool_version": "1.0.0"
+  },
+  "image": {
+    "architecture": "amd64",
+    "cmd": [
+      "python",
+      "-m",
+      "uvicorn",
+      "aegisgraph.app:app",
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "8080",
+      "--no-server-header"
+    ],
+    "created": "2026-10-08T17:31:15.946657112Z",
+    "entrypoint": null,
+    "id": "sha256:179c8913d1b4d373058048e719c553a17ae93a4dcc8b817a9c6dac36648b0c18",
+    "os": "linux",
+    "reference": "aegisgraph:m4",
+    "repo_digests": [
+      "aegisgraph@sha256:179c8913d1b4d373058048e719c553a17ae93a4dcc8b817a9c6dac36648b0c18"
+    ],
+    "size_bytes": 48548441,
+    "user": "10001:10001"
+  },
+  "packages": [
+    {
+      "name": "annotated-doc",
+      "record_sha256": "d0183be2a86b24c0b53c8c29be4be91f5efb42e587721c452bd3208dea5dbb2f",
+      "version": "0.0.5"
+    },
+    {
+      "name": "annotated-types",
+      "record_sha256": "32d25d8860ed8fb965af8c175f9f6d4579e6ab83de779f8fbd23b393e84fdbbb",
+      "version": "0.8.0"
+    },
+    {
+      "name": "anyio",
+      "record_sha256": "a6d76bf9fd7090d84b32341bd775fd3781ae57cb1a82588715dffc15d0440b42",
+      "version": "4.15.1"
+    },
+    {
+      "name": "click",
+      "record_sha256": "b90afc76921b79b4c0dd399dd27cc888dfa30c546186580c0d21f4d57a8050cc",
+      "version": "8.2.1"
+    },
+    {
+      "name": "fastapi",
+      "record_sha256": "ced73e55b5c36c6aa955be026a3327ac4ecf38a111a98b04cb71f99e93221d1b",
+      "version": "0.141.1"
+    },
+    {
+      "name": "h11",
+      "record_sha256": "fa83fcec506310ef27455d776ed1b5a86b14746f2c48bc7fd29f41d2320630ea",
+      "version": "0.16.0"
+    },
+    {
+      "name": "idna",
+      "record_sha256": "77bcfc480dfb04bc69e7b872fb0df190f632dfae56f1fa526b1ddb54cef08350",
+      "version": "3.20"
+    },
+    {
+      "name": "pydantic",
+      "record_sha256": "e1d9ec6c04feeed0b3b59316f725dd8fdc38524496075088d86179d4d1d3fc49",
+      "version": "2.13.5"
+    },
+    {
+      "name": "pydantic_core",
+      "record_sha256": "7b051cf70661d6536bcc16ef8f9cbf5a329017f0f77380527a9a096799ebc2ef",
+      "version": "2.46.5"
+    },
+    {
+      "name": "starlette",
+      "record_sha256": "8359a7a4c548a2ddf831b53f859d13edfc321727e01fcc93e0b48353ad21b385",
+      "version": "1.6.0"
+    },
+    {
+      "name": "typing-inspection",
+      "record_sha256": "10b95fa603fd228affa1e3a53ad980bdab4f7363bebabb36d67419864e7a1448",
+      "version": "0.4.4"
+    },
+    {
+      "name": "typing_extensions",
+      "record_sha256": "b2b29b17130655534d101b05b9a37c58b63c51a0d9fa09dfd0a3e3a6881d6a23",
+      "version": "4.16.0"
+    },
+    {
+      "name": "uvicorn",
+      "record_sha256": "ae4e094f42db8216d74b91fdfafef89cac0005b7ed631901f7d11e6b55602481",
+      "version": "0.35.0"
+    }
+  ],
+  "runtime": {
+    "python": "3.12.15"
+  },
+  "schema": "aegisgraph/sbom/v1",
+  "source": {
+    "commit": "d265243cdfd9ff2427b63ffd6ff9e6ad3d40609e",
+    "dirty": false,
+    "requirements_lock_sha256": "a01c371e13529b4f22b83dde47ade08ee76b13d85e5945fc8e93eb6b9ae22484"
+  },
+  "totals": {
+    "packages": 13
+  }
+}

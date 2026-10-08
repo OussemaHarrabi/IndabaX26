@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aegisgraph
+  labels:
+    # Enforce the Pod Security Admission "restricted" profile. The Deployment is
+    # written to satisfy it (non-root, no privilege escalation, dropped caps,
+    # RuntimeDefault seccomp, read-only root filesystem).
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

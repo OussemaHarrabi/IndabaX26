@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aegisgraph-config
+  labels:
+    app.kubernetes.io/name: aegisgraph
+    app.kubernetes.io/component: api
+data:
+  # Non-secret configuration only. Values mirror the Compose stack so the
+  # container behaves identically in both deployments.
+  #
+  # D5/D7: the unauthenticated legacy surface stays off; M2 will add the
+  # authenticated /api/v1 surface. Secrets (binding tokens, DB passwords) are
+  # NOT here — they arrive through the `aegisgraph-secrets` Secret, which this
+  # repository does not ship (see deploy/k8s/README.md).
+  AEGISGRAPH_LEGACY_UNAUTHENTICATED: "false"
+  AEGISGRAPH_LOG_LEVEL: "info"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+  OTEL_SERVICE_NAME: "aegisgraph-api"
+  # Telemetry is best-effort: the API must start when the collector is absent.
+  OTEL_SDK_DISABLED: "false"

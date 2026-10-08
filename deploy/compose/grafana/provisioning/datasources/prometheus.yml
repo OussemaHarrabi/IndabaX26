@@ -1,0 +1,14 @@
+# Provisioned Prometheus datasource (read-only from the UI).
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    # Fixed uid: the provisioned dashboard panels reference it directly.
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s
