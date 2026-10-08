@@ -1,7 +1,7 @@
 {
   "artifacts": {
-    "control.jsonl": "073dc61116cdf28d3c7d6b995778540d8331fc14c7515f0a6a7fc584c5efc1f7",
-    "outcomes.jsonl": "f2abd83d32538f0d0e1553ff9adcba9fc3708230503d75fe4bf1f313b94bff94"
+    "control.jsonl": "6b8fae405701b1c8f50f2a3d788439faa14dfedf1197eaaa88acbadd6b8338f6",
+    "outcomes.jsonl": "501f1b484945a1349696446b053c4d1506873e37c1e087ddf7bd109154577f10"
   },
   "auth": {
     "header": "Authorization",
@@ -12,11 +12,13 @@
   },
   "code": {
     "branch": "feat/m5-benchmark",
-    "commit": "a1cdfbc9af941dc37fda13dca30bcf4a6b331b0e"
+    "commit": "a94ce6f8003989884be2fb40d06dc99ac721763c",
+    "commit_source": "git-rev-parse-HEAD",
+    "dirty": false
   },
   "control": {
     "kind": "internal-allow-all",
-    "url": "http://127.0.0.1:50467"
+    "url": "http://127.0.0.1:63093"
   },
   "dataset": {
     "file_hashes": {
@@ -106,9 +108,10 @@
     "version_error": null
   },
   "dependency_lock": {
+    "hash_convention": "content-sha256-lf: sha256(bytes) with CRLF normalised to LF, no object header",
     "path": "requirements.lock",
     "present": true,
-    "sha256": "c4cdd63c7710ed24ab7f66d1011a600190e9abb0cc5701cc0a2024c046587c1c"
+    "sha256": "b49b8c5d328f5823f07f5aa96bbc63572376e857a982bff2050781d57b5f93fd"
   },
   "hardware": {
     "machine": "AMD64",
@@ -133,7 +136,7 @@
     "version": "1"
   },
   "policy": {
-    "blob_sha256": "80a5dfeb257142cb8a28517f4e3206acbe32d50530767b9e892b5f788a875151",
+    "blob_sha256": "53d663b1853673da6ccfa0e4e673dbaa196bcf2517d6c1517aa1268fea9153f1",
     "blob_sha256_reason": null,
     "blob_sha256_source": "the policy documents the requests pinned, hashed as one git blob over the canonical {policy-set-id:version -> document} map, computed by the benchmark before any gateway call",
     "document_digests": {
@@ -165,7 +168,7 @@
       "bench-f9facf0a1b7a0f73:1": "f9facf0a1b7a0f73"
     },
     "gate": "H5.2",
-    "hash_convention": "git-blob-sha256: sha256(b\"blob <len>\\0\" + content)",
+    "hash_convention": "content-sha256-lf: sha256(bytes) with CRLF normalised to LF, no object header",
     "policy_set_count": 26,
     "policy_sets": [
       "bench-12544af90acab204:1",
@@ -203,11 +206,11 @@
     "source": "scenario-derived, published to the tenant and pinned per request",
     "source_blobs": {
       "blobs": {
-        "backend/aegisgraph/adapter.py": "f9d4ea50fee5186ebc28dbd179fda27034a831c384f8a6626bb3ffd9d825f0db",
-        "backend/aegisgraph/engine.py": "01a1b928f32ae4b64ed179e930652f2e559fa898886ebe7f40cb044dcb527517",
-        "backend/aegisgraph/policy.py": "9b2745d81d4b668d5173a39fd1fd940b9bbbc7c4a1ed368c10f76bb7cee69d90"
+        "backend/aegisgraph/adapter.py": "6a3f1a0c8788203d6e7377d1b00639d36e48ae241ef40ba0b0bff4ebe8983794",
+        "backend/aegisgraph/engine.py": "d4bfdc0dee0cc0dda14f0c38ce4b9bda912233f38e3fdd8d821264eb03e9f6f1",
+        "backend/aegisgraph/policy.py": "a072f462da4a9dc0e2a2ea5468a536f16b4391a9cb7af62958af2287222cb1be"
       },
-      "convention": "git-blob-sha256: sha256(b\"blob <len>\\0\" + content)",
+      "convention": "content-sha256-lf: sha256(bytes) with CRLF normalised to LF, no object header",
       "missing": [],
       "missing_reason": null
     }
@@ -217,10 +220,10 @@
     "version": "1"
   },
   "run": {
-    "created": "2026-10-08T19:34:14Z",
+    "created": "2026-10-08T19:48:54Z",
     "created_with": "mkdir(exist_ok=False)",
     "immutable": true,
-    "name": "20261008T210000Z-m2-authenticated-full"
+    "name": "20261008T230000Z-m2-authenticated-full"
   },
   "scenario_policy_sets": [
     "bench_enterprise/1",
