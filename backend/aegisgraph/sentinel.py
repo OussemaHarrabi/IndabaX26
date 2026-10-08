@@ -27,6 +27,8 @@ from aegisgraph.contracts import (
     REASON_CODE_PATTERN,
     ArgumentValue,
     FrozenDict,
+    GuardDecision,
+    Verdict,
     _freeze_json_mapping,
     _thaw_json,
 )
@@ -231,3 +233,14 @@ DefenseRequest = SentinelRequest
 DefenseDecision = SentinelResponse
 SentinelDefenseRequest = SentinelRequest
 SentinelDefenseResponse = SentinelResponse
+
+MAX_RESPONSE_BYTES = 64_000
+
+
+def wire_response(decision: GuardDecision) -> SentinelResponse:
+    """Translate a canonical engine decision into the strict public response."""
+
+    payload = decision.model_dump(mode="json")
+    payload["decision"] = Verdict(decision.verdict).value
+    payload.pop("verdict", None)
+    return SentinelResponse.model_validate(payload)

@@ -5,7 +5,7 @@ from typing import Any
 import aegisgraph.engine as engine
 import pytest
 from aegisgraph.adapter import adapt_request
-from aegisgraph.contracts import CandidateAction, Sensitivity, TrustLevel
+from aegisgraph.contracts import CandidateAction, ConfirmationMode, Sensitivity, TrustLevel
 from aegisgraph.engine import decide, validate_rewrite
 from aegisgraph.policy import parse_policy_facts
 from aegisgraph.sentinel import SentinelRequest
@@ -535,6 +535,14 @@ def test_confirmation_must_match_the_exact_canonical_action_digest() -> None:
     assert decide(request).verdict == "allow"
     assert decide(request).reason_codes == ("CONFIRMATION_VERIFIED",)
     assert decide(wrong).verdict == "escalate"
+
+    # M1: a bare canonical digest is accepted only by the legacy trusted-caller
+    # mode of the frozen SENTINEL wire. The generic surface binds confirmation to
+    # the run, step, exact execution digest and expiry, so the same request must
+    # escalate there (F6). See docs/api/contracts.md.
+    strict = decide(request, confirmation_mode=ConfirmationMode.STRICT)
+    assert strict.verdict == "escalate"
+    assert strict.reason_codes == ("CONFIRMATION_REQUIRED",)
 
 
 @pytest.mark.parametrize("kind", ["retrieval_result", "tool_result", "memory_read"])

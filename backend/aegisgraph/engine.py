@@ -1,19 +1,24 @@
 """Deterministic security decisions for proposed agent actions."""
 
 import re
-from dataclasses import replace
+import time
+from dataclasses import dataclass, replace
 from enum import IntEnum
 from typing import Final
 
-from aegisgraph.adapter import AdaptedRequest, adapt_request
+from aegisgraph.adapter import AdaptedRequest, adapt_request, canonical_action
 from aegisgraph.contracts import (
     ActionKind,
     CandidateAction,
+    ConfirmationMode,
     GuardDecision,
     Observation,
     Sensitivity,
     TrustLevel,
     Verdict,
+    action_digest,
+    confirmation_grant_binds,
+    exact_action_digest,
 )
 from aegisgraph.policy import (
     PolicyFacts,
@@ -151,6 +156,13 @@ _DANGLING_ACTION_REFERENCE = re.compile(
     re.IGNORECASE,
 )
 _EMAIL_ADDRESS = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
+# F4: ``_EMAIL_ADDRESS.findall`` backtracks quadratically over a long run of
+# local-part characters. Address extraction therefore walks maximal runs of the
+# address character set and inspects a bounded window around the first ``@``.
+_EMAIL_RUN = re.compile(r"[A-Za-z0-9._%+@_-]+")
+_EMAIL_WINDOW_CHARS = 512
+_MAX_EMAIL_SCAN_CHARS = 65_536
+_MAX_EMAIL_ADDRESSES = 32
 _REPORTED_EMAIL_ACTION = re.compile(
     r"\b(?:draft(?:ed)?|prepar(?:ed|e)|sent|emailed|forwarded)\b", re.IGNORECASE
 )
@@ -342,9 +354,71 @@ class ClauseDisposition(IntEnum):
     ACTIVE = 2
 
 
-def decide(request: SentinelRequest) -> GuardDecision:
+@dataclass(frozen=True)
+class EvaluationOptions:
+    """Per-call evaluation context that must not change policy semantics."""
+
+    confirmation_mode: ConfirmationMode = ConfirmationMode.LEGACY
+    now_epoch: int = 0
+
+
+@dataclass(frozen=True)
+class EvaluatedDecision:
+    """A decision plus the identity of the exact action it was taken for."""
+
+    decision: GuardDecision
+    action_digest: str
+    execution_digest: str
+
+
+def evaluate(
+    request: SentinelRequest,
+    *,
+    confirmation_mode: ConfirmationMode = ConfirmationMode.LEGACY,
+    now_epoch: int | None = None,
+) -> EvaluatedDecision:
+    """Evaluate one request and return the decision with its action identity.
+
+    ``confirmation_mode`` selects how confirmation grants are matched. The
+    default keeps the frozen legacy SENTINEL behaviour (a bare canonical digest
+    from a trusted caller); ``STRICT`` requires a grant bound to the run, step,
+    exact execution digest and an expiry, and rejects everything else.
+    """
+
+    options = EvaluationOptions(
+        confirmation_mode=confirmation_mode,
+        now_epoch=int(time.time()) if now_epoch is None else now_epoch,
+    )
+    canonical = _canonical_action_or_empty(request)
+    return EvaluatedDecision(
+        decision=_decide(request, options),
+        action_digest=action_digest(canonical),
+        execution_digest=exact_action_digest(canonical),
+    )
+
+
+def decide(
+    request: SentinelRequest,
+    *,
+    confirmation_mode: ConfirmationMode = ConfirmationMode.LEGACY,
+    now_epoch: int | None = None,
+) -> GuardDecision:
     """Evaluate one SENTINEL request without side effects or external calls."""
 
+    return evaluate(
+        request, confirmation_mode=confirmation_mode, now_epoch=now_epoch
+    ).decision
+
+
+def _canonical_action_or_empty(request: SentinelRequest) -> CandidateAction:
+    try:
+        return canonical_action(request.candidate_action)
+    except Exception:
+        # Unreachable for a validated request; an identity is still required.
+        return CandidateAction(type=ActionKind.RESPOND, content="")
+
+
+def _decide(request: SentinelRequest, options: EvaluationOptions) -> GuardDecision:
     try:
         adapted = adapt_request(request)
     except Exception:
@@ -360,7 +434,7 @@ def decide(request: SentinelRequest) -> GuardDecision:
             "The policy context could not be safely validated.",
         )
     try:
-        return _evaluate(adapted, facts, skip_confirmation=False)
+        return _evaluate(adapted, facts, skip_confirmation=False, options=options)
     except Exception:
         return _failure_decision(
             "INTERNAL_EVALUATION_FAILED",
@@ -368,9 +442,19 @@ def decide(request: SentinelRequest) -> GuardDecision:
         )
 
 
-def validate_rewrite(request: SentinelRequest, rewritten_action: CandidateAction) -> GuardDecision:
+def validate_rewrite(
+    request: SentinelRequest,
+    rewritten_action: CandidateAction,
+    *,
+    confirmation_mode: ConfirmationMode = ConfirmationMode.LEGACY,
+    now_epoch: int | None = None,
+) -> GuardDecision:
     """Close the organizer rewrite trap by revalidating the exact replacement."""
 
+    options = EvaluationOptions(
+        confirmation_mode=confirmation_mode,
+        now_epoch=int(time.time()) if now_epoch is None else now_epoch,
+    )
     try:
         adapted = adapt_request(request)
     except Exception:
@@ -386,7 +470,7 @@ def validate_rewrite(request: SentinelRequest, rewritten_action: CandidateAction
             "The policy context could not be safely validated.",
         )
     try:
-        return _validate_rewrite(adapted, facts, rewritten_action)
+        return _validate_rewrite(adapted, facts, rewritten_action, options=options)
     except Exception:
         return _failure_decision(
             "INTERNAL_EVALUATION_FAILED",
@@ -395,7 +479,11 @@ def validate_rewrite(request: SentinelRequest, rewritten_action: CandidateAction
 
 
 def _validate_rewrite(
-    adapted: AdaptedRequest, facts: PolicyFacts, rewritten_action: CandidateAction
+    adapted: AdaptedRequest,
+    facts: PolicyFacts,
+    rewritten_action: CandidateAction,
+    *,
+    options: EvaluationOptions,
 ) -> GuardDecision:
     original = adapted.request.candidate_action
     if not original.final and rewritten_action.final:
@@ -412,7 +500,7 @@ def _validate_rewrite(
     ):
         return _block("REWRITE_FINAL_ACTION_CHANGED", 1.0, adapted)
 
-    original_decision = _evaluate(adapted, facts, skip_confirmation=False)
+    original_decision = _evaluate(adapted, facts, skip_confirmation=False, options=options)
     if VERDICT_SEVERITY[original_decision.verdict.value] > VERDICT_SEVERITY[Verdict.ALLOW.value]:
         return GuardDecision(
             verdict=Verdict.BLOCK,
@@ -428,7 +516,7 @@ def _validate_rewrite(
 
     rewritten_request = adapted.request.model_copy(update={"candidate_action": rewritten_action})
     rewritten = replace(adapted, request=rewritten_request)
-    evaluated = _evaluate(rewritten, facts, skip_confirmation=False)
+    evaluated = _evaluate(rewritten, facts, skip_confirmation=False, options=options)
     if evaluated.verdict is not Verdict.ALLOW:
         return GuardDecision(
             verdict=Verdict.BLOCK,
@@ -445,7 +533,7 @@ def _validate_rewrite(
     if (
         rewritten_effect > original_effect
         and rewritten_effect >= ActionEffect.WRITE
-        and rewritten_action.digest() not in adapted.confirmations_granted
+        and not _confirmation_is_granted(rewritten_action, adapted, options)
     ):
         return _block("REWRITE_EFFECT_ESCALATION", 0.98, adapted)
     return GuardDecision(
@@ -460,7 +548,11 @@ def _validate_rewrite(
 
 
 def _evaluate(
-    adapted: AdaptedRequest, facts: PolicyFacts, *, skip_confirmation: bool
+    adapted: AdaptedRequest,
+    facts: PolicyFacts,
+    *,
+    skip_confirmation: bool,
+    options: EvaluationOptions,
 ) -> GuardDecision:
     if not facts.valid:
         return _block("POLICY_CONTEXT_INVALID", 0.98, adapted)
@@ -476,7 +568,9 @@ def _evaluate(
             return _block("INVALID_CONFIRMATION_TARGET", 1.0, adapted)
         targeted_request = adapted.request.model_copy(update={"candidate_action": target})
         target_adapted = replace(adapted, request=targeted_request)
-        target_result = _evaluate(target_adapted, facts, skip_confirmation=True)
+        target_result = _evaluate(
+            target_adapted, facts, skip_confirmation=True, options=options
+        )
         if target_result.verdict is not Verdict.ALLOW:
             return target_result
         return _decision(
@@ -499,18 +593,20 @@ def _evaluate(
     if _is_sensitive_external_flow(action, adapted, facts):
         return _block("SENSITIVE_DATA_EXFILTRATION", 1.0, adapted)
 
-    redacted = _redact_sensitive_flow(action, adapted, facts, skip_confirmation=skip_confirmation)
+    redacted = _redact_sensitive_flow(
+        action, adapted, facts, skip_confirmation=skip_confirmation, options=options
+    )
     if redacted is not None:
         return redacted
 
     authority_redacted = _redact_untrusted_authority(
-        action, adapted, facts, skip_confirmation=skip_confirmation
+        action, adapted, facts, skip_confirmation=skip_confirmation, options=options
     )
     if authority_redacted is not None:
         return authority_redacted
 
     if action.type is ActionKind.TOOL_CALL and requires_confirmation(action, facts):
-        if not skip_confirmation and action.digest() not in adapted.confirmations_granted:
+        if not skip_confirmation and not _confirmation_is_granted(action, adapted, options):
             return _decision(
                 Verdict.ESCALATE,
                 0.72,
@@ -552,6 +648,34 @@ def _evaluate(
     )
 
 
+def _confirmation_is_granted(
+    action: CandidateAction, adapted: AdaptedRequest, options: EvaluationOptions
+) -> bool:
+    """Return whether the caller granted confirmation for exactly this action.
+
+    ``LEGACY`` matches the bare canonical digest of the action, which is the
+    trusted-caller behaviour of the frozen SENTINEL wire (the canonical digest is
+    not injective and the grant is unbound, unexpiring and reusable). ``STRICT``
+    requires a grant bound to the run, the step, the exact execution digest and an
+    unexpired timestamp; malformed or bare grants are treated as "not granted" so
+    the action escalates instead of being allowed.
+    """
+
+    if options.confirmation_mode is ConfirmationMode.LEGACY:
+        return action.digest() in adapted.confirmations_granted
+    execution_digest = exact_action_digest(action)
+    return any(
+        confirmation_grant_binds(
+            value,
+            run_id=adapted.run_id,
+            step_id=adapted.step_id,
+            execution_digest=execution_digest,
+            now_epoch=options.now_epoch,
+        )
+        for value in adapted.confirmations_granted
+    )
+
+
 def _is_sensitive_external_flow(
     action: CandidateAction, adapted: AdaptedRequest, facts: PolicyFacts
 ) -> bool:
@@ -569,6 +693,7 @@ def _redact_sensitive_flow(
     facts: PolicyFacts,
     *,
     skip_confirmation: bool,
+    options: EvaluationOptions,
 ) -> GuardDecision | None:
     if action.type is ActionKind.RESPOND and action.content is not None:
         surface = "response"
@@ -605,7 +730,9 @@ def _redact_sensitive_flow(
     rewritten_action = CandidateAction.model_validate(action_data)
     rewritten_request = adapted.request.model_copy(update={"candidate_action": rewritten_action})
     rewritten = replace(adapted, request=rewritten_request)
-    evaluated = _evaluate(rewritten, facts, skip_confirmation=skip_confirmation)
+    evaluated = _evaluate(
+        rewritten, facts, skip_confirmation=skip_confirmation, options=options
+    )
     if evaluated.verdict is not Verdict.ALLOW:
         return _block("REDACTION_REVALIDATION_FAILED", 1.0, adapted)
     return GuardDecision(
@@ -637,6 +764,7 @@ def _redact_untrusted_authority(
     facts: PolicyFacts,
     *,
     skip_confirmation: bool,
+    options: EvaluationOptions,
 ) -> GuardDecision | None:
     """Keep untrusted operational claims out of the agent's narrative sinks.
 
@@ -697,7 +825,9 @@ def _redact_untrusted_authority(
     rewritten_action = CandidateAction.model_validate(action_data)
     rewritten_request = adapted.request.model_copy(update={"candidate_action": rewritten_action})
     rewritten = replace(adapted, request=rewritten_request)
-    evaluated = _evaluate(rewritten, facts, skip_confirmation=skip_confirmation)
+    evaluated = _evaluate(
+        rewritten, facts, skip_confirmation=skip_confirmation, options=options
+    )
     if evaluated.verdict is not Verdict.ALLOW:
         return _block("AUTHORITY_REVALIDATION_FAILED", 1.0, adapted)
     return GuardDecision(
@@ -712,6 +842,33 @@ def _redact_untrusted_authority(
         rewritten_action=rewritten_action,
         metadata=evaluated.metadata,
     )
+
+
+def _email_addresses(value: str) -> set[str]:
+    """Return the lowercase email addresses in ``value`` in linear time.
+
+    ``_EMAIL_ADDRESS.findall`` newly scanned the whole string at every start
+    position once a long run of local-part characters appeared, which is
+    quadratic in the run length (F4: 163 s of event-loop blockage for one 2 MiB
+    request). Splitting on the address character set and inspecting a bounded
+    window around the first ``@`` of each run preserves the match syntax for any
+    realistic address while bounding the work per input character.
+    """
+
+    addresses: set[str] = set()
+    scanned = 0
+    for run_match in _EMAIL_RUN.finditer(value):
+        if scanned >= _MAX_EMAIL_SCAN_CHARS or len(addresses) >= _MAX_EMAIL_ADDRESSES:
+            break
+        run = run_match.group()
+        at = run.find("@")
+        if at < 0:
+            continue
+        half = _EMAIL_WINDOW_CHARS // 2
+        window = run[max(0, at - half) : at + half].lower()
+        scanned += len(window)
+        addresses.update(match.group() for match in _EMAIL_ADDRESS.finditer(window))
+    return addresses
 
 
 def _is_laundered_claim(sentence: str, sources: tuple[str, ...], user_goal: str) -> bool:
@@ -733,7 +890,7 @@ def _is_laundered_claim(sentence: str, sources: tuple[str, ...], user_goal: str)
             for name, pattern in _UNTRUSTED_CLAIM_PATTERNS.items()
         ):
             return True
-        source_addresses = set(_EMAIL_ADDRESS.findall(source.lower()))
+        source_addresses = _email_addresses(source)
         if (
             source_addresses
             and _REPORTED_EMAIL_ACTION.search(sentence)
