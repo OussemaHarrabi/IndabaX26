@@ -120,7 +120,7 @@ residual-contamination findings are in
 | Gap | State |
 | --- | --- |
 | Demo video | not recorded |
-| Compiled report PDF inside the repository | was a dead link; the orchestrator restored `output/pdf/AegisGraph-SENTINEL-Technical-Report.pdf` (SHA-256 `69035d0099cefe8cb1d58499dbf613c288a4e2a67352db1b3f16d0a2cc975c4f`), per `docs/evidence/m0-baseline-report.md` |
+| Compiled report PDF inside the repository | was a dead link; the orchestrator restored it unchanged at [`output/pdf/AegisGraph-SENTINEL-Technical-Report.pdf`](../../output/pdf/AegisGraph-SENTINEL-Technical-Report.pdf) (SHA-256 `69035d0099cefe8cb1d58499dbf613c288a4e2a67352db1b3f16d0a2cc975c4f`). It was compiled from `REPORT.tex` at the legacy baseline and was **not regenerated**, per `docs/evidence/m0-baseline-report.md` |
 | Live organizer-validator run | pending |
 | Live Docker-engine run | unverified at submission |
 | Manifest validation | team field populated; live validation pending |

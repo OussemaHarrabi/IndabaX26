@@ -3,7 +3,7 @@
 - **Status:** proposed
 - **Date:** 2026-10-08
 - **Deciders:** architecture lead (proposal), platform engineer, orchestrator
-- **Milestone:** M7
+- **Milestone:** M4 (CI/CD + containers + deployment)
 
 ## Context
 

@@ -3,7 +3,7 @@
 - **Status:** proposed
 - **Date:** 2026-10-08
 - **Deciders:** architecture lead (proposal), security reviewer, orchestrator
-- **Milestone:** M1 (contract), M6 (adapter)
+- **Milestone:** M1 (contracts + enforcement)
 
 ## Context
 
@@ -60,5 +60,5 @@ Make digest binding the enforcement contract:
   matter), so callers must pass the action through unchanged.
 - **Neutral:** the legacy wire contract is unchanged; receipt fields are additive
   and versioned.
-- **Blocked:** the enforcement adapter and SDK are M6; until then the platform is
+- **Blocked:** the enforcement adapter and SDK land in M1; until then the platform is
   decision-only and this ADR records the commitment, not a working guarantee.

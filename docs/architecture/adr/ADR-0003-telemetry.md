@@ -3,7 +3,7 @@
 - **Status:** proposed
 - **Date:** 2026-10-08
 - **Deciders:** architecture lead (proposal), platform/telemetry engineer, orchestrator
-- **Milestone:** M4
+- **Milestone:** M3 (observability + reliability)
 
 ## Context
 

@@ -87,7 +87,7 @@ must not be exposed directly to an untrusted network.
 | `GET` | `/healthz` | Liveness probe | implemented (`backend/aegisgraph/app.py:79`) |
 | `POST` | `/v1/decision` | One bounded policy decision for one proposed action | implemented (`backend/aegisgraph/app.py:84`) |
 | `POST` | `/v1/receipts` | Persist and query decision receipts | proposed (roadmap M2) |
-| `GET` | `/v1/policies` | List/version installed policy | proposed (roadmap M1) |
+| `GET` | `/v1/policies` | List/version installed policy | proposed (roadmap M2) |
 
 **Request envelope** (`SentinelRequest`, `backend/aegisgraph/sentinel.py:159`):
 `run_id`, `step_id`, `user_goal`, `candidate_action`, `policy_context`,
@@ -250,6 +250,8 @@ Legacy measurement details, runtime configuration and reproduction commands are
 in [`docs/legacy/sentinel-challenge.md`](docs/legacy/sentinel-challenge.md) and
 [`evaluation/real-qwen/README.md`](evaluation/real-qwen/README.md). The compiled
 legacy report PDF is restored by the orchestrator at
-`output/pdf/AegisGraph-SENTINEL-Technical-Report.pdf`; its source is
-[`REPORT.tex`](REPORT.tex). The owner reports being registered solo for the
+[`output/pdf/AegisGraph-SENTINEL-Technical-Report.pdf`](output/pdf/AegisGraph-SENTINEL-Technical-Report.pdf)
+(SHA-256 `69035d00…cc975c4f`, restored on the integration branch; it was compiled
+from [`REPORT.tex`](REPORT.tex) at the legacy baseline and was **not
+regenerated**). The owner reports being registered solo for the
 challenge; no team members are invented.

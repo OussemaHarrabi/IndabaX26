@@ -3,7 +3,7 @@
 - **Status:** proposed
 - **Date:** 2026-10-08
 - **Deciders:** architecture lead (proposal), evaluation engineer, orchestrator
-- **Milestone:** M5
+- **Milestone:** M5 (evaluation framework + benchmark data)
 
 ## Context
 
