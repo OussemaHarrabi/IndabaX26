@@ -252,6 +252,104 @@ def test_published_schema_matches_the_live_generic_contract() -> None:
     ]
 
 
+def test_decision_record_reaches_the_process_stream_through_a_real_handler(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """F7: the record must actually be emitted, not only captured by pytest."""
+
+    client.post(
+        "/api/v1/decisions",
+        json=_request({"type": "respond", "content": "Ok"}, request_id="emitted-1"),
+    )
+    capsys.readouterr()
+
+    response = client.post(
+        "/api/v1/decisions",
+        json=_request({"type": "respond", "content": "Ok"}, request_id="emitted-2"),
+    )
+    captured = capsys.readouterr().out
+
+    lines = [line for line in captured.splitlines() if '"event":"decision"' in line]
+    assert len(lines) == 1, captured
+    event = json.loads(lines[0])
+    assert event["request_id"] == "emitted-2"
+    assert event["receipt_id"] == response.json()["receipt_id"]
+    assert event["verdict"] == "allow"
+    assert set(event) == {
+        "event",
+        "request_id",
+        "receipt_id",
+        "policy_set",
+        "verdict",
+        "reason_codes",
+        "action_digest",
+        "execution_digest",
+        "latency_ms",
+        "caller",
+    }
+
+
+def test_application_configures_one_decision_handler_and_honours_the_log_level(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logger = logging.getLogger("aegisgraph")
+    handlers = [
+        handler
+        for handler in logger.handlers
+        if handler.get_name() == app_module._DECISION_HANDLER_NAME
+    ]
+
+    assert len(handlers) == 1
+    assert handlers[0].level == logging.INFO
+    assert logger.level == logging.INFO
+
+    app_module.configure_logging()
+    app_module.configure_logging()
+    assert (
+        len([h for h in logger.handlers if h.get_name() == app_module._DECISION_HANDLER_NAME]) == 1
+    )
+
+    monkeypatch.setenv(app_module.LOG_LEVEL_ENV, "warning")
+    assert app_module.log_level() == logging.WARNING
+    app_module.configure_logging()
+    assert handlers[0].level == logging.WARNING
+    monkeypatch.setenv(app_module.LOG_LEVEL_ENV, "not-a-level")
+    assert app_module.log_level() == app_module.DEFAULT_LOG_LEVEL
+    monkeypatch.setenv(app_module.LOG_LEVEL_ENV, "INFO")
+    app_module.configure_logging()
+
+
+def test_importing_library_modules_does_not_configure_global_logging() -> None:
+    import importlib
+
+    engine_module = importlib.import_module("aegisgraph.engine")
+    logging.getLogger("aegisgraph.engine")
+
+    assert engine_module.__name__ == "aegisgraph.engine"
+    # Only the application boundary owns the handler name.
+    assert not any(
+        handler.get_name() == app_module._DECISION_HANDLER_NAME
+        for handler in logging.getLogger("aegisgraph.engine").handlers
+    )
+
+
+def test_build_identity_comes_from_the_environment_when_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(api_v1.BUILD_VERSION_ENV, "1.2.3")
+    monkeypatch.setenv(api_v1.BUILD_COMMIT_ENV, "abc1234")
+
+    build = client.get("/api/v1/version").json()["build"]
+
+    assert build == {"service": "aegisgraph", "version": "1.2.3", "commit": "abc1234"}
+
+    monkeypatch.delenv(api_v1.BUILD_VERSION_ENV)
+    monkeypatch.delenv(api_v1.BUILD_COMMIT_ENV)
+    build = client.get("/api/v1/version").json()["build"]
+    assert build["version"] != "1.2.3"
+    assert build["commit"] == "unknown"
+
+
 def test_generic_boundary_fails_closed_without_leaking_internals(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
