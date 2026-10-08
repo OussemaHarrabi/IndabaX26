@@ -30,7 +30,36 @@ additionally keeps a copy that the retention procedure redacts — see
 The frozen legacy `POST /v1/decision` wire is intentionally **not** receipt-bearing:
 its measured behaviour is preserved byte for byte.
 
-## 2. Idempotency
+## 2. `request_id` versus `receipt_id` (H2-05)
+
+| Field | Who computes it | Role |
+| --- | --- | --- |
+| `request_id` | the **caller**, or the server when omitted | the caller's correlation and idempotency key; preserved verbatim by design |
+| `receipt_id` | the **server** (`uuid4().hex`) | the decision identity the audit trail and the enforcement SDK key on |
+
+A caller-supplied `request_id` is preserved rather than replaced because it is the
+idempotency key: a client that retries a request after a timeout must be able to
+present the same value and receive the same receipt instead of a second decision.
+Replacing it server-side would make a safe retry impossible.
+
+It is safe for correlation because:
+
+* receipts are keyed by `(tenant_id, request_id)`, so the value is tenant-scoped and
+  two tenants can never collide;
+* a reused `request_id` carrying a *different* action is refused with
+  `409 REQUEST_ID_CONFLICT` and audited, so a value can never be re-pointed at
+  another decision;
+* the authoritative decision identity is the server-computed `receipt_id`, which
+  appears in the decision record, in `GET /api/v1/receipts`, and in the receipt the
+  SDK verifies. A client cannot choose it, and no other field is derived from
+  `request_id`.
+
+When the caller omits `request_id`, the server generates a 32-hex value, so the
+response and the receipt always carry one. The behaviour is pinned by
+`tests/test_receipts_api.py::test_a_caller_supplied_request_id_is_preserved_by_design`
+and `::test_an_omitted_request_id_is_generated_by_the_server`.
+
+## 3. Idempotency
 
 * The same `request_id` with the same action returns the stored receipt — same
   `receipt_id`, `decided_at` and `valid_until` — and writes no second row. Two
@@ -44,7 +73,7 @@ its measured behaviour is preserved byte for byte.
 A decision that cannot be persisted is not returned as if it had been:
 `503 RECEIPT_STORE_UNAVAILABLE` is returned instead.
 
-## 3. Endpoints
+## 4. Endpoints
 
 All of them are tenant-scoped from the credential. A row belonging to another tenant
 is reported as `404`, not `403`, so the surface is not a cross-tenant existence
@@ -149,7 +178,7 @@ The most recent audit events for the tenant, newest first, bounded by `limit`
 
 `audit_events` is append-only at the database level, like `receipts`.
 
-## 4. Readiness
+## 5. Readiness
 
 `GET /healthz` stays a bare liveness probe: `{"status": "ok"}`. Dependency
 readiness is reported by the separate, unauthenticated `GET /readyz`:
@@ -175,7 +204,7 @@ readiness is reported by the separate, unauthenticated `GET /readyz`:
 or when a development process runs without authentication. The body contains no
 secret material: no token, no digest, no key, no database URL.
 
-## 5. Enforcement
+## 6. Enforcement
 
 `backend/aegisgraph/enforcement.py` is unchanged: pass the receipt mapping the
 service returned to `enforce()`/`execute_guarded()` together with the exact

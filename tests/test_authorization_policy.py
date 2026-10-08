@@ -356,3 +356,69 @@ def test_the_audit_trail_accepts_either_read_scope_and_names_the_missing_ones(
             "/api/v1/audit-events", headers=auth.header(role=role, tenant=TENANT)
         )
         assert trail.status_code == 200
+
+
+def test_the_receipt_identity_is_server_resolved_and_cannot_be_forged(
+    auth: AuthHarness,
+) -> None:
+    """H2-02 regression: the caller cannot make a receipt claim another policy version."""
+
+    seed_policy_set(TENANT, policy_id="stored-policy", version="1", document=SERVER_POLICY)
+    # Even a caller holding the override scope cannot invent an identity.
+    forger = auth.header(
+        role="decision_client", tenant=TENANT, scopes=(SCOPE_POLICY_CONTEXT_OVERRIDE,)
+    )
+    forged = client.post(
+        "/api/v1/decisions",
+        json=decision_payload(
+            request_id="forged-policy", policy_set={"id": "stored-policy", "version": "2"}
+        ),
+        headers=forger,
+    )
+
+    assert forged.status_code == 422
+    assert forged.json()["code"] == "POLICY_SET_UNKNOWN"
+
+    unknown = client.post(
+        "/api/v1/decisions",
+        json=decision_payload(
+            request_id="forged-policy", policy_set={"id": "ghost", "version": "9"}
+        ),
+        headers=forger,
+    )
+    assert unknown.status_code == 422
+
+    accepted = client.post(
+        "/api/v1/decisions",
+        json=decision_payload(
+            request_id="named-policy", policy_set={"id": "stored-policy", "version": "1"}
+        ),
+        headers=forger,
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()["policy_set"] == {"id": "stored-policy", "version": "1"}
+
+    # No refused request may leave a receipt behind, so no receipt can claim a
+    # policy version that did not decide.
+    auditor = auth.header(role="auditor", tenant=TENANT)
+    items = client.get("/api/v1/receipts?limit=100", headers=auditor).json()["items"]
+    assert [item["request_id"] for item in items] == ["named-policy"]
+    assert items[0]["policy_set"] == {"id": "stored-policy", "version": "1"}
+
+
+def test_the_version_endpoint_reports_the_servers_identity_regardless_of_caller_input(
+    auth: AuthHarness,
+) -> None:
+    """H2-02: ``/api/v1/version`` has no caller-controlled identity channel."""
+
+    headers = auth.header(role="decision_client", tenant=TENANT)
+
+    plain = client.get("/api/v1/version", headers=headers)
+    influenced = client.get(
+        "/api/v1/version?policy_set=ghost&version=9",
+        headers={**headers, "x-aegisgraph-policy-set": "ghost/9"},
+    )
+
+    assert plain.status_code == 200
+    assert plain.json()["policy_set"] == {"id": "aegisgraph-default", "version": "1"}
+    assert influenced.json()["policy_set"] == plain.json()["policy_set"]

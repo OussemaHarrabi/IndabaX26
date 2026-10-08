@@ -148,19 +148,27 @@ def test_response_digests_describe_the_exact_candidate_action() -> None:
     assert body["execution_digest"] == action.execution_digest()
 
 
-def test_request_policy_set_is_echoed_and_defaults_to_the_server_policy_set() -> None:
-    pinned = client.post(
+def test_request_policy_set_must_name_a_stored_policy_and_the_default_is_the_servers() -> None:
+    """H2-02: the reported identity is a server value, never a caller-asserted one.
+
+    A caller that names a policy version the server does not hold is refused
+    (``422 POLICY_SET_UNKNOWN``), so a receipt can never claim a policy identity
+    that did not decide. Naming nothing reports the server's default identity.
+    """
+
+    unbacked = client.post(
         "/api/v1/decisions",
         json=_request(
             {"type": "respond", "content": "Ok"},
             policy_set={"id": "tenant-policy", "version": "7"},
         ),
-    ).json()
+    )
     default = client.post(
         "/api/v1/decisions", json=_request({"type": "respond", "content": "Ok"})
     ).json()
 
-    assert pinned["policy_set"] == {"id": "tenant-policy", "version": "7"}
+    assert unbacked.status_code == 422
+    assert unbacked.json()["code"] == "POLICY_SET_UNKNOWN"
     assert default["policy_set"] == api_v1.DEFAULT_POLICY_SET.model_dump(mode="json")
 
 
