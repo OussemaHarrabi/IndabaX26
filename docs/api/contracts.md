@@ -135,6 +135,18 @@ or higher suppresses the decision records, which are emitted at `INFO`.
 | `policy_context` | 16 384 JSON bytes | request model |
 | `metadata` | 4 096 JSON bytes | response model |
 | tool arguments | 32 entries, 8 000 chars per string value | request model |
+| Narrative sentences scanned per evaluation pass | 2 048 (`_MAX_NARRATIVE_SENTENCES`) | narrative-authority guard |
+| Untrusted sources profiled per evaluation | one profile per distinct source | narrative-authority guard |
+
+The narrative-authority guard costs one evaluation per `(sentence, source)` pair,
+so both factors are bounded. Each distinct untrusted source is profiled once per
+evaluation (claim-pattern matches, addresses outside the authenticated goal, and a
+lazily computed instruction classification), and a narrative surface with more
+than 2 048 sentences cannot be verified cheaply: it is **not** scanned and the
+decision is `block` / `NARRATIVE_SCAN_BUDGET_EXCEEDED`. This is a deliberate
+fail-closed trade-off — silently truncating the scan would let a padded narrative
+carry a laundered claim past the guard. A redaction's revalidation pass shares the
+source profiles but gets its own sentence budget.
 
 | Status | Meaning | Body |
 | --- | --- | --- |

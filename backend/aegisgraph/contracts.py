@@ -28,6 +28,8 @@ MAX_CONTENT_CHARS = 16_000
 MAX_CONTEXT_BYTES = 16_384
 MAX_METADATA_BYTES = 4_096
 REASON_CODE_PATTERN = r"^[A-Z][A-Z0-9_]{1,63}$"
+_DECIMAL = re.compile(r"[0-9]+")
+"""ASCII decimal only: ``str.isdigit`` accepts superscripts that ``int`` rejects."""
 
 ArgumentValue = str | int | float | bool | None
 
@@ -293,7 +295,7 @@ def parse_confirmation_grant(value: str) -> ConfirmationGrant | None:
     if len(parts) != 4:
         return None
     run_id, step_text, digest, expiry_text = parts
-    if not run_id or not step_text.isdigit() or not expiry_text.isdigit():
+    if not run_id or not _DECIMAL.fullmatch(step_text) or not _DECIMAL.fullmatch(expiry_text):
         return None
     if re.fullmatch(r"[0-9a-f]{24}", digest) is None:
         return None

@@ -40,7 +40,6 @@ Score unchanged: `core = official_score = 0.953956`, `robustness 1.0`,
 The `3313641` measurement reports the same digest, the same decision mix and the
 same score.
 
-
 ## Reading
 
 1. **The M1 changes do not move the legacy benchmark.** The deterministic digest
@@ -74,6 +73,14 @@ same score.
    introduce or remove it. The same mismatch, with the same cause, is recorded in
    `evaluation/m0-recheck/README.md`.
 
+5. **The H2-01 fix does not move the legacy benchmark either.** Profiling each
+   distinct untrusted source once per evaluation and capping the scanned narrative
+   at 2 048 sentences per pass leaves every per-decision verdict and reason code of
+   this suite unchanged (digest `8669aadb…` in all three M1 artifacts). No public
+   mock scenario has a narrative surface near the budget, so the new fail-closed
+   `NARRATIVE_SCAN_BUDGET_EXCEEDED` path is never taken here; it is exercised by
+   `tests/test_bounds.py`.
+
 Bounded conclusion: the legacy mock result reproduces from the M1 tree at the
 level of every scenario label **and** every decision, with a deterministic digest
 identical to the M0 recheck; the committed scorecard remains non-byte-reproducible
@@ -81,6 +88,22 @@ for the single decision already documented at M0. Headline mock conclusions
 (ASR 0, BTU 0.8889, FBR 0.0683) are unaffected.
 
 ## Artifacts
+
+### `aegisgraph-mock-m1-ab4b30c.json` (revision under test: `ab4b30c`, H2-01/H2-04 fix)
+
+161 557 bytes. Deterministic digest and decision mix identical to the two
+artifacts below; every per-decision verdict and reason code is identical to the M0
+recheck, so bounding the narrative-authority guard moved no legacy decision.
+
+| Form | SHA-256 |
+| --- | --- |
+| Working-copy bytes on the recording host (CRLF line endings) | `17e5805509cc45831961c972f3ff0d6caa5c7c02f05355567b8a37735b96a970` |
+| LF-normalized bytes (as committed by `core.autocrlf`) | `be56ef4d0a244c9c51fbc9802e15d7e949b0b8c22f2be24abc940c4a4db5fb32` |
+
+Command: the same as above with `--output evaluation/m1-recheck/aegisgraph-mock-m1-ab4b30c.json`
+and `--defense-url http://127.0.0.1:8172`. The service needs
+`AEGISGRAPH_LEGACY_UNAUTHENTICATED=true` after M2, because the frozen legacy wire
+is refused unless the labelled development mode is enabled.
 
 ### `aegisgraph-mock-m1-62b54a3.json` (revision under test: `62b54a3`)
 
