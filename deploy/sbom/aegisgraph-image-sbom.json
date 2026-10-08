@@ -20,13 +20,13 @@
     ],
     "created": "2026-10-08T17:31:15.946657112Z",
     "entrypoint": null,
-    "id": "sha256:9b033e3d8a882183b0bba2fe1474962e15acc1fdf3a47e15560dd6a85e6d1292",
+    "id": "sha256:179c8913d1b4d373058048e719c553a17ae93a4dcc8b817a9c6dac36648b0c18",
     "os": "linux",
     "reference": "aegisgraph:m4",
     "repo_digests": [
-      "aegisgraph@sha256:9b033e3d8a882183b0bba2fe1474962e15acc1fdf3a47e15560dd6a85e6d1292"
+      "aegisgraph@sha256:179c8913d1b4d373058048e719c553a17ae93a4dcc8b817a9c6dac36648b0c18"
     ],
-    "size_bytes": 48549297,
+    "size_bytes": 48548441,
     "user": "10001:10001"
   },
   "packages": [
@@ -101,8 +101,8 @@
   },
   "schema": "aegisgraph/sbom/v1",
   "source": {
-    "commit": "33f96cc28cd71e2a4640f37309f5de879bf1ecf2",
-    "dirty": true,
+    "commit": "d265243cdfd9ff2427b63ffd6ff9e6ad3d40609e",
+    "dirty": false,
     "requirements_lock_sha256": "a01c371e13529b4f22b83dde47ade08ee76b13d85e5945fc8e93eb6b9ae22484"
   },
   "totals": {
