@@ -133,6 +133,15 @@ asserted in
 | up | down | `200` | `200` |
 | down | down | `200` | `503` |
 
+**How the shipped deployment uses them (H4-08).** `deploy/k8s/deployment.yaml`
+wires `readinessProbe` to **`/readyz`** and `livenessProbe`/`startupProbe` to
+`/healthz`. A pod whose receipt store becomes unreachable therefore leaves the
+Service endpoints (no more 503s from a pod that should not be in rotation) while
+never being restarted for a dependency outage.
+`scripts/validate_k8s_manifests.py` asserts the split. The Compose stack keeps
+`/healthz` for its container healthcheck, which is the right liveness semantic for
+a single-process dev stack; `/readyz` is the signal to read by hand there.
+
 ## Exact commands and what was verified locally
 
 Run the API with tracing pointed at a collector:

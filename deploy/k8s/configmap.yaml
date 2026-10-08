@@ -6,19 +6,24 @@ metadata:
     app.kubernetes.io/name: aegisgraph
     app.kubernetes.io/component: api
 data:
-  # Non-secret configuration only. Values mirror the Compose stack so the
-  # container behaves identically in both deployments.
+  # Non-secret configuration only. Secrets (the database URL, the token verifier)
+  # arrive through the `aegisgraph-secrets` Secret, which this repository does not
+  # ship — see deploy/k8s/README.md for exactly what it must contain.
   #
-  # D5/D7: the unauthenticated legacy surface stays off; M2 will add the
-  # authenticated /api/v1 surface. Secrets (binding tokens, DB passwords) are
-  # NOT here — they arrive through the `aegisgraph-secrets` Secret, which this
-  # repository does not ship (see deploy/k8s/README.md).
+  # --- production posture (H4-07) ---------------------------------------------
+  # These three are set EXPLICITLY rather than left to defaults. With
+  # AEGISGRAPH_ENV unset the process runs in `development`, where /metrics is
+  # served by default and `auth_mode=none` is accepted — the opposite of the M3
+  # posture ("off in production; a production process never exposes it by
+  # accident"). `scripts/validate_k8s_manifests.py` asserts all three are present.
+  AEGISGRAPH_ENV: "production"
+  AEGISGRAPH_AUTH_MODE: "required"
+  AEGISGRAPH_METRICS_ENABLED: "false"
+  # Production refuses to start when the legacy unauthenticated surface is on, so
+  # this is belt-and-braces with the validator.
   AEGISGRAPH_LEGACY_UNAUTHENTICATED: "false"
   AEGISGRAPH_LOG_LEVEL: "info"
-  # M2 durable receipts: the database URL embeds a password, so it lives in the
-  # `aegisgraph-secrets` Secret (key DATABASE_URL), NOT here. `DATABASE_URL`
-  # unset means the process-local store, which is only appropriate for a demo.
+  # --- telemetry (best-effort: the API must start when the collector is absent) --
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
   OTEL_SERVICE_NAME: "aegisgraph-api"
-  # Telemetry is best-effort: the API must start when the collector is absent.
   OTEL_SDK_DISABLED: "false"
