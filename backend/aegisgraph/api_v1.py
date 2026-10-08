@@ -21,13 +21,27 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from importlib import metadata as importlib_metadata
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from aegisgraph.access import (
+    ProblemError,
+    SettingsDep,
+    StoreDep,
+    assert_trust_ceiling,
+    effective_policy,
+    require_scopes,
+)
 from aegisgraph.adapter import canonical_action
+from aegisgraph.auth import (
+    AUTH_METHOD_DEVELOPMENT,
+    SCOPE_DECISION_SUBMIT,
+    Principal,
+)
+from aegisgraph.confirmation import authorize_confirmations, record_refusal
 from aegisgraph.contracts import (
     ActionKind,
     CandidateAction,
@@ -38,6 +52,15 @@ from aegisgraph.contracts import (
 )
 from aegisgraph.engine import EvaluatedDecision, evaluate
 from aegisgraph.sentinel import MAX_RESPONSE_BYTES, SentinelRequest, SentinelResponse, wire_response
+from aegisgraph.settings import Settings
+from aegisgraph.store import (
+    EVENT_RECEIPT_CONFLICT,
+    AuditRecord,
+    ReceiptConflictError,
+    ReceiptRecord,
+    ReceiptStore,
+    digest_of,
+)
 
 ApiVersion = Literal["aegisgraph/v1"]
 
@@ -54,6 +77,7 @@ BUILD_COMMIT_ENV = "AEGISGRAPH_BUILD_COMMIT"
 BUILD_VERSION_ENV = "AEGISGRAPH_BUILD_VERSION"
 
 _LOGGER = logging.getLogger("aegisgraph.decision")
+_RECEIPT_LOGGER = logging.getLogger("aegisgraph.receipts")
 _DECISION_FAILED = "INTERNAL_EVALUATION_FAILED"
 
 
@@ -115,6 +139,8 @@ class VersionResponse(BaseModel):
 
 router = APIRouter()
 
+DecisionSubmitter = Annotated[Principal, Depends(require_scopes(SCOPE_DECISION_SUBMIT))]
+
 
 @router.get("/api/v1/version", response_model=VersionResponse)
 async def version() -> VersionResponse:
@@ -132,15 +158,42 @@ async def version() -> VersionResponse:
 
 
 @router.post("/api/v1/decisions", response_model=GenericDecisionResponse)
-async def create_decision(request: GenericDecisionRequest) -> Response:
-    """Return one bounded, receipt-bearing decision; candidate actions are inert."""
+async def create_decision(
+    request: GenericDecisionRequest,
+    principal: DecisionSubmitter,
+    settings: SettingsDep,
+    store: StoreDep,
+) -> Response:
+    """Return one bounded, receipt-bearing decision; candidate actions are inert.
+
+    The authenticated caller decides the tenant and the authority (D1): a request
+    asserting provenance above the caller's trust ceiling is refused (D2), the
+    caller's ``policy_context`` is honoured only with ``policy:context_override``
+    (D3), and a confirmation grant counts only if it was issued for this step
+    (D4). The decision is then persisted as an idempotent receipt (F7).
+    """
 
     started = time.perf_counter()
     decided_at = datetime.now(UTC)
+    now_epoch = int(decided_at.timestamp())
+
+    assert_trust_ceiling(principal, request)
+    policy_set, policy_context = effective_policy(
+        principal,
+        policy_set=request.policy_set,
+        policy_context=request.policy_context,
+        store=store,
+        default_policy_set=DEFAULT_POLICY_SET,
+    )
+    request = _with_policy_context(request, policy_context)
+    authorization = authorize_confirmations(
+        request, tenant_id=principal.tenant_id, store=store, now=decided_at
+    )
+    request = authorization.request
     identity = _ReceiptIdentity(
         request_id=request.request_id or uuid4().hex,
         receipt_id=uuid4().hex,
-        policy_set=request.policy_set or DEFAULT_POLICY_SET,
+        policy_set=policy_set,
         decided_at=decided_at,
         valid_until=decided_at + timedelta(seconds=receipt_ttl_seconds()),
     )
@@ -148,7 +201,7 @@ async def create_decision(request: GenericDecisionRequest) -> Response:
         evaluated = evaluate(
             request,
             confirmation_mode=ConfirmationMode.STRICT,
-            now_epoch=int(decided_at.timestamp()),
+            now_epoch=now_epoch,
         )
         response = _to_generic_response(evaluated, identity)
     except Exception as error:
@@ -157,9 +210,124 @@ async def create_decision(request: GenericDecisionRequest) -> Response:
     encoded = response.model_dump_json().encode("utf-8")
     if len(encoded) > MAX_RESPONSE_BYTES:
         response = _fail_closed_response(request, identity)
-        encoded = response.model_dump_json().encode("utf-8")
-    _log_decision(response, latency_ms=round((time.perf_counter() - started) * 1000.0, 3))
+    response = _persist_receipt(
+        request=request,
+        response=response,
+        identity=identity,
+        principal=principal,
+        settings=settings,
+        store=store,
+    )
+    record_refusal(
+        authorization,
+        tenant_id=principal.tenant_id,
+        principal_id=principal.principal_id,
+        store=store,
+        now=decided_at,
+        request_id=response.request_id,
+    )
+    _log_decision(
+        response,
+        latency_ms=round((time.perf_counter() - started) * 1000.0, 3),
+        caller=_caller_label(principal),
+    )
+    encoded = response.model_dump_json().encode("utf-8")
     return Response(content=encoded, media_type="application/json", status_code=200)
+
+
+def _caller_label(principal: Principal) -> str | None:
+    """Report the caller identity, or ``None`` in the development mode (D5)."""
+
+    return None if principal.auth_method == AUTH_METHOD_DEVELOPMENT else principal.principal_id
+
+
+def _with_policy_context(
+    request: GenericDecisionRequest, policy_context: Mapping[str, object]
+) -> GenericDecisionRequest:
+    if policy_context is request.policy_context:
+        return request
+    payload = request.model_dump(mode="json")
+    payload["policy_context"] = dict(policy_context)
+    return GenericDecisionRequest.model_validate(payload)
+
+
+def _persist_receipt(
+    *,
+    request: GenericDecisionRequest,
+    response: GenericDecisionResponse,
+    identity: _ReceiptIdentity,
+    principal: Principal,
+    settings: Settings,
+    store: ReceiptStore,
+) -> GenericDecisionResponse:
+    """Store the receipt idempotently and return the durable identity (F7, D1)."""
+
+    record = ReceiptRecord(
+        tenant_id=principal.tenant_id,
+        request_id=response.request_id,
+        receipt_id=response.receipt_id,
+        surface="generic",
+        principal_id=principal.principal_id,
+        auth_method=principal.auth_method,
+        policy_set_id=response.policy_set.id,
+        policy_set_version=response.policy_set.version,
+        verdict=response.decision,
+        risk_score=response.risk_score,
+        confidence=response.confidence,
+        reason_codes=tuple(response.reason_codes),
+        action_digest=response.action_digest,
+        execution_digest=response.execution_digest,
+        payload_digest=digest_of(
+            {
+                "request": request.model_dump(mode="json"),
+                "response_metadata": dict(response.metadata),
+            }
+        ),
+        decided_at=identity.decided_at,
+        valid_until=identity.valid_until,
+        created_at=identity.decided_at,
+        run_id=request.run_id,
+        step_id=request.step_id,
+        metadata=dict(response.metadata) if settings.store_payload_metadata else None,
+    )
+    try:
+        stored = store.store_receipt(record)
+    except ReceiptConflictError as error:
+        store.record_audit_event(
+            AuditRecord(
+                tenant_id=principal.tenant_id,
+                event_type=EVENT_RECEIPT_CONFLICT,
+                actor_id=principal.principal_id,
+                subject=response.request_id,
+                details={"action_digest": response.action_digest},
+                created_at=datetime.now(UTC),
+            )
+        )
+        raise ProblemError(
+            "REQUEST_ID_CONFLICT",
+            f"request_id {response.request_id!r} was already used for a different action",
+            status_code=409,
+        ) from error
+    except Exception as error:
+        _RECEIPT_LOGGER.error("Receipt persistence failed (%s)", type(error).__name__)
+        raise ProblemError(
+            "RECEIPT_STORE_UNAVAILABLE",
+            "the durable receipt store is unavailable",
+            status_code=503,
+        ) from error
+    if stored.receipt_id == response.receipt_id:
+        return response
+    # A duplicate returns the stored receipt rather than creating a second one.
+    update: dict[str, object] = {
+        "receipt_id": stored.receipt_id,
+        "decided_at": stored.decided_at,
+        "valid_until": stored.valid_until,
+    }
+    if stored.verdict == response.decision:
+        update["risk_score"] = stored.risk_score
+        update["confidence"] = stored.confidence
+        update["reason_codes"] = stored.reason_codes
+    return response.model_copy(update=update)
 
 
 def receipt_ttl_seconds() -> int:
@@ -224,7 +392,9 @@ def _action_identity(request: SentinelRequest) -> tuple[str, str]:
     return action_digest(canonical), exact_action_digest(canonical)
 
 
-def _log_decision(response: GenericDecisionResponse, *, latency_ms: float) -> None:
+def _log_decision(
+    response: GenericDecisionResponse, *, latency_ms: float, caller: str | None
+) -> None:
     """Emit exactly one structured decision record; never any request content."""
 
     _LOGGER.info(
@@ -242,7 +412,7 @@ def _log_decision(response: GenericDecisionResponse, *, latency_ms: float) -> No
                 "action_digest": response.action_digest,
                 "execution_digest": response.execution_digest,
                 "latency_ms": latency_ms,
-                "caller": None,
+                "caller": caller,
             },
             separators=(",", ":"),
             sort_keys=True,

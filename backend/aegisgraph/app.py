@@ -16,7 +16,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from aegisgraph.access import ProblemError
+from aegisgraph.api_admin import router as api_admin_router
 from aegisgraph.api_v1 import router as api_v1_router
+from aegisgraph.auth import AuthError
 from aegisgraph.contracts import GuardDecision
 from aegisgraph.engine import decide
 from aegisgraph.sentinel import (
@@ -25,6 +28,13 @@ from aegisgraph.sentinel import (
     SentinelResponse,
     wire_response,
 )
+from aegisgraph.settings import (
+    LEGACY_ENV,
+    Settings,
+    load_settings,
+    validate_settings,
+)
+from aegisgraph.store import open_store
 
 _LOGGER = logging.getLogger(__name__)
 _GENERIC_INVALID = {"detail": "Invalid SENTINEL request"}
@@ -226,6 +236,28 @@ async def _send_too_large(send: Send) -> None:
 
 
 app.include_router(api_v1_router)
+app.include_router(api_admin_router)
+
+
+@app.exception_handler(AuthError)
+async def authentication_error_handler(_request: Request, error: AuthError) -> JSONResponse:
+    """Return the authentication/authorization outcome without leaking the credential."""
+
+    headers = {"WWW-Authenticate": "Bearer"} if error.status_code == 401 else None
+    return JSONResponse(
+        {"detail": error.detail, "code": error.code},
+        status_code=error.status_code,
+        headers=headers,
+    )
+
+
+@app.exception_handler(ProblemError)
+async def problem_error_handler(_request: Request, error: ProblemError) -> JSONResponse:
+    """Return a bounded, machine-readable refusal for a protected surface."""
+
+    return JSONResponse(
+        {"detail": error.detail, "code": error.code}, status_code=error.status_code
+    )
 
 
 @app.exception_handler(RequestValidationError)
@@ -243,13 +275,66 @@ async def http_error_handler(_request: Request, error: StarletteHTTPException) -
 
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
+    """Liveness only: the process answers, nothing about its dependencies (F1)."""
+
     return {"status": "ok"}
+
+
+@app.get("/readyz")
+async def readyz() -> JSONResponse:
+    """Readiness, honest about the dependencies this revision needs (F1, F7).
+
+    The body names the authentication mode, whether the receipt store is durable
+    and whether that store currently answers. It carries no secret material: the
+    service token digests, the JWKS document and the database URL are never echoed.
+    """
+
+    settings = load_settings()
+    dependencies: dict[str, object] = {
+        "authentication": {
+            "mode": settings.auth_mode.value,
+            "jwt_configured": settings.jwt_enabled,
+            "service_tokens_configured": len(settings.service_tokens),
+            "legacy_unauthenticated": settings.legacy_unauthenticated,
+        },
+        "receipt_store": {
+            "durable": settings.durable,
+            "reachable": _store_reachable(settings),
+        },
+        "environment": settings.environment.value,
+    }
+    ready = bool(
+        settings.auth_mode.value == "required"
+        or settings.environment.value == "development"
+    ) and _store_reachable(settings)
+    body = {
+        "status": "ready" if ready else "degraded",
+        "ready": ready,
+        "dependencies": dependencies,
+    }
+    return JSONResponse(body, status_code=200 if ready else 503)
+
+
+def _store_reachable(settings: Settings) -> bool:
+    try:
+        return open_store(settings).ready()
+    except Exception as error:  # pragma: no cover - a store that cannot even be built
+        _LOGGER.error("Receipt store unavailable (%s)", type(error).__name__)
+        return False
 
 
 @app.post("/v1/decision", response_model=SentinelResponse)
 async def decision_endpoint(request: SentinelRequest) -> Response:
-    """Return one bounded policy decision; candidate actions are never executed."""
+    """Return one bounded policy decision; candidate actions are never executed.
 
+    This is the frozen SENTINEL wire. It is available only in the labelled
+    development mode, is refused in production at startup, and is deliberately not
+    receipt-bearing: its measured behaviour must not change (D5).
+    """
+
+    if not load_settings().legacy_unauthenticated:
+        _LOGGER.warning("Legacy unauthenticated surface refused (%s is not enabled)", LEGACY_ENV)
+        raise StarletteHTTPException(status_code=404, detail="Not Found")
     try:
         result = decide(request)
         response = _to_wire_response(result)
@@ -279,4 +364,19 @@ def _to_wire_response(decision: GuardDecision) -> SentinelResponse:
     return wire_response(decision)
 
 
+def configure_configuration() -> Settings:
+    """Validate the configuration at startup and refuse an unsafe process (D7).
+
+    A production process configured with ``AEGISGRAPH_AUTH_MODE=none``, with the
+    legacy unauthenticated surface enabled, with no durable receipt store, or with
+    a required secret missing raises here — at import, before the server binds —
+    so the deployment fails closed with a non-zero exit instead of serving.
+    """
+
+    settings = load_settings()
+    validate_settings(settings)
+    return settings
+
+
+configure_configuration()
 configure_logging()
