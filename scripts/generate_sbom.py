@@ -128,7 +128,12 @@ def build_manifest(image: str, *, deterministic: bool) -> dict[str, Any]:
         },
         "source": {
             "commit": _git("rev-parse", "HEAD"),
-            "dirty": bool(_git("status", "--porcelain")),
+            # Dirty means "the image's build inputs differ from the commit": only
+            # Dockerfile, backend/ and requirements.lock are considered, so merely
+            # regenerating this manifest does not mark the source dirty.
+            "dirty": bool(
+                _git("status", "--porcelain", "--", "backend", "Dockerfile", "requirements.lock")
+            ),
             "requirements_lock_sha256": _sha256_file(lock_path) if lock_path.is_file() else None,
         },
         "image": inspect_image(image),
