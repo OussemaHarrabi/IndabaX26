@@ -18,18 +18,23 @@
       "8080",
       "--no-server-header"
     ],
-    "created": "2026-10-08T17:31:15.946657112Z",
+    "created": "2026-10-08T19:01:22.471543958Z",
     "entrypoint": null,
-    "id": "sha256:179c8913d1b4d373058048e719c553a17ae93a4dcc8b817a9c6dac36648b0c18",
+    "id": "sha256:f36f6e1e51ba9df381d37315224d4d0909e087c62313960153cbdfb10b97e5aa",
     "os": "linux",
     "reference": "aegisgraph:m4",
     "repo_digests": [
-      "aegisgraph@sha256:179c8913d1b4d373058048e719c553a17ae93a4dcc8b817a9c6dac36648b0c18"
+      "aegisgraph@sha256:f36f6e1e51ba9df381d37315224d4d0909e087c62313960153cbdfb10b97e5aa"
     ],
-    "size_bytes": 48548441,
+    "size_bytes": 69404249,
     "user": "10001:10001"
   },
   "packages": [
+    {
+      "name": "alembic",
+      "record_sha256": "f1517788e4d7fe6435eb03f64b3f1db7e0bceba9e64fe9f20d475fecea9c6e75",
+      "version": "1.20.0"
+    },
     {
       "name": "annotated-doc",
       "record_sha256": "d0183be2a86b24c0b53c8c29be4be91f5efb42e587721c452bd3208dea5dbb2f",
@@ -46,9 +51,19 @@
       "version": "4.15.1"
     },
     {
+      "name": "cffi",
+      "record_sha256": "c2719618c2ff8cebf16766b94b91481e0d60b5e882c0221abd36633c1ab5dd16",
+      "version": "2.1.1"
+    },
+    {
       "name": "click",
       "record_sha256": "b90afc76921b79b4c0dd399dd27cc888dfa30c546186580c0d21f4d57a8050cc",
       "version": "8.2.1"
+    },
+    {
+      "name": "cryptography",
+      "record_sha256": "5754233035091108fbe76b2bd94dfc9ea98e3057b5b536f9b4689e27614f132e",
+      "version": "50.0.2"
     },
     {
       "name": "fastapi",
@@ -66,6 +81,31 @@
       "version": "3.20"
     },
     {
+      "name": "Mako",
+      "record_sha256": "7b2c6d9cb855fb19fd2fa1831546f908663df11db9e8a5562ed8d27eeaa48a11",
+      "version": "1.4.3"
+    },
+    {
+      "name": "MarkupSafe",
+      "record_sha256": "02703d6e134e1e24e64dced626ea59326510758cb8c417f55889bac8557535a1",
+      "version": "3.0.4"
+    },
+    {
+      "name": "psycopg",
+      "record_sha256": "38ac57fcf3f5de6ce233ab5252d84abf1d5d00455b8fcc474d5fb2baf8e3be02",
+      "version": "3.3.6"
+    },
+    {
+      "name": "psycopg-binary",
+      "record_sha256": "3a4c9483e8cb420fe6e5b0ad08d6f3d103c89752ce5cb50f5609c5a5f83b36c7",
+      "version": "3.3.6"
+    },
+    {
+      "name": "pycparser",
+      "record_sha256": "4e3938554998049c038ee387acf83acc264ab93e681be1b167f73301c64f226e",
+      "version": "3.1"
+    },
+    {
       "name": "pydantic",
       "record_sha256": "e1d9ec6c04feeed0b3b59316f725dd8fdc38524496075088d86179d4d1d3fc49",
       "version": "2.13.5"
@@ -74,6 +114,16 @@
       "name": "pydantic_core",
       "record_sha256": "7b051cf70661d6536bcc16ef8f9cbf5a329017f0f77380527a9a096799ebc2ef",
       "version": "2.46.5"
+    },
+    {
+      "name": "PyJWT",
+      "record_sha256": "64948a988d0f170ceebd88a606c3f5c3b9ed5fbd096449687e69562d16be3f30",
+      "version": "2.15.1"
+    },
+    {
+      "name": "SQLAlchemy",
+      "record_sha256": "e89fd1a29369af2f7cfad4d01ef0c35417166817a3631c9c188defdeb12854f3",
+      "version": "2.1.4"
     },
     {
       "name": "starlette",
@@ -101,11 +151,11 @@
   },
   "schema": "aegisgraph/sbom/v1",
   "source": {
-    "commit": "d265243cdfd9ff2427b63ffd6ff9e6ad3d40609e",
+    "commit": "92f68036e1912d433898aa1cd16c5a7bdefd727e",
     "dirty": false,
-    "requirements_lock_sha256": "a01c371e13529b4f22b83dde47ade08ee76b13d85e5945fc8e93eb6b9ae22484"
+    "requirements_lock_sha256": "b49b8c5d328f5823f07f5aa96bbc63572376e857a982bff2050781d57b5f93fd"
   },
   "totals": {
-    "packages": 13
+    "packages": 23
   }
 }

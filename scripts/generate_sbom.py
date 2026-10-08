@@ -70,6 +70,23 @@ def _sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _sha256_git_blob(relative_path: str) -> str | None:
+    """Hash the committed blob, never the (possibly CRLF) working copy."""
+
+    try:
+        raw = subprocess.run(
+            ["git", "show", f"HEAD:{relative_path}"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if raw.returncode != 0:
+        return None
+    return hashlib.sha256(raw.stdout).hexdigest()
+
+
 def _git(*args: str) -> str:
     try:
         return _run(["git", *args], cwd=REPO_ROOT).strip()
@@ -116,7 +133,6 @@ def probe_runtime(image: str) -> dict[str, Any]:
 
 
 def build_manifest(image: str, *, deterministic: bool) -> dict[str, Any]:
-    lock_path = REPO_ROOT / "requirements.lock"
     runtime = probe_runtime(image)
     manifest: dict[str, Any] = {
         "schema": "aegisgraph/sbom/v1",
@@ -134,7 +150,11 @@ def build_manifest(image: str, *, deterministic: bool) -> dict[str, Any]:
             "dirty": bool(
                 _git("status", "--porcelain", "--", "backend", "Dockerfile", "requirements.lock")
             ),
-            "requirements_lock_sha256": _sha256_file(lock_path) if lock_path.is_file() else None,
+            # The *git blob* hash, per the repository's hashing rule: a Windows
+            # checkout with core.autocrlf=true would materialize CRLF in the working
+            # copy and hash differently. This is the lock revision the image
+            # corresponds to.
+            "requirements_lock_sha256": _sha256_git_blob("requirements.lock"),
         },
         "image": inspect_image(image),
         "runtime": {"python": runtime["python"]},
