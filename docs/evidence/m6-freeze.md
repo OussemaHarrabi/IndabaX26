@@ -1,8 +1,10 @@
 # M6 campaign freeze
 
-Owner: orchestrator. **Status: prepared; not yet frozen.** Values marked `TBD-AT-FREEZE` are written at the
-moment the campaign starts, and no gateway, policy, dataset or scoring change is permitted between that moment
-and the recording of the results. If anything must change afterwards, the campaign is re-run under a new freeze
+Owner: orchestrator. **Status: freeze block 1 declared at `4481e26` (2026-10-08) and exercised; its results are
+recorded in §8.** The campaign run is `benchmark/runs/20261008T203656Z-m6-campaign/` with decision digest
+`b6951afb…`, and the campaign report is `docs/evidence/m6-campaign.md`. Values that were marked `TBD-AT-FREEZE`
+were written at the moment the campaign started, and no gateway, policy, dataset or scoring change is permitted
+between that moment and the recording of the results. If anything must change afterwards, the campaign is re-run under a new freeze
 block appended to this file — the previous block is never edited.
 
 ## 1. What is frozen
@@ -64,8 +66,11 @@ python docs/research/analysis.py --control <allow-all scorecard> --treatment <tr
 No open-weight runtime is installed and no paid API is authorised. The exact unblocking steps:
 
 - **Local open model:** install `ollama`, then `ollama pull qwen3:8b` (≈5 GB, 4-bit), and run
-  `--model ollama:qwen3:8b` in place of `--model scripted`. The legacy kit path is
-  `uv run sentinel run --scenario <path> --defense-url <url> --model ollama:qwen3:8b`.
+  `--model ollama` in place of `--model scripted` — the native runner's adapter name is `ollama`
+  and the model tag is chosen inside the adapter; passing `ollama:qwen3:8b` to
+  `scripts/bench_run.py` is a `RunError` (`unknown model adapter`). The legacy kit path is
+  `uv run sentinel run --scenario <path> --defense-url <url> --model ollama:qwen3:8b`, because
+  the kit's `--model` accepts `mock | ollama:<tag> | qwen3-8b | <HF path>`.
 - **Second backend:** any OpenAI-compatible endpoint, behind the runner's model-adapter interface; requires
   explicit owner authorisation because it incurs cost and leaves the machine.
 - **Repeats:** at least three repeats per cell once a model is available, so the plan's variance requirement can
@@ -139,9 +144,23 @@ the block above is unchanged.
 | Blocked cells | C5 (real Qwen3-8B), C6 (native real model), C7 (sealed holdout), second backend — enabling commands in `docs/evidence/m6-campaign.md` §6 |
 | Report | `docs/evidence/m6-campaign.md` |
 
-Artifact hashes: `manifest.json` `4a2b377fa6d36101f8764dc6501cb1434a8cad1d94d330f9d737554ca2df96bd`,
-`outcomes.jsonl` `58b79e85d12c9683d660af7b59c4b7d0b066b15c0c65d60476725a95007198fd`,
-`control.jsonl` `ea204a61e1c2fe0114548f5a3e4ba8f2069c720dc17a8694f3070e986811d4a5`,
-`score.json` `05f22292002cbd6e0739d5d6705227a34ca275e0167da971b7d5fc68172dd447`, `score.txt` `d9fec910ded9378cedd3c3ab22c38d49f6a8690dcf83f5d360d49bfeb0206984`,
-`README.md` `94b8aed58f05abdeac1d17dad2b130c2f9cf431fee899cdcec6fbc51eb242c71`,
-C3 artifact `2af5e8473f60bdeefc4a76227cf2b7744df7f01de782b5a164eeeca223a744d6`.
+
+Note on conventions: the run's `score.json`, `score.txt` and the C3 artifact were
+written through the platform's text mode, so their working copies carry CRLF while
+the JSON/JSONL files marked `-text` in `.gitattributes` do not. The table below labels
+every entry with the convention it was taken under, so a later auditor does not have
+to guess. The decision digest is computed from the parsed outcomes and is independent
+of line endings, which is why a CRLF checkout and an LF checkout print the same digest.
+
+Artifact hashes, each labelled with the convention it was taken under:
+
+| Artifact | SHA-256 | Convention |
+| --- | --- | --- |
+| `manifest.json` | `4a2b377fa6d36101f8764dc6501cb1434a8cad1d94d330f9d737554ca2df96bd` | `content-sha256-lf` (the file is stored with LF, so raw bytes and the normalised value coincide) |
+| `outcomes.jsonl` | `58b79e85d12c9683d660af7b59c4b7d0b066b15c0c65d60476725a95007198fd` | `content-sha256-lf` (the file is stored with LF, so raw bytes and the normalised value coincide) |
+| `control.jsonl` | `ea204a61e1c2fe0114548f5a3e4ba8f2069c720dc17a8694f3070e986811d4a5` | `content-sha256-lf` (the file is stored with LF, so raw bytes and the normalised value coincide) |
+| `score.json` | `05f22292002cbd6e0739d5d6705227a34ca275e0167da971b7d5fc68172dd447` | **raw bytes on disk** (the working copy has CRLF; the `content-sha256-lf` value is `d3b21dc9d01a2efda306aba33dbd275147ad86cfcdf6e66bc58f8b63c79c8441`) |
+| `score.txt` | `d9fec910ded9378cedd3c3ab22c38d49f6a8690dcf83f5d360d49bfeb0206984` | **raw bytes on disk** (the working copy has CRLF; the `content-sha256-lf` value is `59a7c3ea88ef93b3725779b2c56609a73f7d2f34645fabfeffdc5cc6321ec638`) |
+| `README.md` | `94b8aed58f05abdeac1d17dad2b130c2f9cf431fee899cdcec6fbc51eb242c71` | `content-sha256-lf` (the file is stored with LF, so raw bytes and the normalised value coincide) |
+| `evaluation/m6-recheck/aegisgraph-mock-m6-818cf1f.json` | `2af5e8473f60bdeefc4a76227cf2b7744df7f01de782b5a164eeeca223a744d6` | **raw bytes on disk** (the working copy has CRLF; the `content-sha256-lf` value is `6c04cb5f2e36ae6dfc38e514b3141cf87a1ee0c6b3018db1b7f952769fcc42b5`) |
+| `evaluation/m6-recheck/README.md` | `f44fd03ab28ea960bbf20801480925e518975206fe6a4bfe02c05dede6ac55c8` | `content-sha256-lf` (the file is stored with LF, so raw bytes and the normalised value coincide) |

@@ -23,6 +23,27 @@ published. Claim language follows `docs/research/claim-language.md`.
 | Hardware / runtime | Windows 10.0.26200 x64, CPython 3.13.14, one uvicorn process on loopback |
 | Scoring code | `benchmark/scoring.py` at the same commit; the run manifest records the code identity and the artifact hashes |
 
+**Credential scope and ceiling (I3-04).** The credential's scope set and trust
+ceiling are **not recorded in this run's manifest**: the `auth` block at the time held
+`mode`/`header`/`scheme`/`principal`/`principal_source` only. The values quoted in §7
+(`decision:submit`, ceiling `trusted_internal`) were read from the token that was used
+and are reproducible by minting the same token, but they are **a limitation of this
+artifact, not a reconstruction**: the manifest is not evidence for them. The runner now
+records `auth.scopes`, `auth.trust_ceiling` and `auth.claims_source` (from the same
+unverified payload read as the principal, never the token), so the next run carries
+them; a re-run is not permitted inside this freeze block, so this run does not.
+
+**Identity caveat (I3-01).** The manifest's `code.commit` is **runner-attested**: the
+runner resolves it with `git rev-parse HEAD` in the worktree it runs from, while the
+service self-reports `build.commit = unknown` because it was not started with
+`AEGISGRAPH_BUILD_COMMIT`. The manifest now records both sides under
+`defense.build_identity` (`service_commit`, `service_reported`, and the operator hint)
+so the gap is visible rather than implicit. The freeze-declaration commit `4481e26` is
+**docs-only** — `git diff --stat 818cf1f 4481e26` lists exactly one file,
+`docs/evidence/m6-freeze.md` — so the code under test equals the integration tip's code
+at the moment the block was declared, and the runner-attested commit is the right
+identity for it.
+
 ## 2. C1 — native benchmark, scripted replay, AegisGraph policy
 
 Run `20261008T203656Z-m6-campaign`, digest `b6951afb6db8fde2dd029d1e964312094d853487ae79d1abfdde02dc08b2581d`.
@@ -107,7 +128,7 @@ byte-identical (`cmp` exit 0), and the committed `score.json`
 | Cell | Status | Exact enabling command |
 | --- | --- | --- |
 | C5 legacy suite, real Qwen3-8B (5 revisions) | **blocked** — frozen historical evidence at `evaluation/real-qwen/**`; not re-run | `ollama serve` then, from `.sentinel_reference`, `uv run sentinel eval public --defense-url <url> --model ollama:qwen3:8b --json --output <new artifact>` |
-| C6 native benchmark, real model | **blocked** — no `ollama`, no GPU, no paid API authorised | `ollama pull qwen3:8b` then `python scripts/bench_run.py --defense-url <url> --model ollama:qwen3:8b --splits development,validation ...` (the adapter is declared and fails closed with this command until a model exists) |
+| C6 native benchmark, real model | **blocked** — no `ollama`, no GPU, no paid API authorised | `ollama pull qwen3:8b` then `python scripts/bench_run.py --defense-url <url> --model ollama --splits development,validation ...`. The native runner's adapter name is `ollama`, not `ollama:qwen3:8b`: the model tag is chosen inside the adapter, and `--model ollama` resolves to the declared-but-unavailable adapter, which fails closed with `ModelUnavailable: model adapter 'ollama' has no model behind it; to run it, execute: install Ollama, serve the reference model, then re-run with --model ollama` (verified; exit 1). Passing `ollama:qwen3:8b` to the native runner is a `RunError` (`unknown model adapter 'ollama:qwen3:8b'; available: scripted, ollama`) and is **not** the command. The `ollama:<tag>` form belongs to the legacy kit, whose `--model` accepts `mock | ollama:<tag> | qwen3-8b | <HF path>` |
 | C7 sealed holdout | **not opened** — requires the checklist in `docs/benchmark/holdout.md` §4 and the custodian key | `AEGISGRAPH_HOLDOUT_PASSPHRASE=<key> python scripts/bench_seal.py open --out <tmpdir>` after the freeze checklist is satisfied |
 | Second model backend | **blocked** — requires explicit owner authorisation (cost, network egress) | an OpenAI-compatible endpoint behind the runner's model-adapter interface |
 
@@ -159,6 +180,16 @@ freeze block. Recorded here as the next measurement to preregister.
 The latency rows also differ (p50 35.66 ms here vs 9.11 ms before) because this run
 persists receipts to PostgreSQL 17 where the earlier run used the in-process store.
 Latency is excluded from the digest, and the two rows are not paired measurements.
+
+## 7a. Note on artifact line endings
+
+`score.json`, `score.txt` and the C3 artifact were written through the platform's text
+mode, so their working copies carry CRLF while the JSON/JSONL files marked `-text` in
+`.gitattributes` do not. Every hash quoted in `docs/evidence/m6-freeze.md` §8 is
+labelled with the convention it was taken under. The decision digest is computed from
+the parsed outcomes and is independent of line endings, so a CRLF checkout and an LF
+checkout print the same digest; a file-level hash comparison across platforms must use
+the `content-sha256-lf` value.
 
 ## 8. Conclusions, in the permitted register
 
