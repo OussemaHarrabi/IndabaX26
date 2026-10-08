@@ -155,17 +155,33 @@ as `trusted_internal` or lower, but cannot claim `system_policy` or
 `authenticated_user` — which is precisely the relabelling move F3 described.
 Claiming *less* trust is always allowed: it only makes the engine stricter.
 
-## 6. Policy authority (D3)
+## 6. Policy authority (D3) and policy identity (H2-02)
+
+The **identity** a decision reports is always a server value, never a caller-asserted
+string:
+
+* The request may name `policy_set {id, version}`. The server looks that version up
+  in its own store. If it is not stored for the caller's tenant, the request is
+  refused with `422 POLICY_SET_UNKNOWN` — regardless of the caller's scopes, so an
+  override holder cannot invent an identity either. A refused request writes no
+  receipt, so no receipt can claim a policy version that did not decide.
+* When the request names nothing, the server reports its own default identity
+  (`{"id": "aegisgraph-default", "version": "1"}`) and, unless the caller holds the
+  override scope, decides under that stored version.
+* The response, the receipt, and the structured decision record all carry the
+  resolved server identity. `enforcement.POLICY_MISMATCH` is therefore meaningful:
+  the identity it compares against cannot be chosen by the caller it checks.
+* `GET /api/v1/version` reports the same server default identity and accepts no
+  caller input that could change it.
+
+The **facts** are a separate question:
 
 * A caller holding `policy:context_override` may supply `policy_context`
-  (`allowed_tools`, `consequential_tools`, `internal_email_domains`, …). This is the
-  frozen trusted-caller behaviour and the labelled development mode.
-* Every other caller has its `policy_context` **ignored**. The effective policy is
-  the server-stored policy set named by `policy_set {id, version}` (default
-  `{"id": "aegisgraph-default", "version": "1"}`).
-* An unknown policy set is refused with `422 POLICY_SET_UNKNOWN` rather than
-  defaulted, so an unconfigured deployment fails closed instead of trusting the
-  caller.
+  (`allowed_tools`, `consequential_tools`, `internal_email_domains`, …) on top of the
+  stored version it named. This is the frozen trusted-caller behaviour and the
+  labelled development mode.
+* Every other caller has its `policy_context` **ignored**: the stored document is
+  used, so editing the request can never switch a control off.
 
 Publish and activate the server-side policy through `POST /api/v1/policies`
 (see [receipts.md](receipts.md)).

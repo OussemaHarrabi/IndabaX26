@@ -156,25 +156,51 @@ def effective_policy(
 ) -> tuple[PolicyIdentity, Mapping[str, object]]:
     """Return the policy identity and context the decision must be taken under (D3).
 
-    A principal holding ``policy:context_override`` keeps the caller-supplied
-    context (the frozen trusted-caller behaviour, and the labelled development
-    mode). Every other caller gets the server-stored policy set named by
-    ``policy_set {id, version}``; an unknown policy set is refused, so a caller
-    can never substitute policy facts by editing the request.
+    The reported identity is always a **server** value: it is the stored policy row
+    the request names, never a caller-asserted string. A caller may name a policy
+    set only if that version exists for its tenant; anything else is refused with
+    ``422 POLICY_SET_UNKNOWN`` rather than echoed, so a receipt can never claim a
+    policy version that did not decide (H2-02). Without a name, the server default
+    identity is reported.
+
+    ``policy:context_override`` grants authority over the policy *facts*
+    (``allowed_tools`` and friends), not over the policy *identity*: an override
+    holder still has to name a stored version. A principal without the scope always
+    gets the stored document, so a caller can never substitute policy facts by
+    editing the request.
     """
 
-    identity = policy_set or default_policy_set
-    if principal.has(SCOPE_POLICY_CONTEXT_OVERRIDE):
-        return identity, policy_context
-    stored = store.get_policy_set(principal.tenant_id, identity.id, identity.version)
+    override = principal.has(SCOPE_POLICY_CONTEXT_OVERRIDE)
+    if policy_set is None:
+        if not override:
+            stored_default = store.get_policy_set(
+                principal.tenant_id, default_policy_set.id, default_policy_set.version
+            )
+            if stored_default is None:
+                raise ProblemError(
+                    POLICY_SET_UNKNOWN,
+                    f"policy set {default_policy_set.id!r} version "
+                    f"{default_policy_set.version!r} is not stored for this tenant",
+                    status_code=422,
+                )
+            return (
+                PolicyIdentity(id=stored_default.id, version=stored_default.version),
+                stored_default.document,
+            )
+        return (
+            PolicyIdentity(id=default_policy_set.id, version=default_policy_set.version),
+            policy_context,
+        )
+    stored = store.get_policy_set(principal.tenant_id, policy_set.id, policy_set.version)
     if stored is None:
         raise ProblemError(
             POLICY_SET_UNKNOWN,
-            f"policy set {identity.id!r} version {identity.version!r} is not stored "
+            f"policy set {policy_set.id!r} version {policy_set.version!r} is not stored "
             "for this tenant",
             status_code=422,
         )
-    return PolicyIdentity(id=stored.id, version=stored.version), stored.document
+    identity = PolicyIdentity(id=stored.id, version=stored.version)
+    return (identity, policy_context) if override else (identity, stored.document)
 
 
 __all__ = [

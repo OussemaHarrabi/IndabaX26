@@ -4,9 +4,10 @@ A confirmation grant is a *record*, not a string the caller can mint. The caller
 presents ``run_id:step_id:execution_digest:expiry`` in ``confirmations_granted``;
 :func:`authorize_confirmations` keeps only the grants that were issued through
 ``POST /api/v1/confirmations``, are still unexpired and are bound to this run and
-step. A syntactically perfect grant that was never issued is dropped, so the
-action escalates instead of being allowed — which is what closes F2 rather than
-merely reformatting it.
+step. A syntactically perfect grant that was never issued, or that was issued for another
+tenant, run, step or action, is dropped, so the action escalates instead of being
+allowed — which is what closes F2 rather than merely reformatting it. The engine's
+strict binding check stays as a second line of defence.
 
 Dropping is fail-closed by construction: the engine treats a missing grant as "not
 granted". Every drop is counted in an audit event that carries no request content.
@@ -17,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from aegisgraph.adapter import canonical_action
 from aegisgraph.contracts import parse_confirmation_grant
 from aegisgraph.sentinel import SentinelRequest
 from aegisgraph.store import (
@@ -27,6 +29,7 @@ from aegisgraph.store import (
 
 REFUSAL_MALFORMED = "malformed"
 REFUSAL_NOT_ISSUED = "not_issued"
+REFUSAL_NOT_BOUND = "not_bound"
 REFUSAL_EXPIRED = "expired"
 
 @dataclass(frozen=True)
@@ -55,11 +58,20 @@ def authorize_confirmations[RequestT: SentinelRequest](
         )
 
     moment = now.astimezone(UTC)
+    expected_digest = canonical_action(request.candidate_action).execution_digest()
     accepted: list[str] = []
     refused: list[str] = []
     reasons: list[str] = []
     for value in presented:
-        reason = _refusal_reason(value, tenant_id=tenant_id, store=store, now=moment)
+        reason = _refusal_reason(
+            value,
+            tenant_id=tenant_id,
+            store=store,
+            now=moment,
+            run_id=request.run_id,
+            step_id=request.step_id,
+            execution_digest=expected_digest,
+        )
         if reason is None:
             accepted.append(value)
         else:
@@ -109,8 +121,22 @@ def record_refusal[RequestT: SentinelRequest](
 
 
 def _refusal_reason(
-    value: str, *, tenant_id: str, store: ReceiptStore, now: datetime
+    value: str,
+    *,
+    tenant_id: str,
+    store: ReceiptStore,
+    now: datetime,
+    run_id: str,
+    step_id: int,
+    execution_digest: str,
 ) -> str | None:
+    """Classify one presented grant, or ``None`` when it authorizes this request.
+
+    The order is deliberate: a malformed value, then an expired one, then a value
+    that does not exist in the store (never issued, or issued for another tenant),
+    then a stored grant that is bound to a different run, step or action.
+    """
+
     grant = parse_confirmation_grant(value)
     if grant is None:
         return REFUSAL_MALFORMED
@@ -124,6 +150,12 @@ def _refusal_reason(
         now=now,
     ):
         return REFUSAL_NOT_ISSUED
+    if (
+        grant.run_id != run_id
+        or grant.step_id != step_id
+        or grant.execution_digest != execution_digest
+    ):
+        return REFUSAL_NOT_BOUND
     return None
 
 
@@ -138,6 +170,7 @@ def _with_grants[RequestT: SentinelRequest](request: RequestT, grants: list[str]
 __all__ = [
     "REFUSAL_EXPIRED",
     "REFUSAL_MALFORMED",
+    "REFUSAL_NOT_BOUND",
     "REFUSAL_NOT_ISSUED",
     "ConfirmationAuthorization",
     "authorize_confirmations",
