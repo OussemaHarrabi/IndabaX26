@@ -2,7 +2,7 @@
 
 import re
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import IntEnum
 from typing import Final
 
@@ -163,6 +163,15 @@ _EMAIL_RUN = re.compile(r"[A-Za-z0-9._%+@_-]+")
 _EMAIL_WINDOW_CHARS = 512
 _MAX_EMAIL_SCAN_CHARS = 65_536
 _MAX_EMAIL_ADDRESSES = 32
+_MAX_NARRATIVE_SENTENCES = 2048
+"""Sentences one evaluation pass may scan in narrative sinks (H2-01).
+
+The narrative-authority guard costs ``sentences x sources`` pair evaluations, so
+the product, not just one scan, has to be bounded. Sources are profiled at most
+once per evaluation (see ``_SourceProfile``) and a narrative surface with more
+sentences than this cannot be verified cheaply, so it fails closed with
+``NARRATIVE_SCAN_BUDGET_EXCEEDED`` instead of scanning an unbounded product.
+"""
 _REPORTED_EMAIL_ACTION = re.compile(
     r"\b(?:draft(?:ed)?|prepar(?:ed|e)|sent|emailed|forwarded)\b", re.IGNORECASE
 )
@@ -354,12 +363,83 @@ class ClauseDisposition(IntEnum):
     ACTIVE = 2
 
 
+@dataclass
+class _SourceProfile:
+    """Facts about one untrusted source, computed at most once per evaluation.
+
+    ``_is_laundered_claim`` used to recompute the claim-pattern matches, the
+    email addresses and the instruction classification of every source for every
+    sentence, so one request cost ``2 x sources x sentences`` full source scans
+    (H2-01: 13.4 s for four 16 kB sources and a 1000-sentence action text). The
+    classification stays lazy because it is only needed by the email-echo branch
+    and costs milliseconds on a padded source.
+    """
+
+    content: str
+    claim_names: frozenset[str]
+    relevant_addresses: frozenset[str]
+    active_instruction: bool | None = None
+
+    def is_active_instruction(self) -> bool:
+        if self.active_instruction is None:
+            self.active_instruction = (
+                _classify_instruction_text(self.content) is ClauseDisposition.ACTIVE
+            )
+        return self.active_instruction
+
+
+@dataclass
+class _NarrativeScanState:
+    """Per-evaluation source cache and sentence budget for the authority guard.
+
+    Bounded by construction: at most one profile per distinct source of the
+    request, and at most ``_MAX_NARRATIVE_SENTENCES`` sentences scanned per pass.
+    """
+
+    profiles: dict[str, _SourceProfile] = field(default_factory=dict)
+    sentences_remaining: int = _MAX_NARRATIVE_SENTENCES
+
+    def profile(self, source: str, user_goal: str) -> _SourceProfile:
+        """Return the cached profile for ``source``, building it at most once.
+
+        ``user_goal`` is fixed for the whole evaluation, so it is not part of the
+        cache key.
+        """
+
+        cached = self.profiles.get(source)
+        if cached is None:
+            cached = _build_source_profile(source, user_goal)
+            self.profiles[source] = cached
+        return cached
+
+    def revalidation(self) -> "_NarrativeScanState":
+        """Share the source cache with a revalidation pass but renew its budget."""
+
+        return _NarrativeScanState(profiles=self.profiles)
+
+
+def _build_source_profile(source: str, user_goal: str) -> _SourceProfile:
+    lowered_goal = user_goal.lower()
+    return _SourceProfile(
+        content=source,
+        claim_names=frozenset(
+            name for name, pattern in _UNTRUSTED_CLAIM_PATTERNS.items() if pattern.search(source)
+        ),
+        relevant_addresses=frozenset(
+            address
+            for address in _email_addresses(source)
+            if address not in lowered_goal
+        ),
+    )
+
+
 @dataclass(frozen=True)
 class EvaluationOptions:
     """Per-call evaluation context that must not change policy semantics."""
 
     confirmation_mode: ConfirmationMode = ConfirmationMode.LEGACY
     now_epoch: int = 0
+    narrative: _NarrativeScanState = field(default_factory=_NarrativeScanState)
 
 
 @dataclass(frozen=True)
@@ -780,11 +860,18 @@ def _redact_untrusted_authority(
     if not sources:
         return None
 
-    def clean(value: str) -> str:
+    state = options.narrative
+    profiles = tuple(state.profile(source, adapted.request.user_goal) for source in sources)
+
+    def clean(value: str) -> str | None:
+        """Return the cleaned text, or ``None`` when the scan budget is spent."""
+
         sentences = _NARRATIVE_SENTENCE.split(value)
+        if len(sentences) > state.sentences_remaining:
+            return None
+        state.sentences_remaining -= len(sentences)
         tainted = [
-            _is_laundered_claim(sentence, sources, adapted.request.user_goal)
-            for sentence in sentences
+            _is_laundered_claim(sentence, profiles) for sentence in sentences
         ]
         removed = any(tainted)
         kept = [
@@ -799,6 +886,8 @@ def _redact_untrusted_authority(
     if action.type in (ActionKind.RESPOND, ActionKind.MEMORY_WRITE):
         original = action.content or ""
         cleaned = clean(original)
+        if cleaned is None:
+            return _block("NARRATIVE_SCAN_BUDGET_EXCEEDED", 0.97, adapted)
         if cleaned == original:
             return None
         if not cleaned:
@@ -806,11 +895,13 @@ def _redact_untrusted_authority(
         action_data["content"] = cleaned
     elif action.type is ActionKind.TOOL_CALL and action.tool in _SIDE_EFFECTING_TOOLS:
         arguments = dict(action.arguments)
-        cleaned_arguments = {
-            key: clean(value) if key in _NARRATIVE_TOOL_ARGUMENTS and isinstance(value, str)
-            else value
-            for key, value in arguments.items()
-        }
+        cleaned_arguments = dict(arguments)
+        for key, value in arguments.items():
+            if key in _NARRATIVE_TOOL_ARGUMENTS and isinstance(value, str):
+                cleaned_value = clean(value)
+                if cleaned_value is None:
+                    return _block("NARRATIVE_SCAN_BUDGET_EXCEEDED", 0.97, adapted)
+                cleaned_arguments[key] = cleaned_value
         if cleaned_arguments == arguments:
             return None
         if any(
@@ -826,7 +917,10 @@ def _redact_untrusted_authority(
     rewritten_request = adapted.request.model_copy(update={"candidate_action": rewritten_action})
     rewritten = replace(adapted, request=rewritten_request)
     evaluated = _evaluate(
-        rewritten, facts, skip_confirmation=skip_confirmation, options=options
+        rewritten,
+        facts,
+        skip_confirmation=skip_confirmation,
+        options=replace(options, narrative=state.revalidation()),
     )
     if evaluated.verdict is not Verdict.ALLOW:
         return _block("AUTHORITY_REVALIDATION_FAILED", 1.0, adapted)
@@ -853,6 +947,10 @@ def _email_addresses(value: str) -> set[str]:
     request). Splitting on the address character set and inspecting a bounded
     window around the first ``@`` of each run preserves the match syntax for any
     realistic address while bounding the work per input character.
+
+    That bound is per call. The caller-side cost of calling this once per
+    ``(sentence, source)`` pair is bounded separately by ``_SourceProfile`` (one
+    call per distinct source per evaluation) and ``_MAX_NARRATIVE_SENTENCES``.
     """
 
     addresses: set[str] = set()
@@ -871,18 +969,26 @@ def _email_addresses(value: str) -> set[str]:
     return addresses
 
 
-def _is_laundered_claim(sentence: str, sources: tuple[str, ...], user_goal: str) -> bool:
+def _is_laundered_claim(sentence: str, profiles: tuple[_SourceProfile, ...]) -> bool:
+    """Return whether ``sentence`` repeats an unverified claim from a source.
+
+    Source-side facts (claim-pattern matches, addresses outside the authenticated
+    goal, instruction classification) come from the per-evaluation profiles, so
+    this is linear in the sentence and the number of sources instead of rescanning
+    every source.
+    """
+
     if _ATTRIBUTED_CLAIM.search(sentence) and _UNVERIFIED_CLAIM.search(sentence):
         return False
     if _CONTRAST_SPLIT.search(sentence):
         return any(
-            _is_laundered_claim(part, sources, user_goal)
-            for part in _CONTRAST_SPLIT.split(sentence)
+            _is_laundered_claim(part, profiles) for part in _CONTRAST_SPLIT.split(sentence)
         )
-    for source in sources:
+    lowered_sentence = sentence.lower()
+    for profile in profiles:
         if any(
             pattern.search(sentence)
-            and pattern.search(source)
+            and name in profile.claim_names
             and not (
                 name in _SAFE_CLAIM_NEGATIONS
                 and _SAFE_CLAIM_NEGATIONS[name].search(sentence)
@@ -890,15 +996,11 @@ def _is_laundered_claim(sentence: str, sources: tuple[str, ...], user_goal: str)
             for name, pattern in _UNTRUSTED_CLAIM_PATTERNS.items()
         ):
             return True
-        source_addresses = _email_addresses(source)
         if (
-            source_addresses
+            profile.relevant_addresses
             and _REPORTED_EMAIL_ACTION.search(sentence)
-            and any(
-                address in sentence.lower() and address not in user_goal.lower()
-                for address in source_addresses
-            )
-            and _classify_instruction_text(source) is ClauseDisposition.ACTIVE
+            and any(address in lowered_sentence for address in profile.relevant_addresses)
+            and profile.is_active_instruction()
         ):
             return True
     return False

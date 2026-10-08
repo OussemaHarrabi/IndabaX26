@@ -21,6 +21,71 @@ _SENTENCE = "Please review the attached summary."
 _ADVERSARIAL_CHARACTERS = "a."
 """A long run of local-part characters: the pre-fix quadratic ``findall`` input."""
 
+_ECHOED_ADDRESS = "ops@evil.test"
+"""An address the source carries and the action text echoes (H2-01 worst shape)."""
+
+_SOURCE_TEXT = f"sent {_ECHOED_ADDRESS}. "
+"""Repeated address-bearing clauses: each pre-fix rescan of this source cost ~2.6 ms."""
+
+_SHORT_SENTENCE = "S. "
+"""A sentence that is its own unit and costs nothing per pair by itself."""
+
+
+def _h201_request(
+    sources: int,
+    sentences: int,
+    *,
+    sentence: str = _SHORT_SENTENCE,
+    source_chars: int = 16_000,
+) -> SentinelRequest:
+    """Build the reviewer's H2-01 shape.
+
+    Every source is a distinct 16 kB body of repeated address-bearing clauses, and
+    the action text is ``sentences`` repetitions of ``sentence`` (an uppercase
+    start, so each repetition is its own sentence). Pre-fix, every
+    ``(sentence, source)`` pair rescanned the whole source for claim patterns and
+    addresses, twice per request.
+    """
+
+    provenance = [
+        {
+            "id": f"source-{index}",
+            "provenance": {
+                "source_type": "email",
+                "source_id": f"mailbox-{index}",
+                "trust_level": "untrusted_external",
+                "origin_actor": "vendor",
+                "retrieved_via": "email_read",
+                "sensitivity": "internal",
+                "timestamp": "2026-09-21T10:30:00Z",
+            },
+        }
+        for index in range(sources)
+    ]
+    return SentinelRequest.model_validate(
+        {
+            "run_id": "bounds-h201",
+            "step_id": 0,
+            "user_goal": "Review the queue",
+            "conversation": [
+                {
+                    "role": "tool",
+                    "kind": "email",
+                    "content": (
+                        _SOURCE_TEXT * (source_chars // len(_SOURCE_TEXT))
+                    )[: source_chars - 3]
+                    + f" {index:02d}",
+                    "provenance_ids": [f"source-{index}"],
+                }
+                for index in range(sources)
+            ],
+            "candidate_action": {"type": "respond", "content": (sentence * sentences)[:16_000]},
+            "policy_context": {"allowed_tools": ["email_read"]},
+            "provenance": provenance,
+            "history_digest": {"confirmations_granted": []},
+        }
+    )
+
 
 def _valid_request_bytes(**overrides: Any) -> bytes:
     payload: dict[str, Any] = {
@@ -204,7 +269,7 @@ def _per_character_seconds(source: str) -> float:
     best = float("inf")
     for _ in range(3):
         started = time.perf_counter()
-        engine._is_laundered_claim(_SENTENCE, (source,), "goal")
+        engine._build_source_profile(source, "goal")
         best = min(best, time.perf_counter() - started)
     return best / len(source)
 
@@ -261,3 +326,111 @@ def test_email_extraction_matches_the_legacy_scan_on_realistic_text() -> None:
         "soc.team@company.test",
     }
     assert engine._email_addresses("no address here") == set()
+
+
+def test_source_profile_is_built_once_per_distinct_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """H2-01: address extraction must run once per distinct source, not per pair."""
+
+    calls: list[str] = []
+    original = engine._email_addresses
+
+    def counting(value: str) -> set[str]:
+        calls.append(value)
+        return original(value)
+
+    monkeypatch.setattr(engine, "_email_addresses", counting)
+    request = _h201_request(sources=4, sentences=1000)
+
+    engine.decide(request)
+
+    distinct_sources = {item.content for item in request.conversation}
+    assert len(distinct_sources) == 4
+    # Pre-fix this shape made 8000 calls (2 passes x 1000 sentences x 4 sources).
+    assert len(calls) <= len(distinct_sources), (
+        f"{len(calls)} calls for {len(distinct_sources)} sources"
+    )
+    assert set(calls) == distinct_sources
+
+
+def test_source_classification_is_lazy_and_cached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """H2-01: the per-source instruction classification runs at most once."""
+
+    calls: list[str] = []
+    original = engine._classify_instruction_text
+
+    def counting(value: str) -> engine.ClauseDisposition:
+        calls.append(value)
+        return original(value)
+
+    monkeypatch.setattr(engine, "_classify_instruction_text", counting)
+    # The echo sentence reaches the address-echo branch, which needs the class.
+    request = _h201_request(sources=4, sentences=200, sentence=f"Sent {_ECHOED_ADDRESS}. ")
+
+    decision = engine.decide(request)
+
+    assert decision.verdict == "rewrite"
+    assert len(calls) <= 4, f"classified {len(calls)} times for 4 sources"
+
+
+def test_reviewer_worst_shape_is_decided_quickly_over_http(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """H2-01 acceptance: 4 sources x 16 kB plus 1000 sentences in under 2 s.
+
+    The wall-clock bound is a smoke bound (this host, not the shipped image); the
+    strict assertions are the call-count tests above.
+    """
+
+    monkeypatch.setenv("AEGISGRAPH_LEGACY_UNAUTHENTICATED", "true")
+    body = _h201_request(sources=4, sentences=1000).model_dump_json().encode("utf-8")
+
+    started = time.perf_counter()
+    response = client.post(
+        "/v1/decision", content=body, headers={"content-type": "application/json"}
+    )
+    elapsed = time.perf_counter() - started
+
+    assert response.status_code == 200
+    assert elapsed < 2.0, f"worst shape took {elapsed:.3f} s (acceptance bound)"
+    assert elapsed < 5.0, f"worst shape took {elapsed:.3f} s (smoke bound)"
+
+
+def test_narrative_sentence_budget_fails_closed() -> None:
+    """H2-01: a narrative surface too large to verify blocks instead of scanning."""
+
+    budget = engine._MAX_NARRATIVE_SENTENCES
+    request = _h201_request(sources=2, sentences=budget + 100)
+
+    decision = engine.decide(request)
+
+    assert decision.verdict == "block"
+    assert decision.reason_codes == ("NARRATIVE_SCAN_BUDGET_EXCEEDED",)
+
+
+def test_narrative_sentence_budget_does_not_affect_small_narratives() -> None:
+    """The budget must stay out of the way of ordinary requests."""
+
+    decision = engine.decide(
+        _h201_request(sources=2, sentences=200, sentence=f"Sent {_ECHOED_ADDRESS}. ")
+    )
+
+    assert decision.verdict == "rewrite"
+    assert decision.reason_codes == ("UNTRUSTED_AUTHORITY_REDACTED",)
+
+
+def test_sentence_budget_is_renewed_for_the_revalidation_pass() -> None:
+    """A redaction at the edge of the budget must not block its own revalidation."""
+
+    budget = engine._MAX_NARRATIVE_SENTENCES
+    echo = f"Sent {_ECHOED_ADDRESS}. "
+    request = _h201_request(
+        sources=1, sentences=1, sentence=echo + _SHORT_SENTENCE * (budget - 1)
+    )
+
+    decision = engine.decide(request)
+
+    assert decision.reason_codes != ("NARRATIVE_SCAN_BUDGET_EXCEEDED",)
