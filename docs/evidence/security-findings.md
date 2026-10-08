@@ -61,6 +61,12 @@ risk with an explicit decision), `open`.
   action → `409`; legacy surface → `404`; no credential or request content in the logs.
 - **M4:** read-only container smoke; compose config with five services; kustomize renders 7 objects; both
   validators pass; pinned kubeconform installer verifies the vendor checksum; SBOM byte-identical across runs.
+- **M4 compose stack, end to end (orchestrator, `docker compose up -d --build`):** five services healthy
+  (api, postgres, grafana, prometheus, otel-collector); the one-shot `migrate` service applied
+  `0001_initial`; `GET /healthz` → `{"status":"ok"}`; `GET /readyz` → `ready: true` with
+  `receipt_store: {durable: true, reachable: true}` (M2's durable store wired through the stack); one
+  decision on the legacy surface → `allow / BENIGN_ACTION`. Torn down afterwards; the port was overridden
+  to 18088 so it could not collide with a sibling's service.
 - **M5:** validator `PASS` (60 scenarios, 42/18, six per family across ten families, dataset
   `7e916a11981fa6444724dc78558e51561d32a3005b182862efb52b7c5f2cf735`); scoring deterministic (two runs
   byte-identical); duplicate run directory refused; seal `verify` `PASS` with `opened: false`; the custodian key
