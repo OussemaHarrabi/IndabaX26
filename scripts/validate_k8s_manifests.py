@@ -37,6 +37,21 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 KUSTOMIZE_DIR = REPO_ROOT / "deploy" / "k8s"
+KUBECONFORM_INSTALL_DIR = REPO_ROOT / "artifacts" / "tools"
+
+
+def installed_kubeconform() -> str | None:
+    """The binary ``scripts/install_kubeconform.py`` writes by default, if present.
+
+    The installer's destination is not on ``PATH``, so without this the remediation
+    the error message suggests would leave the validator still unable to find it.
+    """
+
+    name = "kubeconform.exe" if os.name == "nt" else "kubeconform"
+    candidate = KUBECONFORM_INSTALL_DIR / name
+    return str(candidate) if candidate.exists() else None
+
+
 KUBERNETES_VERSION = "1.31.0"
 
 _FAILURES: list[str] = []
@@ -130,7 +145,7 @@ def schema_validate(
     else:
         has_python_validator = True
 
-    kubeconform = kubeconform_path or shutil.which("kubeconform")
+    kubeconform = kubeconform_path or shutil.which("kubeconform") or installed_kubeconform()
     if (
         kubeconform_path
         and shutil.which(kubeconform_path) is None
