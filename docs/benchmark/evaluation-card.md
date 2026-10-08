@@ -171,11 +171,12 @@ licence an attack claim.
 | `latency_p50/p90/p95/p99_ms` | nearest-rank percentiles over all decisions with a latency |
 
 Every published float is rounded to six decimals, and the whole report carries a
-`deterministic_digest`. The digest covers the **decisions**: latency fields are
-excluded from it, for the same reason the legacy evaluator excludes them. Two
-runs of the same gateway revision on the same data therefore share a digest even
-on different machines, and a differing digest means the verdicts differed rather
-than the host.
+`deterministic_digest`. The digest covers the **metrics**: latency fields and the
+run's own bookkeeping (name, timestamp, commit, dataset hash) are excluded, for
+the same reason the legacy evaluator excludes latency. Two runs of the same
+gateway revision on the same data therefore share a digest even on different
+machines, and a differing digest means the verdicts differed rather than the host
+or the run label.
 
 **Minimum-slice rule.** A slice metric is published only when its own denominator
 reaches `MIN_SLICE_SIZE` (3). Below that it is `None` and renders `n/a`, and the
@@ -199,10 +200,11 @@ a utility oracle for controls.
 ## 8a. A reference table
 
 The following is a real run of the committed dataset against the M1 gateway
-(`b0923c665e3565a19194c219f136f3f892d2a3d5`, policy set `aegisgraph-default/1`),
+(`d2856a4caf8509941f1d17f1365e57a9f965bbee`, policy set `aegisgraph-default/1`),
 scripted adapter, splits `development,validation`, 60 scenarios, dataset
-`7e916a11…`, scenario set `e4f376b2…`. Its decision digest is
-`3a57a905931dd9c9257d1874350ed5b8a47491afce02897db96367d1747790ae`. It is quoted
+`7e916a11…`, scenario set `e4f376b2…`, run `20261008T160000Z-m1-scripted-full`. Its
+decision digest is
+`437389665f39034100038d2c1485dee7543ab880532dd9bdc458f39edbab2a37`. It is quoted
 so a reviewer can see the shape of a table and check the digest; re-running on
 another host must reproduce the digest and may move the latencies.
 
