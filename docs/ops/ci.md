@@ -19,6 +19,13 @@ A matrix is deliberately **not** used: `pyproject.toml` declares
 `requires-python = ">=3.12,<3.13"`, so there is exactly one supported interpreter
 minor. The single axis (`3.12`) is fixed in `env.PYTHON_VERSION`.
 
+The container job builds with `docker buildx build --provenance=false --sbom=false
+--load`. BuildKit's default provenance attestation records build metadata, which
+makes the *manifest-list* digest vary between builds even for identical content;
+disabling it makes the recorded digest a reproducible content digest (see
+`docs/ops/deployment.md` and `docs/ops/container.md`). The equivalent local
+command is `docker build --provenance=false --sbom=false -t aegisgraph:local .`.
+
 ## Coverage gate: the exact baseline and the ratchet rule
 
 The gate is `python -m pytest -q --cov=aegisgraph --cov-report=term-missing

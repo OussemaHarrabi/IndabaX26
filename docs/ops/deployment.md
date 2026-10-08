@@ -127,8 +127,16 @@ python scripts/generate_sbom.py --image aegisgraph:m4 --deterministic \
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `deploy/sbom/aegisgraph-image-sbom.json` | `b320eedf3cbb8b72e34222a01e89d55646f22c3652a0d8c89c181c48531cd8e5` |
+| `deploy/sbom/aegisgraph-image-sbom.json` | `9042dfe2358c2625bc2b70727244f8e89cfc19280d6255037349423fbcd492c7` |
 | `deploy/sbom/aegisgraph-image-sbom.requirements.txt` | `ed494c891709fbfeb93fc8b23173250c306b32dbc3f9a71f8114767260881e13` |
+
+The manifest records `image.id =
+sha256:179c8913d1b4d373058048e719c553a17ae93a4dcc8b817a9c6dac36648b0c18` (the
+reproducible content digest; the image is built with `--provenance=false
+--sbom=false`, see `docs/ops/container.md`) and `source.commit`, the revision
+whose source produced the image. Because the manifest is committed after the
+commit it describes, `source.commit` names its parent commit; regenerating at
+that revision reproduces the file byte-for-byte.
 
 Two consecutive deterministic runs produced byte-identical output. CI emits a
 fresh (timestamped) SBOM plus the image digest and uploads them as the

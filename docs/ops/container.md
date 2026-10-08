@@ -4,7 +4,9 @@ Owner: Agent E (DevSecOps). Files: `Dockerfile`, `.dockerignore`.
 
 ## What the image is
 
-- **Base:** `python:3.12-slim` for both stages.
+- **Base:** `python:3.12-slim`, pinned by **digest**
+  (`@sha256:05cda977…`, the manifest-list digest resolved 2026-10-08) for both
+  stages, so a rebuild cannot silently pick up a new base.
 - **Stage 1 (`builder`)** installs the exact pins from `requirements.lock` with
   `--target=/install`. Every pin is a pure-Python wheel, so no compiler is
   involved.
@@ -45,13 +47,21 @@ header, not merely tolerated.
 ## Build and smoke (exact commands and output)
 
 ```sh
-docker build -t aegisgraph:m4 .
+docker build --provenance=false --sbom=false -t aegisgraph:m4 .
 ```
 
 ```
-#15 exporting manifest list sha256:9b033e3d8a882183b0bba2fe1474962e15acc1fdf3a47e15560dd6a85e6d1292 0.0s done
+#15 exporting manifest sha256:179c8913d1b4d373058048e719c553a17ae93a4dcc8b817a9c6dac36648b0c18 done
+#15 exporting config sha256:c05aa6ce8f4e06d98348bd48c61b7e762efd271f96eb3a703bc796a7b83e8cea done
 #15 naming to docker.io/library/aegisgraph:m4 done
 ```
+
+`--provenance=false --sbom=false` is deliberate: BuildKit's default provenance
+attestation records build metadata, so the *manifest-list* digest changes between
+builds even when the content does not (an un-flagged build of this same
+Dockerfile produced `sha256:9b033e3d…`). With attestations off the digest is a
+content digest, verified stable across two consecutive builds
+(`docker image inspect --format '{{.Id}}'` → the same `179c8913…` both times).
 
 ```sh
 docker run --rm -d --name aegis-smoke \
@@ -106,11 +116,17 @@ cannot modify `aegisgraph/`, drop a `sitecustomize.py`, or reinstall a package.
 | Artifact | Value |
 | --- | --- |
 | Image reference built locally | `aegisgraph:m4` |
-| OCI image ID (manifest list, `.Id`) | `sha256:9b033e3d8a882183b0bba2fe1474962e15acc1fdf3a47e15560dd6a85e6d1292` |
-| Config digest (from the build log) | `sha256:c05aa6ce8f4e06d98348bd48c61b7e762efd271f96eb3a703bc796a7b83e8cea` |
-| Single-platform manifest digest | `sha256:179c8913d1b4d373058048e719c553a17ae93a4dcc8b817a9c6dac36648b0c18` |
-| Compressed size | 48,549,297 bytes |
-| SBOM manifest (`deploy/sbom/aegisgraph-image-sbom.json`) | sha256 `b320eedf3cbb8b72e34222a01e89d55646f22c3652a0d8c89c181c48531cd8e5` |
+| **Image ID (content digest, reproducible)** | `sha256:179c8913d1b4d373058048e719c553a17ae93a4dcc8b817a9c6dac36648b0c18` |
+| Config digest | `sha256:c05aa6ce8f4e06d98348bd48c61b7e762efd271f96eb3a703bc796a7b83e8cea` |
+| Base image | `python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f` |
+| Compressed size | 48,548,441 bytes |
+| SBOM manifest (`deploy/sbom/aegisgraph-image-sbom.json`) | sha256 `9042dfe2358c2625bc2b70727244f8e89cfc19280d6255037349423fbcd492c7` |
+| Dependency inventory (`deploy/sbom/aegisgraph-image-sbom.requirements.txt`) | sha256 `ed494c891709fbfeb93fc8b23173250c306b32dbc3f9a71f8114767260881e13` |
+
+The un-flagged build of the same Dockerfile produced a *manifest-list* digest of
+`sha256:9b033e3d…`; that digest is not recorded as the identity because it is not
+reproducible (it carries a BuildKit attestation). Only the content digest
+(`179c8913…`) is.
 
 CI re-derives the ID with `docker image inspect --format '{{.Id}}'` and uploads it
 as `artifacts/image-digest.txt`.
