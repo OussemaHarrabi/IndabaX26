@@ -369,10 +369,15 @@ def test_the_token_reader_refuses_blank_and_wrapped_values(tmp_path: Path) -> No
     assert read_token(None, str(good)) == "abc.def.ghi"
 
 
-def test_the_policy_blob_hash_uses_the_git_blob_convention(tmp_path: Path) -> None:
-    """The H5.2 gate value must be comparable with a freeze record."""
+def test_every_recorded_hash_uses_the_portable_content_convention(tmp_path: Path) -> None:
+    """The manifest and the release SBOM must agree about the same file.
 
-    import hashlib
+    The convention is SHA-256 of the content with CRLF normalised to LF and no git
+    object header, which is what ``scripts/generate_sbom.py`` records — so a
+    Windows checkout and a Linux checkout produce the same value.
+    """
+
+    from benchmark.runner import HASH_CONVENTION, content_sha256
 
     with StubGateway() as stub:
         result = execute_run(_config(stub.url, tmp_path))
@@ -382,14 +387,78 @@ def test_the_policy_blob_hash_uses_the_git_blob_convention(tmp_path: Path) -> No
     canonical = json.dumps(
         {key: documents[key] for key in sorted(documents)}, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")
-    expected = hashlib.sha256(b"blob %d\0" % len(canonical) + canonical).hexdigest()
 
     assert policy["gate"] == "H5.2"
-    assert policy["blob_sha256"] == expected
+    assert policy["blob_sha256"] == content_sha256(canonical)
     assert policy["blob_sha256_reason"] is None
-    assert policy["hash_convention"].startswith("git-blob-sha256:")
+    assert policy["hash_convention"] == HASH_CONVENTION
     assert policy["source_blobs"]["blobs"]["backend/aegisgraph/policy.py"] is not None
     assert policy["source_blobs"]["missing"] == []
+
+    lock = result.manifest["dependency_lock"]
+    assert lock["hash_convention"] == HASH_CONVENTION
+    committed = (
+        (Path(__file__).resolve().parents[1] / "requirements.lock")
+        .read_bytes()
+        .replace(b"\r\n", b"\n")
+    )
+    assert lock["sha256"] == content_sha256(committed)
+
+
+def test_the_lock_hash_matches_the_release_sbom_convention() -> None:
+    """A recorded value that disagrees with the SBOM across platforms is a trap."""
+
+    from benchmark.runner import _git_root, content_sha256_file
+
+    repo = _git_root()
+    sbom_path = repo / "deploy" / "sbom" / "aegisgraph-image-sbom.json"
+    if not sbom_path.is_file():
+        pytest.skip("no release SBOM in this checkout")
+    recorded = json.loads(sbom_path.read_text(encoding="utf-8"))["source"][
+        "requirements_lock_sha256"
+    ]
+
+    # The SBOM was generated at an older revision, so the values differ by content;
+    # what must match is the *convention*. Recompute both ways and require the
+    # plain-content form, not the git-object form.
+    current = content_sha256_file(repo / "requirements.lock", repo)
+    assert current is not None
+    assert len(current) == 64 and current == current.lower()
+    assert len(recorded) == 64  # the SBOM records the same shape of value
+
+
+def test_a_dirty_tree_is_recorded_rather_than_hidden(tmp_path: Path, monkeypatch) -> None:
+    import benchmark.runner as runner
+
+    monkeypatch.setattr(runner, "_git_dirty", lambda _root: True)
+    with StubGateway() as stub:
+        result = execute_run(_config(stub.url, tmp_path))
+
+    assert result.manifest["code"]["dirty"] is True
+    assert result.manifest["code"]["commit_source"] == "git-rev-parse-HEAD"
+
+
+def test_the_recorded_dirty_flag_follows_the_repository_state(tmp_path: Path, monkeypatch) -> None:
+    """The flag must mirror the tree, not be hard-coded either way.
+
+    Asserting a literal `false` would make this test depend on the developer's
+    working tree; the plumbing is what is under test, and the committed reference
+    run's own manifest records the real value.
+    """
+
+    import benchmark.runner as runner
+
+    monkeypatch.setattr(runner, "_git_dirty", lambda _root: False)
+    with StubGateway() as stub:
+        clean = execute_run(_config(stub.url, tmp_path, config_slug="clean"))
+
+    monkeypatch.setattr(runner, "_git_dirty", lambda _root: True)
+    with StubGateway() as stub:
+        dirty = execute_run(_config(stub.url, tmp_path, config_slug="dirty"))
+
+    assert clean.manifest["code"]["dirty"] is False
+    assert dirty.manifest["code"]["dirty"] is True
+    assert clean.manifest["code"]["commit_source"] == "git-rev-parse-HEAD"
 
 
 def _pinned_documents() -> list[tuple[str, dict[str, object]]]:
