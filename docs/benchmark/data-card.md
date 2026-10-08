@@ -25,9 +25,16 @@ The ten families:
 `confirmation_bypass`, `replay_tampering`, `unsafe_rewrite`, `output_integrity`.
 
 Split policy: families 1–7 are `development`, families 8–10 are `validation`, so
-the two open splits are separated by family rather than by random assignment. A
-paraphrase family, a matched pair and a payload template each live in exactly one
-split; `benchmark/splits.py` fails the dataset if that is not true.
+the two open splits are separated by family rather than by random assignment.
+
+That policy is **machine-checked**, not merely stated: `FAMILY_SPLIT_POLICY` in
+`benchmark/splits.py` maps each family to its required split, and validation fails
+with `SPLIT_POLICY_VIOLATION` when a scenario's declared split contradicts it.
+Because the check compares the family policy against the files, moving a whole
+matched pair into another split — the case a self-declared label alone cannot
+catch — is reported as `SPLIT_POLICY_VIOLATION` plus `SPLIT_OVERLAP`. A paraphrase
+family, a matched pair and a payload template must each live in exactly one split;
+`split_disjointness` and `leakage_findings` fail the dataset otherwise.
 
 ## 2. Identifiers
 
@@ -37,13 +44,16 @@ split; `benchmark/splits.py` fails the dataset if that is not true.
 
 | Sealed artifact | SHA-256 |
 | --- | --- |
-| `benchmark/data/holdout/sealed-holdout.json.enc` (20 scenarios) | `52f67318c248b7a7be90b4d47988b676fe492e29a5b8a926d89df5b665c00c05` |
-| `benchmark/data/holdout/seal.json` (manifest) | `ff6e9c322b28ce58b515cea4febebe84596d03a247432c2aeaedaf475eb7ee0e` |
+| `benchmark/data/holdout/sealed-holdout.json.enc` (20 scenarios) | `c1a32fb801e18f9a0e841ea61214401d08ab2999caf9b39fe7833ffebb78d91c` |
+| `benchmark/data/holdout/seal.json` (manifest) | `11cf032faddd135d1ba34985f608e4fd4b8f5fd1c7b36b12c70f2fd47f7e918f` |
 | Plaintext holdout, as recorded in the manifest | `7c0990b4b854141b9f645dce64e9d8f6f94a09010ac6e68a8b5baba35547eaf6` |
 
 The plaintext holdout hash identifies the sealed set without revealing it; the
-ciphertext hash lets a reviewer detect tampering with the committed blob. See
-`docs/benchmark/holdout.md`.
+ciphertext hash lets a reviewer detect tampering with the committed blob. This is
+**seal #2**: the first seal's key became recoverable from a persisted local agent
+transcript, so the orchestrator rotated it on 2026-10-08 (the plaintext hash is
+unchanged, so the same 20 scenarios are sealed under a new key). See
+`docs/benchmark/holdout.md` and `docs/evidence/m5-seal-custody.md`.
 
 ### Per-scenario hashes
 
@@ -139,6 +149,35 @@ largest assembled request, the holdout hashes, and every finding with a code, a
 message and the files it concerns. Findings are errors; a dataset with any error
 is not publishable.
 
+## 4a. What the leakage detector can and cannot see
+
+The gate that keeps a template from crossing a split compares two payload
+metrics, and its sensitivity is arithmetic rather than aspirational:
+
+| Case | Detected? |
+| --- | --- |
+| Identical payload corpus (normalized) | yes — exact fingerprint |
+| Copied paragraph (5-gram Jaccard ≥ 0.9, texts of ≥ 7 tokens) | yes |
+| Skeleton reused with its named slots **swapped** (amount ↔ invoice, vendor ↔ name) | yes — order-insensitive token-multiset Jaccard ≥ 0.9 |
+| One token changed in a text of ≥ 19 tokens | yes — multiset Jaccard `(T-1)/(T+1) ≥ 0.9` |
+| Two tokens changed in a text of < 38 tokens | **no** (`(T-2)/(T+2) ≥ 0.9` needs T ≥ 38) |
+| A paraphrase that changes the vocabulary (a synonym rewrite) | **no** |
+| Any text shorter than 20 tokens | **no** — below that an identifier pair looks like a paraphrase, so short strings are excluded rather than compared |
+
+The residual limits are the last three rows. They are stated rather than papered
+over: the detector is a mechanical guard against reuse of *content*, not a
+semantic paraphrase detector.
+
+**Namespace boundary.** The pre-seal gate compares a candidate holdout against the
+native plaintext dataset **and** against every legacy-shaped scenario id published
+in the tracked tree (`published_id_namespace`, reading `git ls-files` and the file
+bodies). The native dataset uses the `ent_`/`fin_`/`soc_` prefixes like the legacy
+suite, so the id comparison spans both namespaces; the sealed holdout uses the
+`hold_` prefix, which no published id uses, and a collision is refused at seal
+time (`HOLDOUT_LEGACY_ID_COLLISION`). What the gate still does **not** cover: the
+scoring code path (the seal gates content, not scoring — `holdout.md` §7), and
+content outside tracked files.
+
 ## 5. What the data does **not** cover yet
 
 Stated plainly, because a benchmark's gaps matter as much as its coverage:
@@ -167,3 +206,5 @@ Stated plainly, because a benchmark's gaps matter as much as its coverage:
    does not support a precise claim.
 10. **No adaptive attacker.** The payloads are static; nothing re-plans against
     the defence between attempts.
+11. **The leakage detector is not semantic.** A vocabulary-changing paraphrase of
+    a payload can cross a split undetected (section 4a).
