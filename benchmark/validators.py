@@ -167,14 +167,41 @@ def _schema_findings(root: Path) -> tuple[list[Finding], list[DatasetEntry], lis
     return findings, entries, paths
 
 
+def _content_projection(scenario: Scenario) -> str:
+    """The scenario's substance, with identity and bookkeeping fields removed.
+
+    Two files carrying the same evidence, the same actions and the same policy
+    context are the same scenario however they are named, so the duplicate check
+    hashes this projection rather than the whole document — which always differs
+    once the id differs, making the check vacuous.
+    """
+
+    return json.dumps(
+        scenario.model_dump(
+            mode="json",
+            exclude={
+                "id",
+                "title",
+                "description",
+                "pair_id",
+                "paraphrase_family",
+                "tags",
+                "dataset",
+                "scenario_version",
+            },
+        ),
+        sort_keys=True,
+    )
+
+
 def _duplicate_findings(dataset: Dataset) -> list[Finding]:
     findings: list[Finding] = []
     ids: dict[str, list[str]] = {}
     bodies: dict[str, list[str]] = {}
     for entry in dataset.entries:
         ids.setdefault(entry.scenario.id, []).append(entry.relative_path)
-        body = entry.scenario.model_dump_json()
-        bodies.setdefault(hashlib.sha256(body.encode()).hexdigest(), []).append(entry.scenario.id)
+        digest = hashlib.sha256(_content_projection(entry.scenario).encode("utf-8")).hexdigest()
+        bodies.setdefault(digest, []).append(entry.scenario.id)
     for scenario_id, paths in sorted(ids.items()):
         if len(paths) > 1:
             findings.append(
@@ -190,7 +217,7 @@ def _duplicate_findings(dataset: Dataset) -> list[Finding]:
                 Finding(
                     code="DUPLICATE_BODY",
                     message=(
-                        f"identical scenario bodies (fingerprint {fingerprint[:12]}) "
+                        f"identical scenario content (fingerprint {fingerprint[:12]}) "
                         f"under different ids"
                     ),
                     where=tuple(sorted(members)),
@@ -213,8 +240,7 @@ def _bound_findings(dataset: Dataset) -> tuple[list[Finding], int]:
                     Finding(
                         code="BOUND_REQUEST",
                         message=(
-                            f"assembled request is {size} bytes, over the "
-                            f"{WIRE_BODY_LIMIT} cap"
+                            f"assembled request is {size} bytes, over the {WIRE_BODY_LIMIT} cap"
                         ),
                         where=(scenario.id,),
                     )

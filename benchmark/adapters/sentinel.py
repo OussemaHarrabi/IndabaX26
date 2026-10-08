@@ -427,8 +427,14 @@ def load_legacy_scenarios(
     lock = read_benchmark_lock()
     if lock.get("commit"):
         commit = str(lock["commit"])
+    files = iter_legacy_files(base)
+    if not files:
+        raise AdapterError(
+            f"no legacy scenarios found under {base / 'scenarios'}; expected the pinned "
+            f"checkout at commit {LEGACY_COMMIT}"
+        )
     projections: list[LegacyProjection] = []
-    for path in iter_legacy_files(base):
+    for path in files:
         raw = path.read_text(encoding="utf-8")
         data = yaml.safe_load(raw)
         if not isinstance(data, dict):
