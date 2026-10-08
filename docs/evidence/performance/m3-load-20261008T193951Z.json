@@ -1,0 +1,117 @@
+{
+  "api_version": "aegisgraph/v1",
+  "digest_semantics": "report_digest_sha256 covers this report's canonical (sorted, compact) encoding without that field; the .sha256 sidecar covers the exact bytes written to disk",
+  "environment": {
+    "base_url": "http://127.0.0.1:58831",
+    "cpu_count": 16,
+    "machine": "AMD64",
+    "observed_on": "local developer hardware, single API process, no tuning",
+    "platform": "Windows 11",
+    "processor": "AMD64 Family 26 Model 96 Stepping 0, AuthenticAMD",
+    "python": "3.13.14",
+    "server_build": {
+      "commit": "unknown",
+      "service": "aegisgraph",
+      "version": "0.1.0"
+    },
+    "server_policy_set": {
+      "id": "aegisgraph-default",
+      "version": "1"
+    }
+  },
+  "label": "M3 decision-surface baseline; telemetry disabled (no OTLP endpoint configured)",
+  "policy_set": {
+    "document": {
+      "allowed_tools": [
+        "document_search",
+        "payment_execute"
+      ],
+      "confirmation_required_tools": [
+        "payment_execute"
+      ],
+      "consequential_tools": [
+        "payment_execute"
+      ],
+      "internal_email_domains": [
+        "aegisgraph.local"
+      ]
+    },
+    "id": "load-test-policy",
+    "source": "published and activated by the harness",
+    "version": "1"
+  },
+  "report_digest_sha256": "3dcd41453b28ceda017dac7cb49e1061a1b2174af822a90c48e25c58c547250d",
+  "results": {
+    "elapsed_seconds": 20.042076,
+    "error_rate": 0.0,
+    "error_samples": {},
+    "latency_kind": "client-observed end-to-end, including load-generator scheduling on the same host",
+    "latency_seconds": {
+      "max": 0.147161,
+      "mean": 0.075224,
+      "min": 0.02414,
+      "p50": 0.071422,
+      "p95": 0.10287,
+      "p99": 0.132912
+    },
+    "measured_requests": 4256,
+    "parameters": {
+      "concurrency": 16,
+      "duration_seconds": 20.0,
+      "request_cap": null,
+      "warm_up_requests": 40
+    },
+    "percentile_method": "linear interpolation on the sorted sample set",
+    "request_mix": [
+      {
+        "name": "answer",
+        "weight": 60
+      },
+      {
+        "name": "read_tool",
+        "weight": 20
+      },
+      {
+        "name": "blocked_tool",
+        "weight": 15
+      },
+      {
+        "name": "confirmation_required",
+        "weight": 5
+      }
+    ],
+    "server_error_rate": 0.0,
+    "shape_counts": {
+      "answer": 2557,
+      "blocked_tool": 663,
+      "confirmation_required": 233,
+      "read_tool": 803
+    },
+    "status_counts": {
+      "200": 4256
+    },
+    "throughput_rps": 212.353,
+    "verdict_counts": {
+      "allow": 3360,
+      "block": 663,
+      "escalate": 233
+    }
+  },
+  "schema": "aegisgraph.load-test/1",
+  "service_side": {
+    "decisions_observed": 4296,
+    "latency_seconds": {
+      "max": 0.014878,
+      "mean": 0.001794,
+      "p50": 0.001573,
+      "p95": 0.003139,
+      "p99": 0.005175
+    },
+    "source": "C:/Users/oussa/AppData/Local/Temp/m3-load/api.log"
+  },
+  "started_at": "2026-10-08T19:39:51.418242+00:00",
+  "tool": {
+    "name": "scripts/load_test.py",
+    "version": "1"
+  }
+}

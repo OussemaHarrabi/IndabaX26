@@ -1,0 +1,16 @@
+# Prometheus scrape fragment for the AegisGraph API's own /metrics endpoint (M3).
+#
+# The API exposes Prometheus text on /metrics: on by default in development, and in
+# production only when AEGISGRAPH_METRICS_ENABLED=true. The endpoint is an internal
+# surface — the Kubernetes NetworkPolicy already restricts ingress to the pod — so it
+# is scraped over the Compose network, never from the host.
+#
+# Merge the `aegisgraph-api` job below into `deploy/compose/prometheus.yml`'s
+# `scrape_configs` list (that file and `compose.yaml` are owned by the container
+# workstream; the dashboard in `deploy/observability/grafana/dashboards/` is already
+# loaded by the provisioned Grafana, which mounts a dashboards directory).
+scrape_configs:
+  - job_name: aegisgraph-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8080"]

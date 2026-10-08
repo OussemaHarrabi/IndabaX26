@@ -16,6 +16,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from aegisgraph import telemetry
 from aegisgraph.access import ProblemError
 from aegisgraph.api_admin import router as api_admin_router
 from aegisgraph.api_v1 import router as api_v1_router
@@ -197,6 +198,37 @@ async def no_store_and_sanitize_errors(
     return response
 
 
+METRICS_ROUTE = "/metrics"
+"""The Prometheus exposition route; excluded from its own request counter (M3)."""
+
+
+@app.middleware("http")
+async def record_request_metrics(
+    request: Request, call_next: RequestResponseEndpoint
+) -> Response:
+    """Count every handled request by route template, method and status (M3).
+
+    The label is the matched route *template*, never the concrete path, so the
+    series count stays bounded whatever identifiers a caller sends. An unmatched
+    request is labelled ``unmatched`` and the ``/metrics`` scrape is excluded, so
+    scraping does not feed its own series. Counting happens after the response is
+    produced, and a telemetry failure cannot alter it.
+    """
+
+    response = await call_next(request)
+    route = _route_template(request)
+    if route != METRICS_ROUTE:
+        telemetry.record_request(route, request.method, response.status_code)
+    return response
+
+
+def _route_template(request: Request) -> str:
+    """Return the matched route template, or the bounded ``unmatched`` label."""
+
+    template = getattr(request.scope.get("route"), "path", None)
+    return template if isinstance(template, str) else telemetry.ROUTE_UNMATCHED
+
+
 def max_body_bytes() -> int:
     """Return the configured request-body bound in bytes (default 1 MiB)."""
 
@@ -243,6 +275,7 @@ app.include_router(api_admin_router)
 async def authentication_error_handler(_request: Request, error: AuthError) -> JSONResponse:
     """Return the authentication/authorization outcome without leaking the credential."""
 
+    telemetry.record_auth_failure(error.code)
     headers = {"WWW-Authenticate": "Bearer"} if error.status_code == 401 else None
     return JSONResponse(
         {"detail": error.detail, "code": error.code},
@@ -313,6 +346,23 @@ async def readyz() -> JSONResponse:
         "dependencies": dependencies,
     }
     return JSONResponse(body, status_code=200 if ready else 503)
+
+
+@app.get(METRICS_ROUTE, include_in_schema=False)
+async def metrics() -> Response:
+    """Serve the Prometheus exposition; an internal surface, opt-in in production (M3).
+
+    The route answers only when metrics are enabled: on by default in development,
+    and in production only with an explicit ``AEGISGRAPH_METRICS_ENABLED=true``.
+    Production ingress is already restricted by the Kubernetes NetworkPolicy, so the
+    surface is never reachable from outside the cluster.
+    """
+
+    if not telemetry.metrics_enabled():
+        raise StarletteHTTPException(status_code=404, detail="Not Found")
+    return Response(
+        content=telemetry.render_metrics(), media_type=telemetry.metrics_content_type()
+    )
 
 
 def _store_reachable(settings: Settings) -> bool:
