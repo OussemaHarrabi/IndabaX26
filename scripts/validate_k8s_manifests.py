@@ -234,17 +234,39 @@ def policy_checks(documents: list[dict[str, Any]]) -> None:
             and bool(resources.get("limits", {}).get("memory")),
             f"{name}: cpu+memory limits set",
         )
-        for probe in ("readinessProbe", "livenessProbe"):
-            http_get = container.get(probe, {}).get("httpGet", {})
+        # H4-08: readiness is dependency-aware; liveness and startup are not.
+        probe_paths = {
+            probe: container.get(probe, {}).get("httpGet", {}).get("path")
+            for probe in ("readinessProbe", "livenessProbe", "startupProbe")
+        }
+        _record(
+            probe_paths["readinessProbe"] == "/readyz",
+            f"{name}: readinessProbe on /readyz (got {probe_paths['readinessProbe']!r})",
+        )
+        for probe in ("livenessProbe", "startupProbe"):
             _record(
-                http_get.get("path") == "/healthz",
-                f"{name}: {probe} on /healthz",
+                probe_paths[probe] == "/healthz",
+                f"{name}: {probe} on /healthz (got {probe_paths[probe]!r})",
             )
 
     _record(bool(_by_kind(documents, "Service")), "Service present")
 
     config_maps = _by_kind(documents, "ConfigMap")
     _record(bool(config_maps), "ConfigMap present")
+    if config_maps:
+        data = config_maps[0].get("data", {})
+        # H4-07: without these the pod runs in development, where /metrics is
+        # served by default and auth_mode=none is accepted.
+        for key, expected in (
+            ("AEGISGRAPH_ENV", "production"),
+            ("AEGISGRAPH_AUTH_MODE", "required"),
+            ("AEGISGRAPH_METRICS_ENABLED", "false"),
+            ("AEGISGRAPH_LEGACY_UNAUTHENTICATED", "false"),
+        ):
+            _record(
+                data.get(key) == expected,
+                f"ConfigMap sets {key}={expected} (got {data.get(key)!r})",
+            )
 
     secrets = _by_kind(documents, "Secret")
     leaks = [s["metadata"]["name"] for s in secrets if s.get("data") or s.get("stringData")]
