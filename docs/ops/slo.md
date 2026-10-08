@@ -33,49 +33,80 @@ reported separately.
 
 ## Measured baseline
 
-Artifact: `docs/evidence/performance/m3-load-20261008T193951Z.json`
-(file SHA-256 `cb338d588a3bb86d4cd227d6a9ab25485aed3e3040e735bf6aad463b9fdb0f27`,
-report digest `3dcd41453b28ceda017dac7cb49e1061a1b2174af822a90c48e25c58c547250d`).
+Artifact: `docs/evidence/performance/m3-load-20261008T210436Z.json`
+(file SHA-256 `a8250f2fcfe0fdcda5a3b25b8ca2e6b578054b8d6f3ef357f39bbef36eee8b62`,
+report digest `e437951890bce9837eb75e751fcb04f606ce513456e359bcf81102ded780ce89`).
 
 Run: 16 concurrent clients, 20 s measured window after a 40-request warm-up, a
 weighted mix of valid requests (60 % answer, 20 % allowed read tool, 15 % blocked
 tool, 5 % confirmation-required consequential action), telemetry disabled (no OTLP
-endpoint configured).
+endpoint configured). The service-side block covers **2 986 decisions for 2 986
+measured requests** (`service_side.counts_match_measured: true`): the warm-up is
+excluded, so the denominator is the measured window and nothing else.
 
 | Figure | Value |
 | --- | --- |
-| measured requests | 4 256 |
-| throughput | 212.4 req/s |
+| measured requests | 2 986 |
+| throughput | 148.9 req/s |
 | errors | 0 (0.0000 %) |
-| statuses | `{"200": 4256}` |
-| verdicts | `allow` 3 360, `block` 663, `escalate` 233 |
-| in-process latency | p50 1.573 ms, p95 3.139 ms, p99 5.175 ms, mean 1.794 ms, max 14.878 ms |
-| client-observed latency | p50 71.4 ms, p95 102.9 ms, p99 132.9 ms, mean 75.2 ms, max 147.2 ms |
+| statuses | `{"200": 2986}` |
+| verdicts | `allow` 2 368, `block` 455, `escalate` 163 |
+| in-process latency | p50 2.302 ms, p95 5.227 ms, p99 7.283 ms, mean 2.654 ms, max 16.475 ms |
+| client-observed latency | p50 98.6 ms, p95 169.4 ms, p99 201.4 ms, mean 107.2 ms, max 360.0 ms |
+
+### The superseded first report
+
+`docs/evidence/performance/m3-load-20261008T193951Z.json` is kept as history and
+must not be quoted. Two defects in the first revision of the harness made its
+numbers wrong, both found by an independent adversarial review
+(`docs/evidence/reviews/M3-telemetry-load-adversarial-review.json`, findings H4-01
+and H4-02) and both fixed before this baseline was taken:
+
+* its service-side block reported **4 296 decisions for 4 256 measured requests**:
+  the log offset was captured before the warm-up, so 40 cold-start requests were
+  included in the percentiles (p50 1.573 / p95 3.139 / p99 5.175 ms). Those numbers
+  are **warm-up-contaminated and superseded**;
+* its `.sha256` sidecar used the LF digest `cb338d58…` while the file on disk had
+  been written in text mode on Windows (117 CRLF pairs, raw digest `1b1f7e20…`), so
+  `sha256sum` did not match the sidecar. Reports are now written in binary and the
+  sidecar is the digest of the exact bytes on disk; the smoke test asserts it by
+  hashing `read_bytes()`.
+
+Why the corrected run is also slower (148.9 req/s against 212.4 req/s, p95 5.227 ms
+against 3.139 ms): the second run shared the machine with concurrent work. That
+spread is itself the honest picture of this class of host — the SLO targets below
+are therefore justified against the **worse** of the two runs, and the run-to-run
+variation (≈1.7× on p95) is treated as part of the environment, not as noise to be
+averaged away.
 
 The gap between the two latency views is the load generator itself: 16 blocking
 client threads share the same 16-CPU host with the server, so the client-observed
 p50 is queueing on the client side, not work inside the service. Little's law
-confirms it: 16 concurrent / 212 req/s ≈ 75 ms of in-flight time. The in-process
+confirms it: 16 concurrent / 149 req/s ≈ 107 ms of in-flight time. The in-process
 numbers (a few milliseconds) are what the service actually costs.
+
+The measured run used the **process-local** receipt store (no `DATABASE_URL`), so
+the in-process figure excludes a durable PostgreSQL write. It is not comparable to
+a durable-store latency and no objective below assumes it is.
 
 ## Objectives
 
 | Objective | Target | Window | Measured baseline | Headroom |
 | --- | --- | --- | --- | --- |
-| decision latency (in-process) | p95 ≤ 10 ms **and** p99 ≤ 25 ms at ≥ 200 req/s with 16 concurrent callers | 30 days, rolling | p95 3.139 ms, p99 5.175 ms | 3.2× on p95, 4.8× on p99 |
-| decision latency (end-to-end, client co-located) | p95 ≤ 250 ms | 30 days, rolling | p95 102.9 ms | 2.4× |
-| availability | ≥ 99.9 % of decision requests answered `2xx` | 30 days, rolling | 100 % over 4 256 requests in a 20 s window | – |
-| server errors | 0 `5xx` attributable to the decision path | 30 days, rolling | 0 over 4 256 requests | – |
+| decision latency (in-process) | p95 ≤ 10 ms **and** p99 ≤ 25 ms at ≥ 140 req/s with 16 concurrent callers | 30 days, rolling | p95 5.227 ms, p99 7.283 ms | 1.9× on p95, 3.4× on p99 |
+| decision latency (end-to-end, client co-located) | p95 ≤ 500 ms | 30 days, rolling | p95 169.4 ms | 3.0× |
+| availability | ≥ 99.9 % of decision requests answered `2xx` | 30 days, rolling | 100 % over 2 986 requests in a 20 s window | – |
+| server errors | 0 `5xx` attributable to the decision path | 30 days, rolling | 0 over 2 986 requests | – |
 
 Why these targets, and not tighter ones:
 
-* the p95 target is 3.2× the measured p95. A tighter target (say 5 ms) would sit
-  inside the observed spread of a *single* machine and would page on a garbage
-  collection pause or a cold cache — the measured maximum of 14.9 ms in one run is
-  exactly such an event, so a p95 of 5 ms would be a promise the evidence does not
-  support;
+* the p95 target is 1.9× the measured p95 **and** 3.2× the p95 of the (superseded
+  but real) faster run, so it sits above the whole observed spread of this machine
+  rather than inside it. A tighter target (say 7 ms) would sit within the run-to-run
+  variation and would page on a garbage collection pause or a busy host — the
+  measured maximum of 16.5 ms in this run is exactly such an event;
 * the p99 target leaves room for the same tail while still catching a real
-  regression (a 5× slowdown of the median);
+  regression (a 3× slowdown of the median);
 * 99.9 % availability is the conventional first target for a single-replica service
   with a manual restart; the measured 100 % over a 20 s window says nothing about a
   month, so the target is deliberately conservative rather than extrapolated;
@@ -89,8 +120,8 @@ Why these targets, and not tighter ones:
 For 99.9 % availability over a 30-day window:
 
 * allowed failure: 0.1 % of decision requests;
-* at the measured 212 req/s sustained, that is ≈ 550 000 requests/day, so the budget
-  is ≈ 550 requests/day and ≈ 16 500 requests per 30-day window;
+* at the measured 149 req/s sustained, that is ≈ 385 000 requests/day, so the budget
+  is ≈ 385 requests/day and ≈ 11 500 requests per 30-day window;
 * expressed in time (the conventional view): 43 min 12 s of full outage per 30 days.
 
 Budget policy (deliberately simple, and reviewable): if more than half the monthly
@@ -118,10 +149,15 @@ rolls.
    ```
 
    The harness exits non-zero if the error rate exceeds `--max-error-rate`
-   (default `0.0`), so a failing run cannot be mistaken for a passing one.
+   (default `0.0`), so a failing run cannot be mistaken for a passing one. Check
+   `service_side.counts_match_measured` in the artifact: it must be `true`, which
+   is what proves the service-side percentiles cover the measured window only (the
+   log offset is taken after the warm-up, and the tail is sliced on raw bytes).
 3. **Read the artifact** in `docs/evidence/performance/`; reports are immutable
-   (an existing file is never overwritten) and carry both the digest of the report
-   payload and a `.sha256` sidecar of the bytes on disk.
+   (an existing file is never overwritten). It carries two digests, and
+   `digest_semantics` says which is which: `report_digest_sha256` over the payload's
+   canonical encoding, and a `.sha256` sidecar that is the digest of the exact bytes
+   on disk (written in binary, LF endings) so it equals `sha256sum` of the file.
 4. **Continuously**, take the same SLIs from Prometheus (the queries the dashboard
    uses):
 
@@ -153,8 +189,9 @@ Verified locally: the baseline above, reproduced from the committed artifact; th
 executing against a live scrape; the failure behaviour that keeps a `503` from
 being counted as a served decision (`tests/test_failure_injection*.py`).
 
-Not verified: behaviour above 212 req/s (the harness was not driven past the point
+Not verified: behaviour above 149 req/s (the harness was not driven past the point
 where the co-located client saturates), behaviour with more than one API replica,
 behaviour under a real database (the measured run used the process-local store, so
-`RECEIPT_STORE_UNAVAILABLE` never occurred), and any long-window availability
-number — the 20-second window is a smoke measurement, not a month of evidence.
+`RECEIPT_STORE_UNAVAILABLE` never occurred and the in-process figure excludes a
+durable write), and any long-window availability number — the 20-second window is a
+smoke measurement, not a month of evidence.

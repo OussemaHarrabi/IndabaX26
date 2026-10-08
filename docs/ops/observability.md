@@ -38,6 +38,21 @@ declared vocabulary lives in `telemetry.SPAN_ATTRIBUTES`, and
 `tests/test_telemetry.py::test_every_span_attribute_is_declared_for_that_span`
 asserts that no span carries anything else.
 
+**One attribute value is not bounded — know this before deriving span metrics.**
+`aegisgraph.policy_set.version` carries the server-resolved policy version. For an
+ordinary decision that is a stored, operator-published version string (bounded), but
+for a caller holding `policy:context_override` the policy identity comes from
+`access.override_policy_identity`, whose `version` is a **sha256 prefix of the
+caller-supplied policy document** (`PolicyIdentity(id="caller-override",
+version=<32 hex chars>)`). The Prometheus surface stays bounded — the metric label is
+the constant `policy_id="caller-override"` — but a collector that derives span
+metrics (the `spanmetrics`/`connector` processors) from `aegisgraph.policy_set.version`
+would see unbounded cardinality, one series per distinct override document. This
+revision does **not** enable span-metric derivation; if it is ever enabled, either
+drop `aegisgraph.policy_set.version` from the derived dimensions, or map the
+override case to the constant `caller-override` before recording it. The attribute is
+kept as-is because it is genuinely useful when reading a single trace.
+
 ### Metrics (Prometheus, pull)
 
 | Metric | Labels | Meaning |
@@ -101,16 +116,37 @@ a registry that raises on every operation still lets a request through.
 ## `/metrics` is an internal surface
 
 `GET /metrics` returns the Prometheus text exposition. It is **not** a public
-surface: it is enabled by default in development, requires an explicit
-`AEGISGRAPH_METRICS_ENABLED=true` in production, and the Kubernetes
-NetworkPolicy (`deploy/k8s/networkpolicy-api.yaml`) already restricts ingress to
-the pod. The scrape itself is excluded from `aegisgraph_requests_total`, so
-scraping never feeds its own series.
+surface, but be precise about the control: there is **no authentication dependency
+on the route**. With `AEGISGRAPH_ENV=production` and
+`AEGISGRAPH_METRICS_ENABLED=true` it answers `200` to any caller that can reach the
+port — no header, no token. The control is **port-level only**: the Kubernetes
+NetworkPolicy (`deploy/k8s/networkpolicy-api.yaml`) restricts ingress to the pod,
+and in Compose the API publishes only `127.0.0.1:8080`. A deployment that exposes
+the API port to an untrusted network exposes `/metrics` with it. The route also
+carries no tenant scoping: it is the process-wide exposition.
+
+What the exposition does and does not contain:
+
+* it does contain metric names, per-route/status request counts, verdict counts,
+  policy set ids (including `caller-override`), receipt-store and authentication
+  failure reason counts, latency histogram buckets and the telemetry export failure
+  count;
+* it contains no request content, no credentials, no service-token digests, no
+  principal identifiers, no tenant identifiers, no request ids and no receipt ids.
+
+The scrape itself is excluded from `aegisgraph_requests_total`, so scraping never
+feeds its own series. If the port must be exposed, gate it at the proxy (an
+ingress rule that refuses `/metrics`) or bind it to a second listener — neither is
+implemented in this revision, and the metric tests cannot detect an exposure
+mistake because they assert content, not reachability.
 
 ```sh
 curl -s http://127.0.0.1:8080/metrics | grep '^aegisgraph_'
 # production without the flag:
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/metrics   # 404
+# production with the flag, no credentials at all:
+curl -s -o /dev/null -w '%{http_code}\n' -H 'Authorization: ' \
+  http://127.0.0.1:8080/metrics                                          # 200
 ```
 
 ## Health semantics
@@ -231,7 +267,8 @@ Verified locally:
   and every expression from the dashboard JSON was issued to
   `/api/v1/query`; `panels=12 failures=0`, with real values (decision request rate
   `0.154 req/s`, p50 `1.86 ms`, p95 `4.0 ms`, p99 `4.8 ms`, verdict distribution
-  two series, auth failures one series).
+  two series, auth failures one series). The 12 expressions live in the
+  dashboard's 10 panels (one panel carries three targets).
 
 **Closed in M4 — the shipped stack now scrapes the API.** The two provisioning
 trees were consolidated onto this file set (`deploy/observability/**`): the

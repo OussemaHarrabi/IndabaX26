@@ -138,7 +138,7 @@ def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[LiveServer]:
             process.wait(timeout=15)
 
 
-def _run_harness(server: LiveServer, *extra: str) -> int:
+def _run_harness(server: LiveServer, *extra: str, out_dir: Path | None = None) -> int:
     return harness.main(
         [
             "--token-file",
@@ -146,7 +146,7 @@ def _run_harness(server: LiveServer, *extra: str) -> int:
             "--base-url",
             server.base_url,
             "--out-dir",
-            str(server.output_directory),
+            str(out_dir if out_dir is not None else server.output_directory),
             *extra,
         ]
     )
@@ -196,13 +196,17 @@ def test_the_harness_reports_a_clean_run_and_writes_an_immutable_report(
     assert report["environment"]["base_url"] == server.base_url
     assert report["policy_set"]["id"] == "load-test-policy"
     assert report["policy_set"]["source"]
-    assert report["service_side"]["decisions_observed"] >= 40
+    assert report["service_side"]["decisions_observed"] == results["measured_requests"]
+    assert report["service_side"]["counts_match_measured"] is True
     assert report["service_side"]["latency_seconds"]["p95"] > 0.0
 
     # The digest covers the payload, and the sidecar covers the bytes on disk.
     payload = {key: value for key, value in report.items() if key != "report_digest_sha256"}
     assert report["report_digest_sha256"] == harness.digest_of(payload)
+    on_disk = report_path.read_bytes()
+    assert b"\r\n" not in on_disk
     sidecar = report_path.with_suffix(".sha256").read_text(encoding="utf-8").split()
+    assert sidecar[0] == hashlib.sha256(on_disk).hexdigest()
     assert sidecar[0] == hashlib.sha256(body.encode("utf-8")).hexdigest()
     assert sidecar[1] == report_path.name
     assert stat.S_IMODE(report_path.stat().st_mode) & 0o222 == 0
@@ -218,6 +222,58 @@ def test_an_existing_report_is_never_overwritten(tmp_path: Path) -> None:
     assert path.with_suffix(".sha256").read_text(encoding="utf-8").startswith(digest)
     with pytest.raises(FileExistsError):
         harness.write_report(report, tmp_path, stamp=stamp)
+
+
+def test_the_harness_refuses_a_non_loopback_base_url_without_an_explicit_flag(
+    tmp_path: Path,
+) -> None:
+    token = tmp_path / "token"
+    token.write_text("not-a-real-token\n", encoding="utf-8")
+
+    refused = harness.main(
+        ["--token-file", str(token), "--base-url", "http://10.11.12.13:8080", "--warm-up", "0"]
+    )
+    allowed = harness.main(
+        [
+            "--token-file",
+            str(token),
+            "--base-url",
+            "http://10.11.12.13:1",
+            "--allow-remote",
+            "--warm-up",
+            "0",
+            "--duration",
+            "1",
+        ]
+    )
+
+    assert refused == 2
+    assert allowed == 2  # the remote host is unreachable, but the guard let it through
+    assert harness.is_loopback_url("http://127.0.0.1:8080")
+    assert harness.is_loopback_url("http://localhost:8080")
+    assert harness.is_loopback_url("http://[::1]:8080")
+    assert not harness.is_loopback_url("http://example.test:8080")
+
+
+def test_the_harness_refuses_a_missing_server_log_before_measuring(
+    server: LiveServer, tmp_path: Path
+) -> None:
+    absent = tmp_path / "no-such-api.log"
+    out_dir = tmp_path / "reports"
+
+    exit_code = _run_harness(
+        server,
+        "--server-log",
+        str(absent),
+        "--warm-up",
+        "0",
+        "--duration",
+        "1",
+        out_dir=out_dir,
+    )
+
+    assert exit_code == 2
+    assert not out_dir.exists() or list(out_dir.glob("m3-load-*.json")) == []
 
 
 def test_the_harness_refuses_a_missing_or_multi_line_token_file(tmp_path: Path) -> None:
