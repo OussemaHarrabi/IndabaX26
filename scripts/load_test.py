@@ -34,6 +34,7 @@ import statistics
 import sys
 import threading
 import time
+import urllib.parse
 from collections import Counter
 from collections.abc import Sequence
 from contextlib import suppress
@@ -100,7 +101,22 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default="",
         help="path to the API stdout log, to also report service-side decision latency",
     )
+    parser.add_argument(
+        "--allow-remote",
+        action="store_true",
+        help=(
+            "permit a non-loopback --base-url; the harness publishes a policy set and sends "
+            "the service token to that host, so this must be a deliberate choice"
+        ),
+    )
     return parser.parse_args(argv)
+
+
+def is_loopback_url(base_url: str) -> bool:
+    """Return whether a base URL points at this machine only."""
+
+    host = urllib.parse.urlsplit(base_url).hostname or ""
+    return host in {"localhost", "::1"} or host.startswith("127.")
 
 
 def read_token(path: str) -> str:
@@ -348,15 +364,17 @@ def decision_record_latencies(path: Path, *, offset: int) -> dict[str, Any]:
     """Read service-side decision latencies from the structured decision log.
 
     The API emits exactly one JSON decision record per decision, carrying
-    ``latency_ms`` measured inside the process. Reading only the bytes written after
-    ``offset`` excludes the warm-up, so this is the server-side half of the same
-    measurement window the client observed — free of load-generator scheduling.
+    ``latency_ms`` measured inside the process. Only the bytes written after
+    ``offset`` are read, so this is the server-side half of the same measurement
+    window the client observed — free of load-generator scheduling. The slice is
+    taken on the raw bytes (not on decoded text), because the offset is a byte
+    position and a text slice would be off by one character per CRLF line.
     """
 
-    text = path.read_text(encoding="utf-8", errors="replace")
-    tail = text[offset:] if offset <= len(text) else text
+    raw = path.read_bytes()
+    tail = raw[offset:] if offset <= len(raw) else raw
     samples: list[float] = []
-    for line in tail.splitlines():
+    for line in tail.decode("utf-8", errors="replace").splitlines():
         try:
             record = json.loads(line)
         except ValueError:
@@ -387,10 +405,12 @@ def write_report(report: dict[str, Any], out_dir: Path, *, stamp: datetime) -> t
     path = out_dir / f"{name}.json"
     if path.exists():
         raise FileExistsError(f"{path} already exists; reports are immutable")
-    body = json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n"
-    path.write_text(body, encoding="utf-8")
-    digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
-    (out_dir / f"{name}.sha256").write_text(f"{digest}  {name}.json\n", encoding="utf-8")
+    body = (json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n").encode("utf-8")
+    path.write_bytes(body)
+    digest = hashlib.sha256(body).hexdigest()
+    (out_dir / f"{name}.sha256").write_text(
+        f"{digest}  {name}.json\n", encoding="utf-8", newline=""
+    )
     with suppress(OSError):  # a filesystem that cannot mark the artifact read-only
         path.chmod(0o444)
     return path, digest
@@ -460,6 +480,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    if not is_loopback_url(args.base_url) and not args.allow_remote:
+        print(
+            f"load-test: refusing the non-loopback --base-url {args.base_url!r}: the harness "
+            "publishes a policy set and sends the service token to it. Pass --allow-remote to "
+            "accept that.",
+            file=sys.stderr,
+        )
+        return 2
+    log_path = Path(args.server_log) if args.server_log else None
+    if log_path is not None and not log_path.is_file():
+        print(
+            f"load-test: --server-log {log_path} does not exist or is not a file",
+            file=sys.stderr,
+        )
+        return 2
 
     stamp = datetime.now(UTC)
     headers = {"Authorization": f"Bearer {token}"}
@@ -479,11 +514,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             policy_set, policy_source = ensure_policy_set(
                 client, policy_id=args.policy_id, version=args.policy_version
             )
-            log_path = Path(args.server_log) if args.server_log else None
-            log_offset = log_path.stat().st_size if log_path and log_path.exists() else 0
             warm_up = run_warm_up(
                 client, count=args.warm_up, policy_set=policy_set, timeout=args.timeout
             )
+            # The offset is taken *after* the warm-up, so the service-side block
+            # covers exactly the measured window and nothing else.
+            try:
+                log_offset = log_path.stat().st_size if log_path is not None else 0
+            except OSError as error:
+                print(
+                    f"load-test: could not stat --server-log {log_path}: {error}",
+                    file=sys.stderr,
+                )
+                return 2
             measured = measure(
                 client,
                 concurrency=args.concurrency,
@@ -492,11 +535,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 policy_set=policy_set,
                 timeout=args.timeout,
             )
-            service_side = (
-                decision_record_latencies(log_path, offset=log_offset)
-                if log_path is not None
-                else None
-            )
+            service_side = None
+            if log_path is not None:
+                try:
+                    service_side = decision_record_latencies(log_path, offset=log_offset)
+                except OSError as error:
+                    print(
+                        f"load-test: could not read --server-log {log_path}: {error}",
+                        file=sys.stderr,
+                    )
+                    return 2
     except (httpx.HTTPError, RuntimeError) as error:
         print(f"load-test: {type(error).__name__}: {error}", file=sys.stderr)
         return 2
@@ -522,10 +570,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         "results": results,
     }
     if service_side is not None:
+        service_side["measured_requests"] = results["measured_requests"]
+        service_side["counts_match_measured"] = (
+            service_side["decisions_observed"] == results["measured_requests"]
+        )
         report["service_side"] = service_side
+        if not service_side["counts_match_measured"]:
+            print(
+                "load-test: warning: the decision log holds "
+                f"{service_side['decisions_observed']} records for "
+                f"{results['measured_requests']} measured requests — a truncated or rotated log, "
+                "or non-2xx responses that emit no decision record",
+                file=sys.stderr,
+            )
     report["digest_semantics"] = (
         "report_digest_sha256 covers this report's canonical (sorted, compact) encoding "
-        "without that field; the .sha256 sidecar covers the exact bytes written to disk"
+        "without that field; the .sha256 sidecar is the sha256 of the exact bytes written to "
+        "disk (LF line endings, written in binary), so it equals sha256sum of the file"
     )
     report["report_digest_sha256"] = digest_of(report)
     try:
