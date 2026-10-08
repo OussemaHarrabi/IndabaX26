@@ -48,22 +48,49 @@ failing assertions:
 kubectl kustomize deploy/k8s
 # → 7 objects, image rewritten to ghcr.io/oussemaharrabi/aegisgraph:0.1.0
 
-kubeconform -strict -summary -kubernetes-version 1.31.0 <rendered>
-# Summary: 7 resources found in 1 file - Valid: 7, Invalid: 0, Errors: 0, Skipped: 0
-
-python scripts/validate_k8s_manifests.py
-# 7 × schema PASS + 21 × policy PASS → "all manifest checks passed"
+python scripts/validate_k8s_manifests.py --validator both
+# 7 × schema[kubernetes-validate] PASS
+# schema[kubeconform]: Summary: 7 resources found in 1 file - Valid: 7, Invalid: 0, Errors: 0, Skipped: 0
+# 21 × policy PASS → "all manifest checks passed"
 ```
 
-Two independent schema validators agree: `kubernetes-validate` 1.36.0 (offline,
-schemas shipped with the package) and `kubeconform` 0.7.0 (strict mode, schemas
-fetched from the Kubernetes JSON-schema catalog for **1.31.0**).
+Two independent schema validators agree on all 7 objects:
+
+- **`kubernetes-validate` 1.36.0** — pip-installable, fully offline (schemas ship
+  with the package). This is the primary validator and the only one CI needs.
+- **`kubeconform` 0.7.0** — strict mode, schemas fetched from the Kubernetes
+  JSON-schema catalog for **1.31.0**. It is *not* on `PATH` by default; it is
+  installed from a pinned, checksum-verified release asset:
+
+  ```sh
+  python scripts/install_kubeconform.py --dest artifacts/tools
+  python scripts/validate_k8s_manifests.py --validator both \
+      --kubeconform artifacts/tools/kubeconform.exe
+  ```
+
+  `scripts/install_kubeconform.py` pins version **0.7.0** and verifies the
+  downloaded asset against the vendor's own `CHECKSUMS` before extracting
+  anything. Reproducing the exact numbers from this document:
+
+  | Item | Value |
+  | --- | --- |
+  | Release URL | `https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-windows-amd64.zip` |
+  | Asset SHA-256 | `9cb75551d81c909c2241ab383ced2be68363b5bfb15fd989badcc5a63bea5d7e` |
+  | Linux asset (CI) | `kubeconform-linux-amd64.tar.gz`, SHA-256 `c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3` |
+  | Vendor `CHECKSUMS` file | SHA-256 `3b8bfbac6e662823a51292368b0c25bc04001a32b006f04aafdf348c091d243f` |
+  | Temporary extraction path used for the recorded run | `artifacts/tools/` (gitignored) |
+
+  Both assets' computed SHA-256 were cross-checked against the vendor
+  `CHECKSUMS` file, and the binary reports `v0.7.0`. A mismatch aborts without
+  writing anything. The CI `kubernetes` job installs it with the same script and
+  runs `--validator both`, so the cross-check is reproducible in CI too.
 
 `kubectl apply --dry-run=client` is **not** a usable gate in this environment:
 kubectl performs API discovery even for client dry-run and fails with
 `failed to download openapi … dial tcp [::1]:8080: connectex: … refused` when no
-cluster is configured. The `kubernetes-validate`/`kubeconform` pair is the
-substitute, and it runs offline.
+cluster is configured. The `kubeconform`/`kubernetes-validate` pair is the
+substitute, and both run offline once `kubernetes-validate` is installed (only
+kubeconform's one-time download needs the network).
 
 ## Image pinning
 

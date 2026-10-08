@@ -17,7 +17,7 @@ IMAGE ?= aegisgraph:local
 COVERAGE_FAIL_UNDER ?= 94
 
 .PHONY: help gates lint typecheck test audit bandit image smoke sbom \
-        k8s-validate compose-config stack-up stack-down stack-logs stack-ps clean
+        k8s-validate k8s-validate-both compose-config stack-up stack-down stack-logs stack-ps clean
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -61,6 +61,11 @@ sbom: ## emit the SBOM / dependency inventory for $(IMAGE)
 
 k8s-validate: ## render, schema-validate and policy-check the manifests
 	python scripts/validate_k8s_manifests.py
+
+k8s-validate-both: ## same, with both validators (installs pinned kubeconform)
+	python -m pip install kubernetes-validate pyyaml
+	python scripts/install_kubeconform.py --dest artifacts/tools
+	PATH="$(PWD)/artifacts/tools:$$PATH" python scripts/validate_k8s_manifests.py --validator both
 
 compose-config: ## validate the Compose stack without starting it
 	cp -n .env.example .env 2>/dev/null || true; \
