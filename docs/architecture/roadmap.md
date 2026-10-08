@@ -16,13 +16,13 @@ omitted: each milestone gates on its exit criteria, not on a calendar.
 | --- | --- | --- | --- | --- | --- |
 | **M0** | Charter + baseline | Intake, baseline reproduced, charter, architecture, threat model, ADRs, legacy record, ledger skeleton | — | all | `implemented` (closed) |
 | **M1** | Contracts + enforcement | Native versioned contracts with a policy/code revision in every decision; legacy adapter isolated; enforcement binding and integration SDK | M0 | ADR-0006 | `implemented` — contract, enforcement SDK, bounded input and strict confirmation landed (`4013b59`, `7502df3`); legacy suite re-checked decision-identical |
-| **M2** | Auth + policy + audit store | Authentication and tenancy; versioned policy; durable append-only receipt/audit store | M1 | ADR-0001, ADR-0002 | `implemented` + **verified live by the orchestrator** (`7a87e8b`, merged at `4350af3`, corrective round `940ed13`): F1, F2 and F3's caller-authority half fixed (residual F3 accepted); with PostgreSQL 17 the suite is **497 passed / 96.85 % (2676/2763)** at `36a279a`, without a database **485 passed / 12 skipped**; the CI `quality` job now runs a PostgreSQL service and the floor is raised to **95** (`bf02ddc`), so a silent skip of the database tests cannot pass |
-| **M3** | Observability + reliability | OpenTelemetry, Prometheus, Grafana, SLOs, fail-closed guarantees under load | M1, M2 | ADR-0003 | `proposed` — the Compose stack already ships collector, Prometheus and Grafana services, but no instrumentation claim is verified |
+| **M2** | Auth + policy + audit store | Authentication and tenancy; versioned policy; durable append-only receipt/audit store | M1 | ADR-0001, ADR-0002 | `implemented` + **verified live by the orchestrator** (`7a87e8b`, merged at `4350af3`, corrective round `940ed13`): F1, F2 and F3's caller-authority half fixed (residual F3 accepted); with PostgreSQL 17 the suite is **569 passed / 2 skipped = 96.81 %** in a clean clone after the M3/SBOM rounds (497 passed / 96.85 % at `36a279a`), and **557 passed / 14 skipped = 93.76 %** without a database; the CI `quality` job now runs a PostgreSQL service and the floor is raised to **95** (`bf02ddc`), so a silent skip of the database tests cannot pass |
+| **M3** | Observability + reliability | OpenTelemetry, Prometheus, Grafana, SLOs, fail-closed guarantees under load | M1, M2 | ADR-0003 | `implemented` — telemetry, metrics, SLOs, the load harness and failure-injection tests landed (`3d0d748`, merged at `7147eb3`) and verified live by the orchestrator: 8 `aegisgraph_*` metric families with no tenant/principal/request/content label, an exporter outage counted rather than raised, and a load report (4256 requests, 212.35 req/s, service-side p95 3.14 ms, 0 errors). **Named gap:** the shipped Compose stack does not scrape the API, so the dashboard would show "no data" as shipped |
 | **M4** | CI/CD + containers + deployment | Pipelines and gates; hardened Compose stack; Kubernetes manifests validated and smoke-tested | M1, M2 | ADR-0005 | `implemented` with three named gaps: **no GitHub-hosted CI run has ever executed**, **no cluster smoke test** (`kind` absent), and **F9** — the suite must run *inside* the built image (CI now runs it with a PostgreSQL service, but not in the image) |
 | **M5** | Evaluation framework + benchmark data | Native evaluation schema authoritative; versioned legacy adapter; benchmark data + reachability gate | M1 | ADR-0004 | `implemented` — schema, 60-scenario dataset, deterministic scoring, sealed holdout; **scripted adapter only**, no holdout run |
-| **M6** | Empirical campaign | Real-model runs, multi-seed variance, component ablations, generalization | M2, M5 | ADR-0004 | `proposed` — blocked: no `ollama`, GPU or paid API |
-| **M7** | Independent review | Adversarial and security review of the new surfaces; reproducibility audit | M3, M4, M6 | all | `proposed` — the M0 review covered the pre-M1 boundary only |
-| **M8** | Docs + demo + release | Documentation, demo, versioned release, provenance manifest | M5, M6, M7 | all | `proposed` |
+| **M6** | Empirical campaign | Real-model runs, multi-seed variance, component ablations, generalization | M2, M5 | ADR-0004 | `partial` — **freeze block 1 declared** (`4481e26`, pinning gateway `818cf1f`, dataset `7e916a11…`, scripted model only, holdout closed; `docs/evidence/m6-freeze.md` §7) and the scripted campaign cells are being produced; the real-model cells stay **blocked** (no `ollama`, GPU or paid API) |
+| **M7** | Independent review | Adversarial and security review of the new surfaces; reproducibility audit | M3, M4, M6 | all | `partial` — three adversarial reviews (M0 `L15`, M1–M5 `P25–P29`, M2 surface `P54–P62`) and an independent research/reproducibility audit (`P30–P52`) have landed; what remains is the reproducibility audit of every headline claim and an independent re-run of the gates |
+| **M8** | Docs + demo + release | Documentation, demo, versioned release, provenance manifest | M5, M6, M7 | all | `partial` — the runnable demo script (`docs/demo/demo-script.md`) and the bounded CV-claims document (`docs/evidence/cv-claims.md`) landed at `57596f3`; the release provenance manifest (ledger P8) is still `pending` |
 
 ### M0 execution status (closed)
 
@@ -157,18 +157,22 @@ milestone owns each finding.
   ceiling (`docs/api/auth.md` §5–6). The corrective round closed the second
   review's policy-identity, confirmation-binding and `request_id` items
   `H2-02/H2-03/H2-05`; ledger P26–P28). With PostgreSQL 17 the suite is
-  **497 passed** at **96.85 %** coverage (2676/2763, `36a279a`); without a
-  database **485 passed, 12 skipped** (the `db`-marked tests skip without
-  `AEGISGRAPH_TEST_DATABASE_URL`). The coverage floor was **red** at `4350af3`
-  on such a machine (93.06 % = 2521/2709, and `ci.yml` started no service —
+  **569 passed / 2 skipped = 96.81 %** in a clean clone after the M3/SBOM rounds
+  (497 passed / 96.85 % = 2676/2763 at `36a279a`); without a database
+  **557 passed / 14 skipped = 93.76 %** (the `db`-marked tests skip without
+  `AEGISGRAPH_TEST_DATABASE_URL`, as do the two `.sentinel_reference` ones). The
+  coverage floor was **red** at `4350af3` on such a machine (93.06 % = 2521/2709,
+  and `ci.yml` started no service —
   ledger P15); that is now fixed: the `quality` job starts a PostgreSQL 17
   service and the floor is **95** (`bf02ddc`), which doubles as the guard that
   the database tests actually ran (`docs/ops/ci.md`: 96.42 % (2612/2709) with
-  the service, 92.80 % (2514/2709) without). The second review is **closed on
-  this surface**: `H2-01` at `5480a77`/`36a279a` and `H2-04` at `5480a77`
-  (ledger P25, P29), `H2-02`/`H2-03`/`H2-05` at `940ed13` (P26–P28). With F1–F3,
-  only **F8** (`accepted`) and **F9** (`open` — the suite must run inside the
-  built image; see M4) remain from either review.
+  the service, 92.80 % (2514/2709) without). **Both reviews of this surface are
+  closed**: the second review's `H2-01` at `5480a77`/`36a279a` and `H2-04` at
+  `5480a77` (ledger P25, P29) with `H2-02`/`H2-03`/`H2-05` at `940ed13`
+  (P26–P28), and the third review's `H3-01`…`H3-09` at `2484b09`/`29fa3ba`
+  (P54–P62: seven fixed, `H3-06`/`H3-08` accepted with reasons). With F1–F3, only
+  **F8** (`accepted`) and **F9** (`open` — the suite must run inside the built
+  image; see M4) remain from any review.
 - **Work:** OIDC/JWT for interactive principals plus scoped service tokens for
   machine callers (ADR-0002); per-tenant authorization on every read and write;
   an explicit policy store with versions and an audit trail; PostgreSQL +
@@ -185,28 +189,52 @@ milestone owns each finding.
 ### M3 — Observability + reliability
 
 - **Entry:** M2 store and principals.
+- **Status:** `implemented` and verified live by the orchestrator (`3d0d748`,
+  merged at `7147eb3`). `/metrics` exposes **8 `aegisgraph_*` families** with no
+  tenant, principal, request, receipt or content label; with the OTLP endpoint
+  pointed at a dead port three decisions still returned `allow` / `escalate` /
+  `block` in 16–30 ms and the export-failure counter incremented with no log
+  noise; the load report
+  (`docs/evidence/performance/m3-load-20261008T193951Z.json`) records 4256
+  requests at 212.35 req/s with **service-side p50 1.57 ms / p95 3.14 ms / p99
+  5.18 ms and 0 errors** on an honestly-labelled local host; failure injection
+  covers database-down, collector-down, cancellation and overload (ledger P4).
+  **Named gap:** the *shipped* Compose stack does not scrape the API —
+  `deploy/compose/prometheus.yml` has no `aegisgraph-api` job and `compose.yaml`
+  mounts a different dashboards directory — so the 12-panel dashboard would render
+  "no data" until two one-line changes land; recorded in
+  `docs/ops/observability.md`, not applied.
 - **Work:** OpenTelemetry traces across boundary → adapter → kernel → store;
   Prometheus counters/histograms (decisions by verdict/reason, latency, failures,
   enforcement outcomes); Grafana dashboards; SLOs for decision latency and
   fail-closed rate; load and failure-injection tests proving the gateway stays
   fail-closed.
 - **Exit:** a decision emits a trace and increments metrics; dashboards render
-  real data; no content or secrets in telemetry attributes; the fail-closed
-  invariant holds under fault injection.
+  real data (the dashboard renders when pointed at a scraping Prometheus — the
+  shipped stack's missing scrape job is the named gap above); no content or secrets
+  in telemetry attributes; the fail-closed invariant holds under fault injection.
 - **ADR:** ADR-0003.
 
 ### M4 — CI/CD + containers + deployment *(complete, three gaps named)*
 
 - **Entry:** M1, M2.
 - **Status:** landed (`6e4f6b2`, `891483d`, `79f9e59`, `40404a0`, `3889f10`;
-  CI reworked at `bf02ddc`). Verified here: the workflow defines five jobs with
+  CI reworked at `bf02ddc`, SBOM at `90eb2dc`/`818cf1f`). Verified here: the
+  workflow defines five jobs with
   SHA-pinned actions and a coverage floor of **95** (raised from 94 at `bf02ddc`;
   measured 95.03 % = 1358/1429 at `3353886` under the old floor); the image
   builds reproducibly and runs non-root (uid 10001) with a read-only rootfs
   serving `/healthz` and a decision; `deploy/k8s` renders 7 objects and passes 7
   schema checks under two validators plus 22 policy assertions; the Compose
-  configuration parses to five services; the SBOM digest reproduces. Numbers and
-  caveats are in the ledger, section C.
+  configuration parses to five services. The image was **rebuilt at the current
+  lock revision** `d0bf0f55…` (39 pinned entries) as `sha256:bb373f36…`
+  (73,084,467 B, context commit `57596f3`), the SBOM was regenerated to match, and
+  `scripts/check_sbom_freshness.py` now fails loudly on drift, wired into CI
+  before the image build — closing the drift this section previously carried
+  (ledger P16, P18). **Named limitation:** `benchmark/runner.py` shells out to
+  `git`, so a container-based campaign runner needs `git` installed (14 tests fail
+  in a `python:3.12-slim` image without it; CI's `ubuntu-latest` has it). Numbers
+  and caveats are in the ledger, section C.
 - **Gaps:** **no GitHub-hosted CI run has ever executed** (blocked: the workflow
   is only reproducible locally until the branch is pushed), **no cluster
   smoke test** — `kind` is absent, and **F9 is still open**: the `quality` job
@@ -234,9 +262,13 @@ milestone owns each finding.
 - **Status:** landed (`f8e6004`, `7138aa4`, `d2856a4`, `75966b2`). Verified here:
   the dataset validates (`RESULT: PASS`, 60 open scenarios, 42/18 splits, six per
   family over ten families, dataset sha256 `7e916a11…`, largest request 2118 B);
-  a scripted run against the M1 gateway reproduces the published scoring digest
-  `4373896…` and two `--json` scorings are byte-identical; run directories are
-  created once and refuse to be overwritten; the 20-scenario holdout is sealed
+  a scripted run re-scores the published reference
+  (`benchmark/runs/20261008T230000Z-m2-authenticated-full/`, digest `8d79f032…`,
+  gateway `a94ce6f8…`) offline to exactly that digest with two `--json` scorings
+  byte-identical — the earlier reference `4373896…` moved when `e75fdf5`/`f2222a3`
+  regenerated the run under the single portable hash convention (ledger P21);
+  run directories are created once and refuse to be overwritten; the 20-scenario
+  holdout is sealed
   (ciphertext `c1a32fb8…`, rotated after the independent research audit found the
   previous key recoverable, ledger P36) and verifies without the custodian
   passphrase; every committed legacy scorecard reports `metrics reproduced: True`
@@ -264,6 +296,17 @@ milestone owns each finding.
 ### M6 — Empirical campaign
 
 - **Entry:** M2 (stored revision), M5 (harness).
+- **Status:** `partial` — the freeze is declared, not yet exercised. **Freeze
+  block 1** was declared at `4481e26`, pinning
+  gateway `818cf1f` (clean tree), dataset `7e916a11…`, the scoring/runner/analysis
+  blobs, `model.kind=scripted`, seed `1729`, splits `development,validation` and
+  the holdout closed; the results will be appended as "§8 Freeze block 1 —
+  recorded results" with the run directories (ledger P66). **Known deviation,
+  recorded up front:** the previous reference run (digest `8d79f032…`) is not
+  expected to reproduce, because H3-01/H3-04 changed which requests the surface
+  accepts and how an override identity is reported — that delta is a measurement
+  of the fix, not a regression. **Blocked cells:** C5/C6 (real model) and C7
+  (holdout) — see the freeze document's §2 and blocked rows B3/B4/B6.
 - **Work:** real-model runs on the pinned and native suites; multi-seed variance;
   component ablations; generalization to an unseen tool schema; every result
   labelled synthetic or real with its revision fingerprint.
@@ -276,6 +319,12 @@ milestone owns each finding.
 ### M7 — Independent review
 
 - **Entry:** M3, M4, M6.
+- **Status:** `partial`. Four independent exercises have landed: the M0
+  adversarial review (ledger `L15`), the M1–M5 adversarial review (`P25–P29`), the
+  M2-surface adversarial review (`P54–P62`) and a read-only research &
+  reproducibility audit (`P30–P52`, which reproduced the legacy chain, the artifact
+  hashes, the mock table and the native reference). Still open: the audit of
+  **every** headline claim and an independent re-run of the gates (ledger `P10`).
 - **Work:** adversarial and security review of the new surfaces (API boundary,
   store, auth, telemetry); reproducibility audit of every headline claim;
   independent re-run of the evaluation gates.
@@ -285,6 +334,13 @@ milestone owns each finding.
 ### M8 — Docs + demo + release
 
 - **Entry:** M5, M6, M7.
+- **Status:** `partial` — the runnable demo script (`docs/demo/demo-script.md`)
+  and the bounded CV-claims document (`docs/evidence/cv-claims.md`, 23 bounded
+  bullets across 8 capability groups plus a `Not claimed (yet)` section) landed at
+  `57596f3` (`593c525`); the script's six steps were reproduced live by its author
+  and its Compose/Grafana step is cited from the orchestrator's verification
+  (ledger P67). Still open: the release provenance manifest (ledger P8,
+  `pending`) and the versioned release itself.
 - **Work:** documentation truth pass; a demo of a decided, enforced action with a
   receipt; versioned release with a provenance manifest (paths + SHA-256);
   dependency audit; migrate the legacy evidence links.
