@@ -42,6 +42,24 @@ The scenario **ids** are not in the manifest. Holdout membership is recorded as 
 hash: `plaintext_sha256` identifies the set, and the ciphertext hash lets anyone
 detect tampering with the committed blob without holding the passphrase.
 
+**Rotation.** The current blob is seal #2, created `2026-10-08T19:00:55Z`
+(ciphertext `c1a32fb801e18f9a0e841ea61214401d08ab2999caf9b39fe7833ffebb78d91c`).
+Seal #1's key became recoverable from a persisted local agent-session transcript,
+so the orchestrator rotated it; `plaintext_sha256` is unchanged, so the same 20
+scenarios are sealed under a new key. The custody record is
+`docs/evidence/m5-seal-custody.md`. The lesson is recorded rather than hidden: a
+passphrase that appears in a tool argument, a shell command line or a chat message
+is not a secret, which is why the handover procedure below forbids all three.
+
+**What the public manifest discloses about the sealed set.** The ciphertext length
+is plaintext length + a 16-byte GCM tag (90193 = 90177 + 16), and the manifest
+publishes `scenario_count`, the domains and the families. So the *composition* of
+the holdout is public even though its content is not, and `plaintext_sha256` is a
+whole-set confirmation oracle (it confirms a guessed set, and there is no
+per-scenario hash). Anyone who needs the composition to be secret must drop those
+fields; the benchmark keeps them because a reviewer has to be able to see that the
+holdout covers the same families as the open splits.
+
 ## 2. Why it is sealed rather than merely ignored
 
 A plaintext file in Git is readable by every agent that clones the repository, so
@@ -151,6 +169,27 @@ The automated checks that enforce the seal state live in
 - sealing refuses to overwrite an existing seal and refuses to seal a scenario
   that does not declare `split: holdout`.
 
+## 6a. What the seal-time gate covers
+
+`scripts/bench_seal.py seal` runs the leakage gate before writing anything, and
+refuses to seal on any finding. There is no override flag. It covers:
+
+| Check | Code |
+| --- | --- |
+| Scenario id already in the native plaintext dataset | `HOLDOUT_ID_COLLISION` |
+| Scenario id already published anywhere in the tracked tree, including the legacy `ent_`/`fin_`/`soc_` namespace in `COURSE/**` and `evaluation/**` | `HOLDOUT_LEGACY_ID_COLLISION` |
+| Matched pair id already in the native dataset | `HOLDOUT_PAIR_COLLISION` |
+| Paraphrase family already in the native dataset | `HOLDOUT_FAMILY_COLLISION` |
+| Identical payload corpus | `HOLDOUT_TEMPLATE_COLLISION` |
+| Near-duplicate payload: copied paragraph, **slot-swapped skeleton**, or a one-token edit in a long payload | `HOLDOUT_NEAR_DUPLICATE` |
+| A scenario that does not declare `split: holdout` | `HOLDOUT_SPLIT_MISMATCH` |
+
+The gate runs **at seal time only**. It is not re-run on every validation, because
+after the seal the plaintext is not in the tree to compare against; a later
+rotation re-runs it, and the orchestrator may re-run it by hand with the custodian
+key. The id comparison reads *tracked* files only — an untracked working copy is
+not a published namespace, and reading it would make the check non-reproducible.
+
 ## 7. What the seal does not do
 
 - It does not stop the repository owner from decrypting the blob. It stops an
@@ -160,3 +199,9 @@ The automated checks that enforce the seal state live in
 - It does not replace the reachability control. Every holdout attack is still
   licensed by the control configuration before its result is used
   (`docs/benchmark/evaluation-card.md`, section 6).
+- **It gates content, not scoring.** `benchmark/scoring.py` and
+  `scripts/bench_score.py` contain no reference to the seal: scoring a fabricated
+  outcome file whose `split` is `holdout` succeeds and prints a full report without
+  any passphrase. The seal protects the *scenarios*; the only thing that protects
+  a holdout *result* is the freeze procedure in section 4 and the discipline of
+  recording the evaluation command before opening the seal.

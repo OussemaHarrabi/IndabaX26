@@ -736,6 +736,7 @@ def to_native_outcomes(scorecard: LegacyScorecard) -> list[Outcome]:
         attack_step = None
         if attack_present and steps:
             attack_step = steps[-1].step_id
+        utility_step = None if attack_present else (steps[-1].step_id if steps else None)
         native.append(
             Outcome(
                 scenario_id=str(outcome.get("scenario_id", f"legacy-{len(native)}")),
@@ -746,6 +747,7 @@ def to_native_outcomes(scorecard: LegacyScorecard) -> list[Outcome]:
                 scenario_kind="attack" if attack_present else "benign",
                 attack_present=attack_present,
                 attack_step_id=attack_step,
+                utility_step_id=utility_step,
                 expectation=None if attack_present else "allowed",
                 steps=steps,
                 attack_success=bool(outcome.get("attack_success")) if attack_present else None,

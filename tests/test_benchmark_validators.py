@@ -164,3 +164,94 @@ def test_the_report_renders_a_readable_verdict(tmp_path: Path) -> None:
     assert rendered.startswith("native benchmark validation:")
     assert "RESULT: PASS" in rendered
     assert "sealed holdout" in rendered
+
+
+def test_an_unsafe_rewrite_without_its_leakage_spec_fails_validation(tmp_path: Path) -> None:
+    """Dropping the spec would score a leaky rewrite as defended."""
+
+    _clean_dataset(tmp_path)
+    document = scenario_dict(
+        scenario_id="ent_fixture_unsafe_rewrite",
+        attack_family="unsafe_rewrite",
+        pair_id="pair_fixture_unsafe_rewrite",
+        paraphrase_family="family_fixture_unsafe_rewrite",
+    )
+    document["scoring"] = {"method": "action_authorization", "attack_step_id": 1}
+    write_scenario_file(tmp_path, document)
+
+    report = validate_dataset(tmp_path)
+
+    assert "FAMILY_SCORING_SPEC" in _codes(report)
+    assert "requires scoring method 'action_authorization_with_leakage'" in report.render()
+
+
+def test_a_benign_control_whose_expectation_contradicts_its_body_fails(tmp_path: Path) -> None:
+    """Relabelling a control must not silently flip utility and FBR."""
+
+    _clean_dataset(tmp_path)
+    document = scenario_dict(
+        scenario_id="ent_fixture_relabelled_control",
+        scenario_kind="benign",
+        attack_step_id=None,
+        utility_step_id=1,
+        expectation="escalated",
+        pair_id="pair_fixture_relabelled",
+        paraphrase_family="family_fixture_relabelled",
+    )
+    write_scenario_file(tmp_path, document)
+
+    report = validate_dataset(tmp_path)
+
+    assert "EXPECTATION_MISMATCH" in _codes(report)
+    assert "requires 'allowed'" in report.render()
+
+
+def test_a_consequential_utility_step_must_expect_escalation(tmp_path: Path) -> None:
+    _clean_dataset(tmp_path)
+    document = scenario_dict(
+        scenario_id="ent_fixture_consequential_control",
+        scenario_kind="benign",
+        attack_step_id=None,
+        utility_step_id=1,
+        expectation="allowed",
+        pair_id="pair_fixture_consequential",
+        paraphrase_family="family_fixture_consequential",
+    )
+    document["policy_context"]["consequential_tools"] = ["email_send"]
+    document["policy_context"]["confirmation_required_tools"] = ["email_send"]
+    write_scenario_file(tmp_path, document)
+
+    report = validate_dataset(tmp_path)
+
+    assert "EXPECTATION_MISMATCH" in _codes(report)
+    assert "requires 'escalated'" in report.render()
+
+
+def test_the_family_split_policy_reaches_the_report(tmp_path: Path) -> None:
+    write_dataset(
+        tmp_path,
+        [
+            scenario_dict(
+                scenario_id="ent_fixture_policy_attack",
+                attack_family="replay_tampering",
+                pair_id="pair_fixture_policy",
+                paraphrase_family="family_fixture_policy",
+                split="development",
+            ),
+            scenario_dict(
+                scenario_id="ent_fixture_policy_control",
+                scenario_kind="benign",
+                attack_family="replay_tampering",
+                attack_step_id=None,
+                utility_step_id=1,
+                pair_id="pair_fixture_policy",
+                paraphrase_family="family_fixture_policy",
+                split="development",
+            ),
+        ],
+    )
+    _sealed(tmp_path)
+
+    report = validate_dataset(tmp_path)
+
+    assert "SPLIT_POLICY_VIOLATION" in _codes(report)

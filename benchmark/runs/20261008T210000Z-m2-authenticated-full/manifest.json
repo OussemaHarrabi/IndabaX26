@@ -1,0 +1,303 @@
+{
+  "artifacts": {
+    "control.jsonl": "073dc61116cdf28d3c7d6b995778540d8331fc14c7515f0a6a7fc584c5efc1f7",
+    "outcomes.jsonl": "f2abd83d32538f0d0e1553ff9adcba9fc3708230503d75fe4bf1f313b94bff94"
+  },
+  "auth": {
+    "header": "Authorization",
+    "mode": "bearer",
+    "principal": "bench-decision-client",
+    "principal_source": "unverified-jwt-sub-or-null",
+    "scheme": "Bearer"
+  },
+  "code": {
+    "branch": "feat/m5-benchmark",
+    "commit": "a1cdfbc9af941dc37fda13dca30bcf4a6b331b0e"
+  },
+  "control": {
+    "kind": "internal-allow-all",
+    "url": "http://127.0.0.1:50467"
+  },
+  "dataset": {
+    "file_hashes": {
+      "scenarios/enterprise/ent_confirmation_bypass_invoice_transfer_attack.json": "3128c32129afac577ab99416014aac23b356ee891b6f81c0a5e12e4b882db965",
+      "scenarios/enterprise/ent_confirmation_bypass_invoice_transfer_control.json": "0ded556cefc07387a8c502b29a313197f81266977aea4233f1f8b9858f19a21d",
+      "scenarios/enterprise/ent_direct_injection_vendor_note_attack.json": "6ef7168688c42706cbe5c4d52925159587b662b99adde295f44a4cf92bcda518",
+      "scenarios/enterprise/ent_direct_injection_vendor_note_control.json": "7303790ae5722dbbbd6b1a6625800bce42654141d377a41b4e72c4bc90342d1a",
+      "scenarios/enterprise/ent_indirect_injection_partner_brief_attack.json": "56c4a2ded3c642316b00daf3f6eda0e5d11a4b40d12ce824f4746193215c7ecc",
+      "scenarios/enterprise/ent_indirect_injection_partner_brief_control.json": "88c41d58a1f1c612195aa3dcefd09e6803aaf56f3d24a29e87fba7f70c362fad",
+      "scenarios/enterprise/ent_memory_poisoning_handover_shift_attack.json": "3e68d0333c406fb1375672b5134be1b45a32b38d4039ac47b0d17172d32be193",
+      "scenarios/enterprise/ent_memory_poisoning_handover_shift_control.json": "7301c86094e1f11ac849a6a69f846eab3a53c5978ef3d74984809f7e0898b3a9",
+      "scenarios/enterprise/ent_output_integrity_change_closure_attack.json": "7943066eaf6c0d8155dc458cc8508bed19c2b29a8af05767964544673d4e8f28",
+      "scenarios/enterprise/ent_output_integrity_change_closure_control.json": "08ad2f9b412119cf56caf523aee35c0be898475582fac4a174409a40d1f3a57d",
+      "scenarios/enterprise/ent_provenance_laundering_records_wiki_attack.json": "287807f27a9aab1a2568ca1732cb8612f18369d01078d75a4508336405517db1",
+      "scenarios/enterprise/ent_provenance_laundering_records_wiki_control.json": "889935c006947ffcd480ffe621ad4f99a7cd9d7dc92e7a190fc5226118c955be",
+      "scenarios/enterprise/ent_replay_tampering_batch_release_attack.json": "8f6c6a84a6c32c8e360da2834784641f202f08aa8d7688a5e77a955dd9720f0b",
+      "scenarios/enterprise/ent_replay_tampering_batch_release_control.json": "8b4e1e3af57188f208390ee1cad83fedd43d115503a15099b68acffa186ec0c6",
+      "scenarios/enterprise/ent_sensitive_data_exfiltration_settlement_bundle_attack.json": "4bf904b5273f5105557f1c3008b739a8d81b3f6d58be5ab3bd6d0d88f7eac5a3",
+      "scenarios/enterprise/ent_sensitive_data_exfiltration_settlement_bundle_control.json": "81eb06e351cf30a8fa627dd253c86245753cb7872c2853396d0556c6daefe748",
+      "scenarios/enterprise/ent_unauthorized_tool_use_payroll_roster_attack.json": "96669173d16122b3b0c81a84692ae509599c3ac81ee9ea1d21e604ca9fc1e3bd",
+      "scenarios/enterprise/ent_unauthorized_tool_use_payroll_roster_control.json": "62884583988f24666e506acde14d7a2b5040cb195f9213d3e82764d6f7613aa6",
+      "scenarios/enterprise/ent_unsafe_rewrite_handover_key_attack.json": "6df6da6aa84f4642eceba2a83f5b5eb40d33935c9813ca124b7d7eaf5932aa42",
+      "scenarios/enterprise/ent_unsafe_rewrite_handover_key_control.json": "b183b52fba7314bc9e1ee631b5b570be854ff8a329d1ae92cbc0d3818c1455a6",
+      "scenarios/finance/fin_confirmation_bypass_urgent_release_attack.json": "5404009434caaeb94d2cdc6e1c7cad221ec4d969ef25818a99fd3825f7638b1a",
+      "scenarios/finance/fin_confirmation_bypass_urgent_release_control.json": "81ed24f5f958ce4be4496dca0540e0f6717d37b1ae8d3763c2eafb128bff0737",
+      "scenarios/finance/fin_direct_injection_remittance_advice_attack.json": "ea1149c58b1cbf7af286269b92417e4d9aeeb4ec1da9b0279f9a49eb62335a57",
+      "scenarios/finance/fin_direct_injection_remittance_advice_control.json": "02089d26cadf8e30d819939d6bac76d2bd371c274dc4944e7a1904c607346014",
+      "scenarios/finance/fin_indirect_injection_onboarding_page_attack.json": "c6f62ea1fd0e0070a365c40dc02a3e4548315a168c98131e1e38e77457d19c54",
+      "scenarios/finance/fin_indirect_injection_onboarding_page_control.json": "7eef4e1ceb9ee31ed8c11ce86dc574266d67307a82518be81175ba85e73b9bd0",
+      "scenarios/finance/fin_memory_poisoning_standing_release_attack.json": "4d105d309ed2a7a39540afae39028c0dd74ec8e9547d95ae8d887537f317964d",
+      "scenarios/finance/fin_memory_poisoning_standing_release_control.json": "555405b91003a95799a8ca6eabe1a2168adc16d5edc24bbae1c6a80be57f67f7",
+      "scenarios/finance/fin_output_integrity_refund_claim_attack.json": "f1f3f64f11df4351ec61bd28dc428d0c418ca214ca709b08f484b0d6fb655b8e",
+      "scenarios/finance/fin_output_integrity_refund_claim_control.json": "370a5b8c34269bb8d8db1b9d0880399bbe58b1ccd5751b8aaa9ce9eee074ec98",
+      "scenarios/finance/fin_provenance_laundering_bank_change_memo_attack.json": "088f41fed84afa4600b55e48964e5effaf34996b6eb54a8694394ba6a967dd61",
+      "scenarios/finance/fin_provenance_laundering_bank_change_memo_control.json": "959aee34a4dfa08de5bd4548eba90a9c333210647f328caf847776d27883e97b",
+      "scenarios/finance/fin_replay_tampering_reused_grant_attack.json": "e6b3ef3e72facc121ef7b6372fed6d9c4160c934a8ee82375d9c07e572596bbe",
+      "scenarios/finance/fin_replay_tampering_reused_grant_control.json": "6d52839a2fd3e860a4b375932e2fef2344784d07902b7b2f72b5b00151521c4c",
+      "scenarios/finance/fin_sensitive_data_exfiltration_settlement_key_attack.json": "540a422e5ff322d3e03d41ed7dac06f86fc3b09510aaa753179d41940422d817",
+      "scenarios/finance/fin_sensitive_data_exfiltration_settlement_key_control.json": "c7846018090ddfd0e5100cb97741f16feafb26fb2a0b724823442f5ecc48e322",
+      "scenarios/finance/fin_unauthorized_tool_use_instant_settlement_attack.json": "5ba135f26aa48678a4e2d4e17bfe7a88b519bd9f25d7c254ea60efea87ecd3fd",
+      "scenarios/finance/fin_unauthorized_tool_use_instant_settlement_control.json": "c498435d98489b8c51be716e8f255d548593fbf9eb8bd46f56582e73074b2073",
+      "scenarios/finance/fin_unsafe_rewrite_reformatted_key_attack.json": "aad22a3a41bfdfa48a1c16df0ae80bd40076879fff7baf34198e36fcd571850c",
+      "scenarios/finance/fin_unsafe_rewrite_reformatted_key_control.json": "969c85890db4c7cb30768ce8c3e47d8d4046f7734b6e8e4050aa0c1e9ae30c10",
+      "scenarios/soc/soc_confirmation_bypass_isolate_attack.json": "d87dad3a07549642010449dc0b079e7e5df2b84b4837d471710e2aaf6940bd5a",
+      "scenarios/soc/soc_confirmation_bypass_isolate_control.json": "915d78f1a06a9491bb078791ee715b256ea90f3b0796c7126784f25ff51cd870",
+      "scenarios/soc/soc_direct_injection_alert_attack.json": "c587979a5e43b910f29221eaa434cf32653485340e770204663ad24670bd0a4a",
+      "scenarios/soc/soc_direct_injection_alert_control.json": "798188ad3521ed9cf89b032236e4b3057486d83d40125c7db28258f70c2a0904",
+      "scenarios/soc/soc_indirect_injection_bulletin_attack.json": "f22396c0fdce58e59d286269701543f722feada6b076969b4ec190b3fa41e011",
+      "scenarios/soc/soc_indirect_injection_bulletin_control.json": "3ff182684f278284659409e4047453d01ede51f1e1be6a9d770ffaac9d6dd71b",
+      "scenarios/soc/soc_memory_poisoning_shiftnote_attack.json": "95fb353dd27a88640d70dd0d859efc1f067381e8201827ab0990f52728c2eaf0",
+      "scenarios/soc/soc_memory_poisoning_shiftnote_control.json": "905c4aac952e3dd8c0665c204e847deead7bd750f79a4a07f561ac772d25cc9f",
+      "scenarios/soc/soc_output_integrity_cleanclaim_attack.json": "b8aaf83e05268e060e89fbb1bb1a717c4e04148d1092b820e4e010cd8d6d556e",
+      "scenarios/soc/soc_output_integrity_cleanclaim_control.json": "d54884ef14511f16752b38db6f4c07c98b860bf8b8c1efe3df039a81553a616c",
+      "scenarios/soc/soc_provenance_laundering_digest_attack.json": "2444e14ab48af641153dac2178cabaefc973ea17d8e724a475d40f91439f58f0",
+      "scenarios/soc/soc_provenance_laundering_digest_control.json": "52bf30d2d26f64711e171331916967f62329589ab387eb24cb763218a63b8f69",
+      "scenarios/soc/soc_replay_tampering_grant_attack.json": "7f57e739ff945d9d82a1ba9cfdf0583ef09782297af406674f6658b4ebb2787d",
+      "scenarios/soc/soc_replay_tampering_grant_control.json": "f5735f192d507638208005a4629d152a344272e4a2cdde7aa0b84b2aef817fd3",
+      "scenarios/soc/soc_sensitive_data_exfiltration_runbook_attack.json": "19f737aa65e1f6fddde42e89732766258accad24e5aae4dc4a7dd1948258aef6",
+      "scenarios/soc/soc_sensitive_data_exfiltration_runbook_control.json": "8c881cae7bbfa0eeaf2941b2cce0277bd1cf553eedf1b11ae74531a8763664c3",
+      "scenarios/soc/soc_unauthorized_tool_use_isolate_attack.json": "3d9026f704a6c2968109bd183c7300f2031d71730714eb5723f2e722910aa2b1",
+      "scenarios/soc/soc_unauthorized_tool_use_isolate_control.json": "c3a47873cbdd332042b17076280684e92a2a01424f3a1d8bad3cdb8011587dcd",
+      "scenarios/soc/soc_unsafe_rewrite_credential_attack.json": "b245536aa3303349a26f91f6ff8f804c38d987ec693aee70a398f722d4ed94e1",
+      "scenarios/soc/soc_unsafe_rewrite_credential_control.json": "242e8d606c99c01701823cc8733c0dece44df639cfd6938b927d85893d314f6b"
+    },
+    "root": "C:\\Users\\oussa\\oussema\\indabax\\.worktrees\\agent-g\\benchmark\\data",
+    "scenario_count": 60,
+    "sha256": "7e916a11981fa6444724dc78558e51561d32a3005b182862efb52b7c5f2cf735"
+  },
+  "defense": {
+    "endpoint": "/api/v1/decisions",
+    "health": {
+      "status": 200
+    },
+    "url": "http://127.0.0.1:8091",
+    "version": {
+      "api_version": "aegisgraph/v1",
+      "build": {
+        "commit": "unknown",
+        "service": "aegisgraph",
+        "version": "0.1.0"
+      },
+      "policy_set": {
+        "id": "aegisgraph-default",
+        "version": "1"
+      }
+    },
+    "version_error": null
+  },
+  "dependency_lock": {
+    "path": "requirements.lock",
+    "present": true,
+    "sha256": "c4cdd63c7710ed24ab7f66d1011a600190e9abb0cc5701cc0a2024c046587c1c"
+  },
+  "hardware": {
+    "machine": "AMD64",
+    "note": "Windows 10.0.26200 x64, CPython 3.13.14, local loopback, uvicorn in-process MemoryStore",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.13.14"
+  },
+  "limitations": [
+    "no model is available in this environment; the result measures the gateway under a scripted plan, not model behaviour",
+    "the reachability control is a harness-liveness check for scripted plans: it licenses a scenario, it does not show a model falls for the payload"
+  ],
+  "max_tokens": null,
+  "model": {
+    "kind": "scripted",
+    "name": "scripted-scenario-plan",
+    "note": "no model is available in this environment; the scenario's authored action script is replayed verbatim, so the defence is measured, not the model",
+    "parameters": {
+      "max_tokens": null,
+      "seed": null,
+      "temperature": null
+    },
+    "version": "1"
+  },
+  "policy": {
+    "blob_sha256": "80a5dfeb257142cb8a28517f4e3206acbe32d50530767b9e892b5f788a875151",
+    "blob_sha256_reason": null,
+    "blob_sha256_source": "the policy documents the requests pinned, hashed as one git blob over the canonical {policy-set-id:version -> document} map, computed by the benchmark before any gateway call",
+    "document_digests": {
+      "bench-12544af90acab204:1": "12544af90acab204",
+      "bench-1f2a193af77b8dbe:1": "1f2a193af77b8dbe",
+      "bench-20e9ff6c6a66a16b:1": "20e9ff6c6a66a16b",
+      "bench-253f4284a307cf83:1": "253f4284a307cf83",
+      "bench-27528a74efb7423f:1": "27528a74efb7423f",
+      "bench-401aaaf2bab4369d:1": "401aaaf2bab4369d",
+      "bench-41006b4229325e75:1": "41006b4229325e75",
+      "bench-44a92807f9249c19:1": "44a92807f9249c19",
+      "bench-51b6e5377036a8a5:1": "51b6e5377036a8a5",
+      "bench-55e4ad49d4acbb1a:1": "55e4ad49d4acbb1a",
+      "bench-666de724ad82f66c:1": "666de724ad82f66c",
+      "bench-6f1753c58c59e5e7:1": "6f1753c58c59e5e7",
+      "bench-8ac342684409c37b:1": "8ac342684409c37b",
+      "bench-9e38bfcecc0b9e66:1": "9e38bfcecc0b9e66",
+      "bench-a3c161aedba587ab:1": "a3c161aedba587ab",
+      "bench-a4c11101bb543309:1": "a4c11101bb543309",
+      "bench-a8778ad5fae3ad0f:1": "a8778ad5fae3ad0f",
+      "bench-c89b89adbdad7668:1": "c89b89adbdad7668",
+      "bench-cf79ff211f51d27e:1": "cf79ff211f51d27e",
+      "bench-dc6cb5ea97a9678e:1": "dc6cb5ea97a9678e",
+      "bench-dc8b3c532d73b218:1": "dc8b3c532d73b218",
+      "bench-df2968716c40ba14:1": "df2968716c40ba14",
+      "bench-e567e65e1a0c0201:1": "e567e65e1a0c0201",
+      "bench-e8adfd4e11391e1d:1": "e8adfd4e11391e1d",
+      "bench-e9f7ad69bdd42652:1": "e9f7ad69bdd42652",
+      "bench-f9facf0a1b7a0f73:1": "f9facf0a1b7a0f73"
+    },
+    "gate": "H5.2",
+    "hash_convention": "git-blob-sha256: sha256(b\"blob <len>\\0\" + content)",
+    "policy_set_count": 26,
+    "policy_sets": [
+      "bench-12544af90acab204:1",
+      "bench-1f2a193af77b8dbe:1",
+      "bench-20e9ff6c6a66a16b:1",
+      "bench-253f4284a307cf83:1",
+      "bench-27528a74efb7423f:1",
+      "bench-401aaaf2bab4369d:1",
+      "bench-41006b4229325e75:1",
+      "bench-44a92807f9249c19:1",
+      "bench-51b6e5377036a8a5:1",
+      "bench-55e4ad49d4acbb1a:1",
+      "bench-666de724ad82f66c:1",
+      "bench-6f1753c58c59e5e7:1",
+      "bench-8ac342684409c37b:1",
+      "bench-9e38bfcecc0b9e66:1",
+      "bench-a3c161aedba587ab:1",
+      "bench-a4c11101bb543309:1",
+      "bench-a8778ad5fae3ad0f:1",
+      "bench-c89b89adbdad7668:1",
+      "bench-cf79ff211f51d27e:1",
+      "bench-dc6cb5ea97a9678e:1",
+      "bench-dc8b3c532d73b218:1",
+      "bench-df2968716c40ba14:1",
+      "bench-e567e65e1a0c0201:1",
+      "bench-e8adfd4e11391e1d:1",
+      "bench-e9f7ad69bdd42652:1",
+      "bench-f9facf0a1b7a0f73:1"
+    ],
+    "publish_command": "python scripts/bench_policies.py publish --defense-url <url> --token-file <path>",
+    "server_default": {
+      "id": "aegisgraph-default",
+      "version": "1"
+    },
+    "source": "scenario-derived, published to the tenant and pinned per request",
+    "source_blobs": {
+      "blobs": {
+        "backend/aegisgraph/adapter.py": "f9d4ea50fee5186ebc28dbd179fda27034a831c384f8a6626bb3ffd9d825f0db",
+        "backend/aegisgraph/engine.py": "01a1b928f32ae4b64ed179e930652f2e559fa898886ebe7f40cb044dcb527517",
+        "backend/aegisgraph/policy.py": "9b2745d81d4b668d5173a39fd1fd940b9bbbc7c4a1ed368c10f76bb7cee69d90"
+      },
+      "convention": "git-blob-sha256: sha256(b\"blob <len>\\0\" + content)",
+      "missing": [],
+      "missing_reason": null
+    }
+  },
+  "policy_set": {
+    "id": "aegisgraph-default",
+    "version": "1"
+  },
+  "run": {
+    "created": "2026-10-08T19:34:14Z",
+    "created_with": "mkdir(exist_ok=False)",
+    "immutable": true,
+    "name": "20261008T210000Z-m2-authenticated-full"
+  },
+  "scenario_policy_sets": [
+    "bench_enterprise/1",
+    "bench_finance/1",
+    "bench_soc/1"
+  ],
+  "scenario_set": {
+    "scenario_count": 60,
+    "scenario_ids": [
+      "ent_confirmation_bypass_invoice_transfer_attack",
+      "ent_confirmation_bypass_invoice_transfer_control",
+      "ent_direct_injection_vendor_note_attack",
+      "ent_direct_injection_vendor_note_control",
+      "ent_indirect_injection_partner_brief_attack",
+      "ent_indirect_injection_partner_brief_control",
+      "ent_memory_poisoning_handover_shift_attack",
+      "ent_memory_poisoning_handover_shift_control",
+      "ent_output_integrity_change_closure_attack",
+      "ent_output_integrity_change_closure_control",
+      "ent_provenance_laundering_records_wiki_attack",
+      "ent_provenance_laundering_records_wiki_control",
+      "ent_replay_tampering_batch_release_attack",
+      "ent_replay_tampering_batch_release_control",
+      "ent_sensitive_data_exfiltration_settlement_bundle_attack",
+      "ent_sensitive_data_exfiltration_settlement_bundle_control",
+      "ent_unauthorized_tool_use_payroll_roster_attack",
+      "ent_unauthorized_tool_use_payroll_roster_control",
+      "ent_unsafe_rewrite_handover_key_attack",
+      "ent_unsafe_rewrite_handover_key_control",
+      "fin_confirmation_bypass_urgent_release_attack",
+      "fin_confirmation_bypass_urgent_release_control",
+      "fin_direct_injection_remittance_advice_attack",
+      "fin_direct_injection_remittance_advice_control",
+      "fin_indirect_injection_onboarding_page_attack",
+      "fin_indirect_injection_onboarding_page_control",
+      "fin_memory_poisoning_standing_release_attack",
+      "fin_memory_poisoning_standing_release_control",
+      "fin_output_integrity_refund_claim_attack",
+      "fin_output_integrity_refund_claim_control",
+      "fin_provenance_laundering_bank_change_memo_attack",
+      "fin_provenance_laundering_bank_change_memo_control",
+      "fin_replay_tampering_reused_grant_attack",
+      "fin_replay_tampering_reused_grant_control",
+      "fin_sensitive_data_exfiltration_settlement_key_attack",
+      "fin_sensitive_data_exfiltration_settlement_key_control",
+      "fin_unauthorized_tool_use_instant_settlement_attack",
+      "fin_unauthorized_tool_use_instant_settlement_control",
+      "fin_unsafe_rewrite_reformatted_key_attack",
+      "fin_unsafe_rewrite_reformatted_key_control",
+      "soc_confirmation_bypass_isolate_attack",
+      "soc_confirmation_bypass_isolate_control",
+      "soc_direct_injection_alert_attack",
+      "soc_direct_injection_alert_control",
+      "soc_indirect_injection_bulletin_attack",
+      "soc_indirect_injection_bulletin_control",
+      "soc_memory_poisoning_shiftnote_attack",
+      "soc_memory_poisoning_shiftnote_control",
+      "soc_output_integrity_cleanclaim_attack",
+      "soc_output_integrity_cleanclaim_control",
+      "soc_provenance_laundering_digest_attack",
+      "soc_provenance_laundering_digest_control",
+      "soc_replay_tampering_grant_attack",
+      "soc_replay_tampering_grant_control",
+      "soc_sensitive_data_exfiltration_runbook_attack",
+      "soc_sensitive_data_exfiltration_runbook_control",
+      "soc_unauthorized_tool_use_isolate_attack",
+      "soc_unauthorized_tool_use_isolate_control",
+      "soc_unsafe_rewrite_credential_attack",
+      "soc_unsafe_rewrite_credential_control"
+    ],
+    "sha256": "e4f376b2057ead47ed41a527e9b680a1a4c092cd5c9328ec2399eadeb0d77b75",
+    "splits": [
+      "development",
+      "validation"
+    ]
+  },
+  "schema_version": "aegisgraph-benchmark-run/v1",
+  "seed": 1729,
+  "temperature": null
+}

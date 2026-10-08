@@ -41,6 +41,56 @@ def run_id_for(index: int) -> str:
     return f"r{index:03d}"
 
 
+#: The version every benchmark-published policy set is registered under. Each
+#: distinct policy document gets its own id, so version "1" is unique per id.
+POLICY_SET_VERSION = "1"
+
+#: Prefix for the derived policy-set id: a digest of the policy document, so the
+#: id carries no benchmark label.
+POLICY_SET_PREFIX = "bench-"
+
+
+def policy_document(scenario: Scenario) -> dict[str, Any]:
+    """The exact policy document this scenario needs, as a storable mapping.
+
+    Declarative facts only — the same keys the gateway reads from a request's
+    ``policy_context``. The benchmark publishes these documents through the policy
+    administration surface, so a run does not need the ``policy:context_override``
+    scope to be honest about which policy set it measured.
+    """
+
+    policy = scenario.policy_context
+    return {
+        "policy_id": policy.policy_id,
+        "policy_version": policy.policy_version,
+        "allowed_tools": list(policy.allowed_tools),
+        "consequential_tools": list(policy.consequential_tools),
+        "confirmation_required_tools": list(policy.confirmation_required_tools),
+        "internal_email_domains": list(policy.internal_email_domains),
+    }
+
+
+def policy_document_digest(document: dict[str, Any]) -> str:
+    """A local, deterministic digest of a policy document.
+
+    The id must be stable across runs and machines, so this uses the benchmark's
+    own canonical JSON rather than the gateway's canonicalisation. It is only an
+    *id*, never a substitute for the gateway's integrity checks.
+    """
+
+    canonical = json.dumps(document, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+def policy_set_for(scenario: Scenario) -> dict[str, str]:
+    """The ``policy_set {id, version}`` the request pins for this scenario."""
+
+    return {
+        "id": f"{POLICY_SET_PREFIX}{policy_document_digest(policy_document(scenario))}",
+        "version": POLICY_SET_VERSION,
+    }
+
+
 def _role_for(observation: Observation, scenario: Scenario) -> str:
     node = next(node for node in scenario.provenance if node.id == observation.provenance_id)
     return _ROLE_BY_SOURCE.get(node.source_type, "tool")
@@ -109,7 +159,6 @@ def build_request(
     """
 
     observation, conversation = _evidence_payload(scenario)
-    policy = scenario.policy_context
     history = scenario.history
     return {
         "api_version": API_VERSION,
@@ -119,14 +168,8 @@ def build_request(
         "conversation": conversation,
         "observation": observation,
         "candidate_action": action if action is not None else _action_payload(scenario, step_id),
-        "policy_context": {
-            "policy_id": policy.policy_id,
-            "policy_version": policy.policy_version,
-            "allowed_tools": list(policy.allowed_tools),
-            "consequential_tools": list(policy.consequential_tools),
-            "confirmation_required_tools": list(policy.confirmation_required_tools),
-            "internal_email_domains": list(policy.internal_email_domains),
-        },
+        "policy_set": policy_set_for(scenario),
+        "policy_context": policy_document(scenario),
         "provenance": _provenance_payload(scenario),
         "history_digest": {
             "steps_taken": history.steps_taken,

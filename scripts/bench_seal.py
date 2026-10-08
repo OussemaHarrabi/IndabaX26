@@ -27,7 +27,7 @@ from benchmark.seal import (  # noqa: E402
     seal_holdout,
     verify_seal,
 )
-from benchmark.splits import holdout_leakage_findings  # noqa: E402
+from benchmark.splits import holdout_leakage_findings, published_id_namespace  # noqa: E402
 
 DEFAULT_ROOT = REPO_ROOT / "benchmark" / "data"
 PASSPHRASE_ENV = "AEGISGRAPH_HOLDOUT_PASSPHRASE"
@@ -98,9 +98,12 @@ def _cmd_seal(args: argparse.Namespace) -> int:
     scenarios = [load_scenario_text(path.read_text(encoding="utf-8")) for path in files]
 
     # A holdout that overlaps the plaintext dataset measures memorisation, so the
-    # seal is gated on the leakage check. There is no override.
+    # seal is gated on the leakage check. There is no override. The check covers
+    # three namespaces: the native plaintext dataset, the legacy SENTINEL ids
+    # published elsewhere in the tracked tree, and the payload templates of both.
     dataset = load_dataset(args.root)
-    leaks = holdout_leakage_findings(scenarios, dataset)
+    published = published_id_namespace(REPO_ROOT)
+    leaks = holdout_leakage_findings(scenarios, dataset, published_ids=published)
     if leaks:
         print("refusing to seal: the candidate holdout leaks into the plaintext dataset")
         for finding in leaks:

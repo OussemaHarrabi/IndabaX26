@@ -1,2 +1,7 @@
+# Run directories are transient: created once, never merged.
 *
 !.gitignore
+
+# The committed reference run is an evidence artifact (see its README).
+!20261008T210000Z-m2-authenticated-full/
+!20261008T210000Z-m2-authenticated-full/**

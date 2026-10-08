@@ -26,11 +26,12 @@ import hashlib
 import json
 import re
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from benchmark.dataset import SEAL_FILE, SEALED_FILE, Dataset
-from benchmark.schema import Scenario, Split
+from benchmark.schema import AttackFamily, Scenario, Split
 
 #: Cross-split payload shingles at or above this Jaccard similarity are a leak.
 LEAK_SIMILARITY_THRESHOLD = 0.9
@@ -44,10 +45,45 @@ SHINGLE_WIDTH = 5
 #: ``SHINGLE_WIDTH = 5`` this means a text needs at least seven tokens.
 MIN_SHINGLES = 3
 
+#: Order-insensitive token-multiset threshold. Two payloads with the same tokens
+#: in a different order — the slot-swap case — score 1.0 here, and a one-token
+#: edit scores ``(T-1)/(T+1)``, so at ``T >= 19`` tokens a single changed token is
+#: detected. Only texts with at least :data:`MIN_TEMPLATE_TOKENS` tokens are
+#: compared, because below that an identifier pair looks like a paraphrase.
+LEAK_MULTISET_THRESHOLD = 0.9
+MIN_TEMPLATE_TOKENS = 20
+
+#: Legacy-shaped scenario ids as they appear in the published tree.
+LEGACY_ID_PATTERN = re.compile(r"\b(?:ent|fin|soc)_[a-z0-9_]{4,}\b")
+
 _NORMALIZE = re.compile(r"[^a-z0-9 ]+")
 _WHITESPACE = re.compile(r"\s+")
 
 SPLIT_ORDER: tuple[Split, ...] = (Split.DEVELOPMENT, Split.VALIDATION, Split.HOLDOUT)
+
+#: The machine-checkable family -> split policy the data card states: families 1-7
+#: are development, 8-10 are validation. Without this the development/validation
+#: separation would rest on an unverifiable label, and a whole matched pair could
+#: be moved between splits with nothing to notice it. A sealed ``holdout``
+#: scenario is exempt: the seal, not this table, governs its membership.
+DEVELOPMENT_FAMILIES: tuple[AttackFamily, ...] = (
+    AttackFamily.DIRECT_PROMPT_INJECTION,
+    AttackFamily.INDIRECT_PROMPT_INJECTION,
+    AttackFamily.PROVENANCE_LAUNDERING,
+    AttackFamily.MEMORY_POISONING,
+    AttackFamily.UNAUTHORIZED_TOOL_USE,
+    AttackFamily.SENSITIVE_DATA_EXFILTRATION,
+    AttackFamily.CONFIRMATION_BYPASS,
+)
+VALIDATION_FAMILIES: tuple[AttackFamily, ...] = (
+    AttackFamily.REPLAY_TAMPERING,
+    AttackFamily.UNSAFE_REWRITE,
+    AttackFamily.OUTPUT_INTEGRITY,
+)
+FAMILY_SPLIT_POLICY: Mapping[AttackFamily, Split] = {
+    **{family: Split.DEVELOPMENT for family in DEVELOPMENT_FAMILIES},
+    **{family: Split.VALIDATION for family in VALIDATION_FAMILIES},
+}
 
 
 @dataclass(frozen=True)
@@ -107,8 +143,18 @@ class HoldoutManifest:
         }
 
 
-def build_index(dataset: Dataset) -> tuple[SplitIndex, list[Finding]]:
-    """Build the split index and report unit-level split conflicts."""
+def build_index(
+    dataset: Dataset,
+    *,
+    assignments: Mapping[str, str] | None = None,
+) -> tuple[SplitIndex, list[Finding]]:
+    """Build the split index from the declared splits, or from an independent source.
+
+    ``assignments`` lets a caller supply a second source of truth for membership —
+    a plan, a manifest, a previous freeze. :func:`split_disjointness` then compares
+    the two, which is what makes its mismatch and overlap branches reachable.
+    ``build_index`` itself reports nothing: the checks live in one place.
+    """
 
     findings: list[Finding] = []
     assignment: dict[str, str] = {}
@@ -117,52 +163,18 @@ def build_index(dataset: Dataset) -> tuple[SplitIndex, list[Finding]]:
     counts: dict[str, int] = {split.value: 0 for split in SPLIT_ORDER}
     pairs_by_split: dict[str, list[str]] = defaultdict(list)
 
-    family_splits: dict[str, set[str]] = defaultdict(set)
-    pair_splits: dict[str, set[str]] = defaultdict(set)
-
     for entry in dataset.entries:
         scenario = entry.scenario
-        split = scenario.split.value
+        split = (
+            assignments[scenario.id]
+            if assignments is not None and scenario.id in assignments
+            else scenario.split.value
+        )
         assignment[scenario.id] = split
         counts[split] = counts.get(split, 0) + 1
-        family_splits[scenario.paraphrase_family].add(split)
-        pair_splits[scenario.pair_id].add(split)
         pairs_by_split[split].append(scenario.pair_id)
         families.setdefault(scenario.paraphrase_family, split)
         pairs.setdefault(scenario.pair_id, split)
-
-    for family, splits in sorted(family_splits.items()):
-        if len(splits) > 1:
-            findings.append(
-                Finding(
-                    code="SPLIT_LEAK_FAMILY",
-                    message=(
-                        f"paraphrase family {family!r} appears in splits "
-                        f"{sorted(splits)}; a family must live in exactly one split"
-                    ),
-                    where=tuple(
-                        entry.scenario.id
-                        for entry in dataset.entries
-                        if entry.scenario.paraphrase_family == family
-                    ),
-                )
-            )
-    for pair, splits in sorted(pair_splits.items()):
-        if len(splits) > 1:
-            findings.append(
-                Finding(
-                    code="SPLIT_LEAK_PAIR",
-                    message=(
-                        f"matched pair {pair!r} is split across {sorted(splits)}; "
-                        "an attack and its control must share a split"
-                    ),
-                    where=tuple(
-                        entry.scenario.id
-                        for entry in dataset.entries
-                        if entry.scenario.pair_id == pair
-                    ),
-                )
-            )
 
     index = SplitIndex(
         assignment=assignment,
@@ -221,6 +233,68 @@ def _jaccard(left: frozenset[tuple[str, ...]], right: frozenset[tuple[str, ...]]
     return len(left & right) / len(union)
 
 
+def _token_multiset(text: str) -> dict[str, int]:
+    counts: dict[str, int] = defaultdict(int)
+    for token in normalize_text(text).split():
+        counts[token] += 1
+    return dict(counts)
+
+
+def _multiset_jaccard(left: dict[str, int], right: dict[str, int]) -> float:
+    """Order-insensitive similarity: shared tokens over the token union."""
+
+    if not left or not right:
+        return 0.0
+    shared = sum(min(count, right.get(token, 0)) for token, count in left.items())
+    union = sum(max(count, right.get(token, 0)) for token, count in left.items())
+    union += sum(count for token, count in right.items() if token not in left)
+    if not union:
+        return 0.0
+    return shared / union
+
+
+def template_similarity(left: Scenario, right: Scenario) -> tuple[float, str]:
+    """The strongest similarity between any two payload texts of two scenarios.
+
+    Two metrics are used, because one is not enough:
+
+    ``shingle``
+        order-sensitive 5-gram Jaccard, which catches a copied paragraph;
+    ``multiset``
+        order-insensitive token Jaccard over texts of at least
+        :data:`MIN_TEMPLATE_TOKENS` tokens, which catches a reused skeleton with
+        its named slots swapped, and a one-token edit in a text of 19+ tokens.
+
+    Residual limit: a paraphrase that changes the *vocabulary* (a synonym
+    rewrite) is not detected by either metric, and a text shorter than
+    :data:`MIN_TEMPLATE_TOKENS` tokens is not compared at all. Both limits are
+    stated in ``docs/benchmark/data-card.md``.
+    """
+
+    best = (0.0, "shingle")
+    for left_text in payload_texts(left):
+        for right_text in payload_texts(right):
+            shingle = _jaccard(_shingles(left_text), _shingles(right_text))
+            if shingle > best[0]:
+                best = (shingle, "shingle")
+            left_tokens = normalize_text(left_text).split()
+            right_tokens = normalize_text(right_text).split()
+            if len(left_tokens) < MIN_TEMPLATE_TOKENS or len(right_tokens) < MIN_TEMPLATE_TOKENS:
+                continue
+            multiset = _multiset_jaccard(_token_multiset(left_text), _token_multiset(right_text))
+            if multiset > best[0]:
+                best = (multiset, "multiset")
+    return best
+
+
+def is_leak(similarity: float, metric: str) -> bool:
+    """Whether a similarity value crosses the threshold for its metric."""
+
+    return similarity >= (
+        LEAK_MULTISET_THRESHOLD if metric == "multiset" else LEAK_SIMILARITY_THRESHOLD
+    )
+
+
 def leakage_findings(dataset: Dataset) -> list[Finding]:
     """Cross-split payload-template and near-duplicate leakage."""
 
@@ -228,14 +302,12 @@ def leakage_findings(dataset: Dataset) -> list[Finding]:
 
     fingerprint_splits: dict[str, set[str]] = defaultdict(set)
     fingerprint_ids: dict[str, list[str]] = defaultdict(list)
-    shingle_cache: dict[str, tuple[frozenset[tuple[str, ...]], ...]] = {}
 
     scenarios = list(dataset.scenarios)
     for scenario in scenarios:
         fingerprint = template_fingerprint(scenario)
         fingerprint_splits[fingerprint].add(scenario.split.value)
         fingerprint_ids[fingerprint].append(scenario.id)
-        shingle_cache[scenario.id] = tuple(_shingles(text) for text in payload_texts(scenario))
 
     for fingerprint, splits in sorted(fingerprint_splits.items()):
         if len(splits) > 1:
@@ -254,17 +326,14 @@ def leakage_findings(dataset: Dataset) -> list[Finding]:
         for right in scenarios[index + 1 :]:
             if left.split is right.split:
                 continue
-            best = 0.0
-            for left_shingles in shingle_cache[left.id]:
-                for right_shingles in shingle_cache[right.id]:
-                    best = max(best, _jaccard(left_shingles, right_shingles))
-            if best >= LEAK_SIMILARITY_THRESHOLD:
+            similarity, metric = template_similarity(left, right)
+            if is_leak(similarity, metric):
                 findings.append(
                     Finding(
                         code="SPLIT_LEAK_NEAR_DUPLICATE",
                         message=(
-                            f"payloads are {best:.3f} similar across splits "
-                            f"({left.split.value} vs {right.split.value})"
+                            f"payloads are {similarity:.3f} similar across splits by the "
+                            f"{metric} metric ({left.split.value} vs {right.split.value})"
                         ),
                         where=(left.id, right.id),
                     )
@@ -445,7 +514,62 @@ def assert_seal_closed(root: Path | str) -> list[Finding]:
     return findings
 
 
-def holdout_leakage_findings(holdout: list[Scenario], dataset: Dataset) -> list[Finding]:
+def published_id_namespace(
+    repo_root: Path | str,
+    *,
+    max_files: int = 8_000,
+    max_bytes: int = 32_000_000,
+) -> set[str]:
+    """Every legacy-shaped scenario id published in the *tracked* tree.
+
+    The holdout must be disjoint not only from the native plaintext dataset but
+    from every id the repository already publishes — the legacy SENTINEL suite in
+    ``COURSE/**`` and ``evaluation/**`` uses the same ``ent_``/``fin_``/``soc_``
+    namespace. Only tracked files are read: an untracked working copy is not a
+    published namespace, and reading it would make the check non-reproducible.
+    """
+
+    import subprocess
+
+    root = Path(repo_root)
+    try:
+        listing = subprocess.run(
+            ["git", "ls-files", "-z"],
+            capture_output=True,
+            cwd=root,
+            timeout=60,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):  # pragma: no cover - environment dependent
+        return set()
+    if listing.returncode != 0:
+        return set()
+
+    ids: set[str] = set()
+    budget = max_bytes
+    for index, raw_name in enumerate(listing.stdout.split(b"\0")):
+        if index >= max_files or budget <= 0:
+            break
+        if not raw_name:
+            continue
+        path = root / raw_name.decode("utf-8", "replace")
+        try:
+            if not path.is_file() or path.stat().st_size > 2_000_000:
+                continue
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        budget -= len(text)
+        ids.update(LEGACY_ID_PATTERN.findall(text))
+    return ids
+
+
+def holdout_leakage_findings(
+    holdout: list[Scenario],
+    dataset: Dataset,
+    *,
+    published_ids: set[str] | None = None,
+) -> list[Finding]:
     """Check a candidate holdout against the plaintext dataset before sealing it.
 
     This is the gate the seal command runs. A holdout that shares an id, a pair,
@@ -458,6 +582,19 @@ def holdout_leakage_findings(holdout: list[Scenario], dataset: Dataset) -> list[
     plaintext = list(dataset.scenarios)
 
     known_ids = {scenario.id for scenario in plaintext}
+    if published_ids:
+        for scenario in holdout:
+            if scenario.id in published_ids:
+                findings.append(
+                    Finding(
+                        code="HOLDOUT_LEGACY_ID_COLLISION",
+                        message=(
+                            f"holdout id {scenario.id!r} is already published in the tracked "
+                            "tree (legacy SENTINEL namespace)"
+                        ),
+                        where=(scenario.id,),
+                    )
+                )
     known_pairs = {scenario.pair_id for scenario in plaintext}
     known_families = {scenario.paraphrase_family for scenario in plaintext}
 
@@ -514,37 +651,56 @@ def holdout_leakage_findings(holdout: list[Scenario], dataset: Dataset) -> list[
                 )
             )
 
-    plaintext_shingles = [
-        (scenario.id, _shingles(text)) for scenario in plaintext for text in payload_texts(scenario)
-    ]
-    for scenario in holdout:
-        for text in payload_texts(scenario):
-            candidate = _shingles(text)
-            for plaintext_id, known in plaintext_shingles:
-                similarity = _jaccard(candidate, known)
-                if similarity >= LEAK_SIMILARITY_THRESHOLD:
-                    findings.append(
-                        Finding(
-                            code="HOLDOUT_NEAR_DUPLICATE",
-                            message=(
-                                f"holdout payload is {similarity:.3f} similar to plaintext "
-                                f"scenario {plaintext_id!r}"
-                            ),
-                            where=(scenario.id, plaintext_id),
-                        )
+    for candidate in holdout:
+        for known in plaintext:
+            similarity, metric = template_similarity(candidate, known)
+            if is_leak(similarity, metric):
+                findings.append(
+                    Finding(
+                        code="HOLDOUT_NEAR_DUPLICATE",
+                        message=(
+                            f"holdout payload is {similarity:.3f} similar to plaintext "
+                            f"scenario {known.id!r} by the {metric} metric"
+                        ),
+                        where=(candidate.id, known.id),
                     )
+                )
     return findings
 
 
-def split_disjointness(index: SplitIndex, dataset: Dataset) -> list[Finding]:
-    """Every scenario belongs to exactly one split, and the split pools are disjoint.
+def split_disjointness(
+    index: SplitIndex,
+    dataset: Dataset,
+    *,
+    policy: Mapping[AttackFamily, Split] | None = None,
+) -> list[Finding]:
+    """Every scenario sits in exactly one split, and two independent sources agree.
 
-    The assignment comes from the scenario files themselves, so a mismatch or an
-    overlap means two sources disagreed — the failure mode this check exists for.
+    Three sources of split membership exist, and this function compares them:
+
+    1. **the scenario file** — ``scenario.split``, the declared label;
+    2. **the index** — ``index.assignment``, which may be built from an
+       independent mapping (``build_index(..., assignments=...)``);
+    3. **the family policy** — :data:`FAMILY_SPLIT_POLICY`, the machine-checkable
+       statement that families 1-7 belong to development and 8-10 to validation.
+
+    Comparing (1) with (2) makes ``SPLIT_MISMATCH`` reachable; comparing (1) with
+    (3) makes ``SPLIT_OVERLAP`` and ``SPLIT_POLICY_VIOLATION`` reachable, which is
+    what catches a whole matched pair moved between splits. A sealed ``holdout``
+    scenario is exempt from the family policy: its membership is governed by the
+    seal, not by this rule.
     """
 
     findings: list[Finding] = []
-    pools: dict[str, set[str]] = {split.value: set() for split in SPLIT_ORDER}
+    effective_policy: Mapping[AttackFamily, Split] = (
+        FAMILY_SPLIT_POLICY if policy is None else policy
+    )
+
+    declared: dict[str, set[str]] = {split.value: set() for split in SPLIT_ORDER}
+    policy_pools: dict[str, set[str]] = {split.value: set() for split in SPLIT_ORDER}
+    family_members: dict[str, set[str]] = defaultdict(set)
+    pair_members: dict[str, set[str]] = defaultdict(set)
+
     for scenario in dataset.scenarios:
         assigned = index.assignment.get(scenario.id)
         if assigned is None:
@@ -567,40 +723,103 @@ def split_disjointness(index: SplitIndex, dataset: Dataset) -> list[Finding]:
                     where=(scenario.id,),
                 )
             )
-            continue
-        pools.setdefault(assigned, set()).add(scenario.id)
+        declared.setdefault(scenario.split.value, set()).add(scenario.id)
+        family_members[scenario.paraphrase_family].add(scenario.id)
+        pair_members[scenario.pair_id].add(scenario.id)
 
-    names = sorted(pools)
-    for index_left, left in enumerate(names):
-        for right in names[index_left + 1 :]:
-            overlap = pools[left] & pools[right]
-            if overlap:
+        if scenario.split is Split.HOLDOUT:
+            continue
+        required = effective_policy.get(scenario.attack_family) if scenario.attack_family else None
+        if required is None:
+            continue
+        policy_pools[required.value].add(scenario.id)
+        if scenario.split is not required:
+            findings.append(
+                Finding(
+                    code="SPLIT_POLICY_VIOLATION",
+                    message=(
+                        f"scenario {scenario.id!r} is declared {scenario.split.value!r} but "
+                        f"its family {scenario.attack_family.value!r} belongs to {required.value!r}"
+                    ),
+                    where=(scenario.id,),
+                )
+            )
+
+    # Two independent memberships disagreeing is the overlap this check exists for.
+    for split_name, members in sorted(policy_pools.items()):
+        for other_name, other in sorted(declared.items()):
+            if other_name == split_name:
+                continue
+            disagreement = members & other
+            if disagreement:
                 findings.append(
                     Finding(
                         code="SPLIT_OVERLAP",
-                        message=(f"splits {left!r} and {right!r} share {len(overlap)} scenarios"),
-                        where=tuple(sorted(overlap)),
+                        message=(
+                            f"the family policy places {len(disagreement)} scenarios in "
+                            f"{split_name!r} while their files declare {other_name!r}"
+                        ),
+                        where=tuple(sorted(disagreement)),
                     )
                 )
 
-    assigned_ids = set().union(*pools.values()) if pools else set()
-    unassigned = {scenario.id for scenario in dataset.scenarios} - assigned_ids
-    if unassigned:
+    for family, members in sorted(family_members.items()):
+        splits = {
+            scenario.split.value
+            for scenario in dataset.scenarios
+            if scenario.paraphrase_family == family
+        }
+        if len(splits) > 1:
+            findings.append(
+                Finding(
+                    code="SPLIT_LEAK_FAMILY",
+                    message=(
+                        f"paraphrase family {family!r} appears in splits {sorted(splits)}; "
+                        "a family must live in exactly one split"
+                    ),
+                    where=tuple(sorted(members)),
+                )
+            )
+    for pair, members in sorted(pair_members.items()):
+        splits = {
+            scenario.split.value for scenario in dataset.scenarios if scenario.pair_id == pair
+        }
+        if len(splits) > 1:
+            findings.append(
+                Finding(
+                    code="SPLIT_LEAK_PAIR",
+                    message=(
+                        f"matched pair {pair!r} is split across {sorted(splits)}; "
+                        "an attack and its control must share a split"
+                    ),
+                    where=tuple(sorted(members)),
+                )
+            )
+
+    covered = set().union(*declared.values()) if declared else set()
+    uncovered = {scenario.id for scenario in dataset.scenarios} - covered
+    if uncovered:
         findings.append(
             Finding(
                 code="SPLIT_UNCOVERED",
-                message=f"{len(unassigned)} scenarios are in no split pool",
-                where=tuple(sorted(unassigned)),
+                message=f"{len(uncovered)} scenarios are in no split pool",
+                where=tuple(sorted(uncovered)),
             )
         )
     return findings
 
 
 __all__ = [
+    "DEVELOPMENT_FAMILIES",
+    "FAMILY_SPLIT_POLICY",
+    "LEAK_MULTISET_THRESHOLD",
     "LEAK_SIMILARITY_THRESHOLD",
+    "LEGACY_ID_PATTERN",
     "MIN_SHINGLES",
+    "MIN_TEMPLATE_TOKENS",
     "SHINGLE_WIDTH",
     "SPLIT_ORDER",
+    "VALIDATION_FAMILIES",
     "Finding",
     "HoldoutManifest",
     "SplitIndex",
@@ -612,6 +831,8 @@ __all__ = [
     "normalize_text",
     "pair_findings",
     "payload_texts",
+    "published_id_namespace",
     "split_disjointness",
     "template_fingerprint",
+    "template_similarity",
 ]

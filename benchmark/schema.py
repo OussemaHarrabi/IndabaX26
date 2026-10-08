@@ -491,10 +491,11 @@ class Scenario(BaseModel):
         else:
             if self.scoring.attack_step_id is not None:
                 raise ValueError("a benign control must not declare scoring.attack_step_id")
-            if self.utility_criterion.expectation == "not_allowed":
+            if self.utility_criterion.expectation not in {"allowed", "escalated"}:
                 raise ValueError(
-                    "a benign control must declare a concrete utility expectation, "
-                    "not 'not_allowed'"
+                    "a benign control's expectation must be 'allowed' or 'escalated'; "
+                    "'blocked' and 'not_allowed' are not derivable from the episode, so "
+                    "accepting them would let a relabelled control flip utility and FBR"
                 )
         for grant in self.confirmations:
             if grant.kind == "bare_digest" and len(grant.value) != 24:
