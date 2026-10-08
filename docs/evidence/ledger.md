@@ -8,6 +8,13 @@ plus its reason are documented; a re-opened `accepted` finding becomes `pending`
 again). Types are **industrial** (platform engineering) or **research**
 (benchmark/evaluation).
 
+Severity labels in the claim cells are quoted **verbatim** from the review
+artifact the row cites, so a reader can go from the ledger cell to the artifact
+and see the same word. An artifact's `informational` means a non-blocking note
+with no behavioural defect. If a future artifact uses a label the register cannot
+compare, the label is quoted as-is and explained once here rather than silently
+re-mapped.
+
 Rule: no row may be promoted to `verified` without an artifact, its digest, the
 exact command and the source commit. Legacy numbers are frozen at their measured
 commits and are never recomputed under new code.
@@ -117,8 +124,9 @@ row **P4**; the second-review rows **P25–P29**; the third-review rows **P54–
 follow-up rows **P63–P68**. `accepted` (confirmed, deliberately not fixed, residual
 and reason documented): **P59**, **P61**. Still `pending`, not to be promoted
 without the artifact, command and commit named in their cells: **P8**, **P9**,
-**P10**, **P49**, and the sixteen registered-but-unclosed review rows **P69–P84**
-(the I3 campaign audit and the H4 M3 telemetry/load review).
+**P10**, **P49**, and the fourteen still-open review rows **P69–P70**, **P72**,
+**P74–P84** (I3-01/I3-02/I3-04/I3-06 and all ten H4 findings — I3-03 and I3-05
+are closed above).
 
 Rows **P25–P29** register the findings of the **second independent review**
 (reviewer Agent H, ids `H2-*`). All five are now **`fixed`**, with the
@@ -249,9 +257,9 @@ test or command.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | P69 | **I3-01 (low):** the campaign's gateway identity is runner-attested, and the run happened on a feature worktree rather than the integration tip | industrial | pending | `docs/evidence/reviews/M6-campaign-reproducibility-audit.json` (subject: `benchmark/runs/20261008T203656Z-m6-campaign/`, freeze block 1, declaration `4481e26`) | `e610187df5f16fa47d3245bd1aee543ef4c18d1e3095b77b3529e396a97a18d3` | — | — | — |
 | P70 | **I3-02 (medium):** the C6 blocked-cell enabling command is not runnable and its "fails closed" claim is false | research | pending | `docs/evidence/reviews/M6-campaign-reproducibility-audit.json` (C6 enabling command and its claim) | `e610187df5f16fa47d3245bd1aee543ef4c18d1e3095b77b3529e396a97a18d3` | — | — | — |
-| P71 | **I3-03 (medium):** the ledger did not register the M6 campaign — P66 was stale | research | pending | `docs/evidence/reviews/M6-campaign-reproducibility-audit.json` + `docs/evidence/ledger.md` rows P66/P68 | `e610187df5f16fa47d3245bd1aee543ef4c18d1e3095b77b3529e396a97a18d3` | — | — | — |
+| P71 | **I3-03 (medium):** the ledger did not register the M6 campaign — P66 was stale | research | verified | `docs/evidence/reviews/M6-campaign-reproducibility-audit.json` + `docs/evidence/ledger.md` rows P66/P68 | `e610187df5f16fa47d3245bd1aee543ef4c18d1e3095b77b3529e396a97a18d3` | `grep -n 'P66 ' docs/evidence/ledger.md` and `grep -n 'P68 ' docs/evidence/ledger.md` | `d4c1674` | **closed by this agent in `d4c1674`** (the ledger owner's own pass): P66 is promoted to exercised and P68 records the campaign's C1/C2/C3 evidence, the proven null delta and the three provenance gaps, so the audit's stale-ledger finding no longer holds. The artifact cell keeps the audit's own path so a reader can go from the row to the finding |
 | P72 | **I3-04 (low):** the credential's scope set and trust ceiling are asserted but recorded in no committed artifact | industrial | pending | `docs/evidence/reviews/M6-campaign-reproducibility-audit.json` (campaign credential) | `e610187df5f16fa47d3245bd1aee543ef4c18d1e3095b77b3529e396a97a18d3` | — | — | — |
-| P73 | **I3-05 (low):** ledger row P43 (I2-14) stated a code fact that no longer held at the audited tip | research | pending | `docs/evidence/reviews/M6-campaign-reproducibility-audit.json` + `docs/evidence/ledger.md` row P43 | `e610187df5f16fa47d3245bd1aee543ef4c18d1e3095b77b3529e396a97a18d3` | — | — | — |
+| P73 | **I3-05 (low):** ledger row P43 (I2-14) stated a code fact that no longer held at the audited tip | research | verified | `docs/evidence/reviews/M6-campaign-reproducibility-audit.json` + `docs/evidence/ledger.md` row P43 | `e610187df5f16fa47d3245bd1aee543ef4c18d1e3095b77b3529e396a97a18d3` | `grep -n 'IDENTITY_KEYS' benchmark/scoring.py` + read row P43 | `d4c1674` (the correction), `2db482c`/`e75fdf5` (the code) | **closed by this agent in `d4c1674`**: P43 now states the digest composition at the tip — the metric table plus the per-scenario verdicts plus the `IDENTITY_KEYS` allowlist — and records explicitly that `dependency_lock` is **not** part of it; the earlier statement is kept only as labelled history |
 | P74 | **I3-06 (low):** the freeze §8 artifact-hash list mixes raw-byte and CRLF-normalised conventions | industrial | pending | `docs/evidence/reviews/M6-campaign-reproducibility-audit.json` + `docs/evidence/m6-freeze.md` §8 | `e610187df5f16fa47d3245bd1aee543ef4c18d1e3095b77b3529e396a97a18d3` | — | — | — |
 
 | # | Claim | Type | Status | Artifact | Digest | Command | Commit | Limitation |
