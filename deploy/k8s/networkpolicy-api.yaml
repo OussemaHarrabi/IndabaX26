@@ -1,0 +1,68 @@
+# The API's own ingress/egress. It accepts HTTP only from the ingress controller
+# and from its own namespace on the service port, and it may reach only DNS, the
+# future PostgreSQL datastore and the OpenTelemetry collector.
+#
+# Note: kubelet-executed readiness/liveness probes originate from the node and are
+# not subject to NetworkPolicy, so probe traffic needs no allowance here.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: aegisgraph-api
+  labels:
+    app.kubernetes.io/name: aegisgraph
+    app.kubernetes.io/component: api
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: aegisgraph
+      app.kubernetes.io/component: api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        # Edge traffic only from the ingress controller's namespace.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 8080
+          protocol: TCP
+    - from:
+        # In-namespace callers (a future internal proxy or mesh sidecar).
+        - podSelector: {}
+      ports:
+        - port: 8080
+          protocol: TCP
+  egress:
+    - to:
+        # Cluster DNS, or nothing resolves.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        # PostgreSQL datastore (M2).
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: aegisgraph
+              app.kubernetes.io/component: postgres
+      ports:
+        - port: 5432
+          protocol: TCP
+    - to:
+        # OpenTelemetry collector; its absence is tolerated by the application,
+        # but the egress path is opened so telemetry can flow when it is present.
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: aegisgraph
+              app.kubernetes.io/component: otel-collector
+      ports:
+        - port: 4317
+          protocol: TCP
+        - port: 4318
+          protocol: TCP

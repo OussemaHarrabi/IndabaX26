@@ -1,0 +1,232 @@
+# AegisGraph local production-like stack.
+#
+#   docker compose up -d          # API + PostgreSQL + observability backends
+#   docker compose up -d api postgres   # API + PostgreSQL only
+#
+# The API is the only service with a published port, and it binds to loopback by
+# default. Observability is best-effort by design: the API has no hard dependency
+# on the collector, Prometheus or Grafana, so it starts (and stays up) with any
+# subset of them missing — `depends_on` on PostgreSQL is marked `required: false`
+# for the same reason.
+#
+# Every third-party image is pinned by digest, not by tag. Digests were resolved
+# with `docker buildx imagetools inspect <ref>` on 2026-10-08 and are recorded in
+# docs/ops/compose.md alongside the tag each digest corresponds to.
+#
+# Secrets are never committed: copy .env.example to .env and set the values, and
+# the `:?` interpolations below make Compose fail closed when they are absent.
+
+name: aegisgraph
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aegisgraph:local
+    restart: unless-stopped
+    ports:
+      - "${AEGISGRAPH_BIND_ADDRESS:-127.0.0.1}:${AEGISGRAPH_PORT:-8080}:8080"
+    environment:
+      # D5/D7: the legacy unauthenticated surface stays off outside explicit dev.
+      AEGISGRAPH_LEGACY_UNAUTHENTICATED: "false"
+      AEGISGRAPH_LOG_LEVEL: "${AEGISGRAPH_LOG_LEVEL:-info}"
+      # Point the exporter at the collector, but never require it to be present.
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+      OTEL_SERVICE_NAME: "aegisgraph-api"
+    # The supported posture is a read-only root filesystem (see Dockerfile / F10).
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys,urllib.request;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz',timeout=2).status==200 else 1)"
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+        reservations:
+          cpus: "0.10"
+          memory: 128M
+    depends_on:
+      postgres:
+        condition: service_healthy
+        # Absent or unhealthy PostgreSQL must not stop the API from starting.
+        required: false
+    networks:
+      - aegisgraph
+
+  postgres:
+    image: postgres@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:?set POSTGRES_USER in .env}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}"
+      POSTGRES_DB: "${POSTGRES_DB:-aegisgraph}"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # PostgreSQL writes only inside its data volume and its run directory.
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+      - /var/run/postgresql:rw,noexec,nosuid,size=16m
+    cap_drop:
+      - ALL
+    # The official entrypoint starts as root, fixes ownership of the data
+    # directory, then drops to the `postgres` user; these caps are the minimum
+    # needed for that transition. Nothing else is granted.
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    networks:
+      - aegisgraph
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib@sha256:d2da12c4336a79758826700be9e21ecf4a9f7d945b7f8a58ba55ee3fa45427c8
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./deploy/compose/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      # OTLP ingress and the Prometheus scrape endpoint stay on loopback.
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
+      - "127.0.0.1:8888:8888"
+      - "127.0.0.1:8889:8889"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+        reservations:
+          cpus: "0.10"
+          memory: 128M
+    networks:
+      - aegisgraph
+
+  prometheus:
+    image: prom/prometheus@sha256:2659f4c2ebb718e7695cb9b25ffa7d6be64db013daba13e05c875451cf51b0d3
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.listen-address=0.0.0.0:9090
+    volumes:
+      - ./deploy/compose/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --spider http://127.0.0.1:9090/-/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+        reservations:
+          cpus: "0.10"
+          memory: 256M
+    networks:
+      - aegisgraph
+
+  grafana:
+    image: grafana/grafana@sha256:fa801ab6e1ae035135309580891e09f7eb94d1abdbd2106bdc288030b028158c
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_PATHS_LOGS: "/tmp/log"
+      GF_PATHS_PLUGINS: "/tmp/plugins"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./deploy/compose/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/compose/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --spider http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+        reservations:
+          cpus: "0.10"
+          memory: 256M
+    networks:
+      - aegisgraph
+
+networks:
+  aegisgraph:
+    driver: bridge
+
+volumes:
+  pgdata:
+  prometheus-data:
+  grafana-data:
