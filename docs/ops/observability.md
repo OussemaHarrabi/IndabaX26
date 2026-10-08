@@ -146,12 +146,12 @@ PYTHONPATH=backend AEGISGRAPH_AUTH_MODE=required \
 ```
 
 Run the collector from the repository configuration (the shipped
-`deploy/compose/otel-collector.yaml`, which receives OTLP on 4317/4318 and exports
-to `debug`):
+`deploy/observability/otel-collector.yaml`, which receives OTLP on 4317/4318 and
+exports to `debug`):
 
 ```sh
 docker run -d --name m3-otel -p 127.0.0.1:14318:4318 \
-  -v "$PWD/deploy/compose/otel-collector.yaml:/etc/otelcol/config.yaml:ro" \
+  -v "$PWD/deploy/observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro" \
   otel/opentelemetry-collector-contrib@sha256:d2da12c4336a79758826700be9e21ecf4a9f7d945b7f8a58ba55ee3fa45427c8 \
   --config=/etc/otelcol/config.yaml
 docker logs m3-otel | tail -1
@@ -213,10 +213,10 @@ datasource (`uid: prometheus`).
 Verified locally:
 
 * the dashboard **loads**: Grafana (the digest-pinned `11.3.1` image from
-  `compose.yaml`) started with the repository's provisioning directory and a
-  dashboards directory holding this file plus the existing
-  `aegisgraph-local.json`; `GET /api/search?type=dash-db` returned both, this one
-  in folder `AegisGraph` with uid `aegisgraph-service`;
+  `compose.yaml`) started with the repository's provisioning directory and the
+  single dashboards directory `deploy/observability/grafana/dashboards/`;
+  `GET /api/search?type=dash-db` returned it in folder `AegisGraph` with uid
+  `aegisgraph-service`;
 * all 12 panel expressions **execute**: Prometheus (the digest-pinned `v2.55.1`
   image) scraped a live API (`job_name: aegisgraph-api`, `metrics_path: /metrics`)
   and every expression from the dashboard JSON was issued to
@@ -224,14 +224,15 @@ Verified locally:
   `0.154 req/s`, p50 `1.86 ms`, p95 `4.0 ms`, p99 `4.8 ms`, verdict distribution
   two series, auth failures one series).
 
-**Not verified / still required.** The Compose stack as shipped does **not** scrape
-the API: `deploy/compose/prometheus.yml` (owned by the container workstream) has no
-`aegisgraph-api` job, so the panels would show "no data" until
-`deploy/observability/prometheus/api-scrape.yml` is merged into it. `compose.yaml`
-mounts `./deploy/compose/grafana/dashboards`, so this dashboard is loaded only once
-that directory (or the mount) includes `deploy/observability/grafana/dashboards/`.
-Both are one-line changes to files outside this workstream's scope; they are
-recorded here rather than applied.
+**Closed in M4 — the shipped stack now scrapes the API.** The two provisioning
+trees were consolidated onto this file set (`deploy/observability/**`): the
+`aegisgraph-api` job from `api-scrape.yml` is now in the single
+`deploy/observability/prometheus/prometheus.yml`, `compose.yaml` mounts
+`deploy/observability/grafana/dashboards/` (so this dashboard is the only one
+provisioned), and `deploy/compose/**` no longer exists. Verified by measurement on
+the running stack (target `up`, real `aegisgraph_*` series, Grafana dashboard +
+datasource resolving); the exact commands and outputs are in
+`docs/ops/compose.md` → "The observability data path (verified)".
 
 ## What is verified and what is not
 
