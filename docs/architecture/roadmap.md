@@ -16,7 +16,7 @@ omitted: each milestone gates on its exit criteria, not on a calendar.
 | --- | --- | --- | --- | --- | --- |
 | **M0** | Charter + baseline | Intake, baseline reproduced, charter, architecture, threat model, ADRs, legacy record, ledger skeleton | — | all | `implemented` (closed) |
 | **M1** | Contracts + enforcement | Native versioned contracts with a policy/code revision in every decision; legacy adapter isolated; enforcement binding and integration SDK | M0 | ADR-0006 | `implemented` — contract, enforcement SDK, bounded input and strict confirmation landed (`4013b59`, `7502df3`); legacy suite re-checked decision-identical |
-| **M2** | Auth + policy + audit store | Authentication and tenancy; versioned policy; durable append-only receipt/audit store | M1 | ADR-0001, ADR-0002 | `partial` — the dependency stack is merged (`4b9eb5c`: PostgreSQL/SQLAlchemy/Alembic in `requirements.lock`); no migration, store or auth evidence yet, so F1–F3 stay open |
+| **M2** | Auth + policy + audit store | Authentication and tenancy; versioned policy; durable append-only receipt/audit store | M1 | ADR-0001, ADR-0002 | `implemented` in code (`7a87e8b`, merged at `4350af3`) — **awaiting the orchestrator's live verification**; F1–F3 stay `open` until it is confirmed, and the coverage floor is red at that revision without a test database (ledger P15) |
 | **M3** | Observability + reliability | OpenTelemetry, Prometheus, Grafana, SLOs, fail-closed guarantees under load | M1, M2 | ADR-0003 | `proposed` — the Compose stack already ships collector, Prometheus and Grafana services, but no instrumentation claim is verified |
 | **M4** | CI/CD + containers + deployment | Pipelines and gates; hardened Compose stack; Kubernetes manifests validated and smoke-tested | M1, M2 | ADR-0005 | `implemented` with two named gaps: **no GitHub-hosted CI run has ever executed**, and **no cluster smoke test** (`kind` absent) |
 | **M5** | Evaluation framework + benchmark data | Native evaluation schema authoritative; versioned legacy adapter; benchmark data + reachability gate | M1 | ADR-0004 | `implemented` — schema, 60-scenario dataset, deterministic scoring, sealed holdout; **scripted adapter only**, no holdout run |
@@ -144,12 +144,14 @@ milestone owns each finding.
 ### M2 — Auth + policy + audit store
 
 - **Entry:** M1 frozen contracts.
-- **Status:** `partial` — only the dependency stack has landed
-  (`4b9eb5c` adds PostgreSQL/SQLAlchemy/Alembic pins to `requirements.lock`, with
-  license and vulnerability review). No migration, no store round-trip and no
-  authentication evidence exists yet, so **F1–F3 stay open**. The coverage
-  baseline moved with those pins, which is why every coverage number must be
-  quoted with its commit (ledger P15).
+- **Status:** `implemented` in code (`7a87e8b`, merged at `4350af3`), **awaiting the
+  orchestrator's live verification** — this roadmap does not promote it on code
+  alone. F1–F3 therefore stay `open` in the register until that verification is
+  confirmed. Two facts recorded around the merge: the coverage floor of 94 is
+  **red** at `4350af3` on a machine without a test database (93.06 % = 2521/2709,
+  12 PostgreSQL tests skipped without `AEGISGRAPH_TEST_DATABASE_URL`, and
+  `ci.yml` starts no database service — ledger P15), and the second review's
+  `H2-01`…`H2-05` findings touch this surface (ledger P25–P29).
 - **Work:** OIDC/JWT for interactive principals plus scoped service tokens for
   machine callers (ADR-0002); per-tenant authorization on every read and write;
   an explicit policy store with versions and an audit trail; PostgreSQL +
