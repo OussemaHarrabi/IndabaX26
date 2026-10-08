@@ -44,6 +44,13 @@ TRUST_CEILING_ENV = "AEGISGRAPH_TRUST_CEILING_DEFAULT"
 DEFAULT_TENANT_ENV = "AEGISGRAPH_DEFAULT_TENANT"
 BIND_ADDRESS_ENV = "AEGISGRAPH_BIND_ADDRESS"
 STORE_PAYLOAD_METADATA_ENV = "AEGISGRAPH_STORE_PAYLOAD_METADATA"
+METRICS_ENABLED_ENV = "AEGISGRAPH_METRICS_ENABLED"
+TELEMETRY_ENABLED_ENV = "AEGISGRAPH_TELEMETRY_ENABLED"
+OTEL_ENDPOINT_ENV = "AEGISGRAPH_OTEL_ENDPOINT"
+OTEL_SERVICE_NAME_ENV = "AEGISGRAPH_OTEL_SERVICE_NAME"
+OTEL_EXPORT_TIMEOUT_ENV = "AEGISGRAPH_OTEL_EXPORT_TIMEOUT_SECONDS"
+OTEL_EXPORTER_ENDPOINT_ENV = "OTEL_EXPORTER_OTLP_ENDPOINT"
+OTEL_EXPORTER_TRACES_ENDPOINT_ENV = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
 
 DEFAULT_ENVIRONMENT = "development"
 DEFAULT_AUTH_MODE = "none"
@@ -54,6 +61,9 @@ DEFAULT_TENANT = "development"
 DEFAULT_BIND_ADDRESS = "127.0.0.1"
 DEFAULT_JWT_ALGORITHMS = ("RS256", "ES256")
 DEFAULT_JWKS_TTL_SECONDS = 300
+DEFAULT_OTEL_SERVICE_NAME = "aegisgraph-api"
+DEFAULT_OTEL_EXPORT_TIMEOUT_SECONDS = 2.0
+"""Upper bound a single telemetry export may take before it is abandoned (M3)."""
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 _SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 _SERVICE_TOKEN_FIELDS = frozenset({"id", "tenant_id", "sha256", "scopes", "trust_ceiling"})
@@ -112,6 +122,17 @@ class Settings:
     default_tenant: str
     bind_address: str
     store_payload_metadata: bool = False
+    metrics_enabled: bool = False
+    """Whether ``GET /metrics`` is served (M3): development default, explicit in production."""
+
+    telemetry_enabled: bool = False
+    """Whether spans are exported over OTLP/HTTP (M3): default on when an endpoint is set."""
+
+    telemetry_endpoint: str | None = None
+    """OTLP/HTTP base URL, or ``None`` (then nothing is exported and no thread is started)."""
+
+    telemetry_service_name: str = DEFAULT_OTEL_SERVICE_NAME
+    telemetry_export_timeout_seconds: float = DEFAULT_OTEL_EXPORT_TIMEOUT_SECONDS
     problems: tuple[str, ...] = field(default=())
 
     @property
@@ -147,6 +168,9 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
     jwks_file, jwks_url = _jwks_sources(source, problems)
     service_tokens = _service_tokens(source, problems)
     database_url = _clean(source.get(DATABASE_URL_ENV))
+    telemetry_endpoint = _telemetry_endpoint(source, problems)
+    metrics_enabled = _metrics_enabled(source, environment)
+    telemetry_enabled = _telemetry_enabled(source, telemetry_endpoint)
 
     settings = Settings(
         environment=environment,
@@ -170,6 +194,17 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         default_tenant=_clean(source.get(DEFAULT_TENANT_ENV)) or DEFAULT_TENANT,
         bind_address=_clean(source.get(BIND_ADDRESS_ENV)) or DEFAULT_BIND_ADDRESS,
         store_payload_metadata=_flag(source.get(STORE_PAYLOAD_METADATA_ENV)),
+        metrics_enabled=metrics_enabled,
+        telemetry_enabled=telemetry_enabled,
+        telemetry_endpoint=telemetry_endpoint,
+        telemetry_service_name=(
+            _clean(source.get(OTEL_SERVICE_NAME_ENV))
+            or _clean(source.get("OTEL_SERVICE_NAME"))
+            or DEFAULT_OTEL_SERVICE_NAME
+        ),
+        telemetry_export_timeout_seconds=_positive_float(
+            source.get(OTEL_EXPORT_TIMEOUT_ENV), DEFAULT_OTEL_EXPORT_TIMEOUT_SECONDS
+        ),
         problems=tuple(problems),
     )
     return settings
@@ -235,6 +270,11 @@ def safe_summary(settings: Settings) -> dict[str, object]:
         "trust_ceiling_default": settings.trust_ceiling_default.value,
         "bind_address": settings.bind_address,
         "store_payload_metadata": settings.store_payload_metadata,
+        "metrics_enabled": settings.metrics_enabled,
+        "telemetry_enabled": settings.telemetry_enabled,
+        "telemetry_endpoint_configured": settings.telemetry_endpoint is not None,
+        "telemetry_service_name": settings.telemetry_service_name,
+        "telemetry_export_timeout_seconds": settings.telemetry_export_timeout_seconds,
     }
 
 
@@ -419,6 +459,68 @@ def _flag(raw: str | None) -> bool:
     return text is not None and text.lower() in {"1", "true", "yes", "on"}
 
 
+def _metrics_enabled(source: Mapping[str, str], environment: Environment) -> bool:
+    """Decide whether ``GET /metrics`` is served (M3).
+
+    An explicit ``AEGISGRAPH_METRICS_ENABLED`` always wins. Otherwise metrics are on
+    in development and **off in production**: an operator must switch the surface on
+    deliberately, so a production process never exposes it by accident.
+    """
+
+    declared = _clean(source.get(METRICS_ENABLED_ENV))
+    if declared is not None:
+        return _flag(declared)
+    return environment is Environment.DEVELOPMENT
+
+
+def _telemetry_endpoint(source: Mapping[str, str], problems: list[str]) -> str | None:
+    """Resolve the OTLP/HTTP endpoint from configuration (M3).
+
+    ``AEGISGRAPH_OTEL_ENDPOINT`` is the service's own variable and is used verbatim.
+    The conventional OpenTelemetry variables are honoured as a fallback so the
+    Compose stack works without duplicating configuration.
+    """
+
+    declared = (
+        _clean(source.get(OTEL_ENDPOINT_ENV))
+        or _clean(source.get(OTEL_EXPORTER_TRACES_ENDPOINT_ENV))
+        or _clean(source.get(OTEL_EXPORTER_ENDPOINT_ENV))
+    )
+    if declared is None:
+        return None
+    if not declared.startswith(("http://", "https://")):
+        problems.append(
+            f"{OTEL_ENDPOINT_ENV} must be an http(s) OTLP/HTTP endpoint; got {declared!r}"
+        )
+        return None
+    return declared.rstrip("/")
+
+
+def _telemetry_enabled(source: Mapping[str, str], endpoint: str | None) -> bool:
+    """Whether spans are exported (M3).
+
+    An explicit ``AEGISGRAPH_TELEMETRY_ENABLED`` always wins. Otherwise tracing is on
+    exactly when an endpoint is configured: with no endpoint there is no provider,
+    no background thread and no export attempt at all.
+    """
+
+    declared = _clean(source.get(TELEMETRY_ENABLED_ENV))
+    if declared is not None:
+        return _flag(declared)
+    return endpoint is not None
+
+
+def _positive_float(raw: str | None, default: float) -> float:
+    text = _clean(raw)
+    if text is None:
+        return default
+    try:
+        value = float(text)
+    except ValueError:
+        return default
+    return value if value > 0.0 else default
+
+
 def _non_negative_int(raw: str | None, default: int) -> int:
     text = _clean(raw)
     if text is None:
@@ -453,6 +555,9 @@ __all__ = [
     "AUTH_MODE_ENV",
     "BIND_ADDRESS_ENV",
     "DATABASE_URL_ENV",
+    "DEFAULT_JWT_ALGORITHMS",
+    "DEFAULT_OTEL_EXPORT_TIMEOUT_SECONDS",
+    "DEFAULT_OTEL_SERVICE_NAME",
     "DEFAULT_TENANT",
     "DEFAULT_TRUST_CEILING",
     "JWKS_ENV",
@@ -462,10 +567,17 @@ __all__ = [
     "JWT_AUDIENCE_ENV",
     "JWT_ISSUER_ENV",
     "LEGACY_ENV",
+    "METRICS_ENABLED_ENV",
+    "OTEL_ENDPOINT_ENV",
+    "OTEL_EXPORTER_ENDPOINT_ENV",
+    "OTEL_EXPORTER_TRACES_ENDPOINT_ENV",
+    "OTEL_EXPORT_TIMEOUT_ENV",
+    "OTEL_SERVICE_NAME_ENV",
     "RETENTION_DAYS_ENV",
     "SERVICE_TOKENS_ENV",
     "SERVICE_TOKEN_FILE_ENV",
     "STORE_PAYLOAD_METADATA_ENV",
+    "TELEMETRY_ENABLED_ENV",
     "TRUST_CEILING_ENV",
     "AuthMode",
     "ConfigurationError",
