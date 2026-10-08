@@ -1,6 +1,6 @@
 # Compose: the local production-like stack
 
-Owner: Agent E (DevSecOps). Files: `compose.yaml`, `deploy/compose/**`,
+Owner: Agent E (DevSecOps). Files: `compose.yaml`, `deploy/observability/**`,
 `.env.example`, `Makefile`.
 
 ## Services
@@ -12,7 +12,7 @@ Owner: Agent E (DevSecOps). Files: `compose.yaml`, `deploy/compose/**`,
 | `postgres` | `postgres@sha256:2d2b8998…` (17) | none published | `pg_isready` | M2 datastore; named volume `pgdata` |
 | `otel-collector` | `otel/opentelemetry-collector-contrib@sha256:d2da12c4…` (0.115.1) | `127.0.0.1:4317/4318/8888/8889` | none (image has no shell) | OTLP in; internal metrics on `:8888`, pipeline metrics on `:8889` |
 | `prometheus` | `prom/prometheus@sha256:2659f4c2…` (v2.55.1) | `127.0.0.1:9090` | `wget /-/ready` | scrapes the collector; named volume `prometheus-data` |
-| `grafana` | `grafana/grafana@sha256:fa801ab6…` (11.3.1) | `127.0.0.1:3000` | `wget /api/health` | provisioned datasource + dashboard; named volume `grafana-data` |
+| `grafana` | `grafana/grafana@sha256:fa801ab6…` (11.3.1) | `127.0.0.1:3000` | `wget /api/health` | provisions the `prometheus` datasource and the M3 dashboard `aegisgraph-service.json` (uid `aegisgraph-service`); named volume `grafana-data` |
 
 `migrate` binds the API's dependency: `api` waits for
 `service_completed_successfully` with `required: false`, so the schema exists
@@ -172,32 +172,72 @@ for their writable scratch space.
 
 ## The observability data path (verified)
 
+One provisioning tree, `deploy/observability/**`, is mounted by `compose.yaml`:
+
+| Mount | Container path | File |
+| --- | --- | --- |
+| collector config | `/etc/otelcol/config.yaml` | `deploy/observability/otel-collector.yaml` |
+| scrape config | `/etc/prometheus/prometheus.yml` | `deploy/observability/prometheus/prometheus.yml` |
+| provisioning | `/etc/grafana/provisioning` | `deploy/observability/grafana/provisioning/` |
+| dashboards | `/var/lib/grafana/dashboards` | `deploy/observability/grafana/dashboards/` |
+
+There is exactly **one** Prometheus scrape config and exactly **one** provisioned
+dashboards directory in the repository. The dashboard is
+`aegisgraph-service.json` (uid `aegisgraph-service`), the reviewed M3 dashboard
+documented in `docs/ops/observability.md`.
+
 1. The collector exposes its internal metrics on `:8888`
    (`service.telemetry.metrics.address: 0.0.0.0:8888`).
-2. Prometheus scrapes two collector jobs (`otel-collector:8889` for pipeline
-   metrics, `otel-collector:8888` for internal `otelcol_*` metrics) plus itself.
-3. Grafana provisions the `prometheus` datasource and the `AegisGraph — local
-   stack health` dashboard from files.
+2. Prometheus scrapes four jobs: itself, the collector's pipeline metrics
+   (`otel-collector:8889`), the collector's internal `otelcol_*` metrics
+   (`otel-collector:8888`) and — new in M3/M4 — the **API's own `/metrics`**
+   (`job_name: aegisgraph-api`, `metrics_path: /metrics`, target `api:8080`).
+3. Grafana provisions the `prometheus` datasource and the M3 dashboard.
 
-Verified with live queries against the running stack:
+The stack runs the API in **development** (no `AEGISGRAPH_ENV` is set), so
+`GET /metrics` is served by default. In production the surface is off unless
+`AEGISGRAPH_METRICS_ENABLED=true`; the scrape job is documented accordingly in
+`prometheus.yml`.
 
+Verified end to end against the running stack (2026-10-08, Docker 29.6.2):
+
+```sh
+# 1. the API job is up
+curl -s 'http://127.0.0.1:9090/api/v1/targets?state=active'
+#    job=aegisgraph-api  health=up  scrapeUrl=http://api:8080/metrics  lastError=""
+curl -sG http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=up{job="aegisgraph-api"}'
+#    up = 1
+
+# 2. real aegisgraph_* series after traffic through the API
+curl -sG http://127.0.0.1:9090/api/v1/query \
+  --data-urlencode 'query=count by (__name__) ({__name__=~"aegisgraph_.+"})'
+#    aegisgraph_requests_total 3 series | aegisgraph_requests_created 3
+#    aegisgraph_decision_latency_seconds_bucket 14 | _count 1 | _sum 1 | _created 1
+curl -sG http://127.0.0.1:9090/api/v1/query \
+  --data-urlencode 'query=sum by (route,status) (aegisgraph_requests_total)'
+#    {route="/healthz",status="200"} = 2
+#    {route="/api/v1/decisions",status="422"} = 6
+#    {route="/v1/decision",status="200"} = 4
+
+# 3. Grafana has the dashboard and a resolving datasource
+curl -s http://127.0.0.1:3000/api/dashboards/uid/aegisgraph-service
+#    title "AegisGraph — decision service (M3)", uid aegisgraph-service, 10 panels,
+#    folder AegisGraph, datasource {"type":"prometheus","uid":"prometheus"}
+curl -s http://127.0.0.1:3000/api/datasources/uid/prometheus/health
+#    {"status":"OK","message":"Successfully queried the Prometheus API."}
+curl -sG http://127.0.0.1:3000/api/datasources/proxy/uid/prometheus/api/v1/query \
+  --data-urlencode 'query=sum(aegisgraph_requests_total)'
+#    13
 ```
-$ curl -s 'http://127.0.0.1:9090/api/v1/targets?state=active'   # jobs: prometheus up,
-                                                                 # otel-collector up,
-                                                                 # otel-collector-internal up
-$ curl -sG http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=up{job=~".+"}'
-  series: 3   (all = 1)
-$ … 'query=otelcol_process_uptime'            → 1 series
-$ … 'query=rate(otelcol_process_cpu_seconds[5m])' → 1 series
-$ curl -s http://127.0.0.1:3000/api/health    → {"database":"ok","version":"11.3.1",...}
-$ curl -s http://127.0.0.1:3000/api/datasources/uid/prometheus/health
-  → {"status":"OK","message":"Successfully queried the Prometheus API."}
-```
 
-The API does **not** emit telemetry yet; that instrumentation is M2 (ADR-0003).
-The panels above therefore prove the **collector → Prometheus → Grafana** path
-with the collector's own metrics. A span-level panel lights up once the API emits
-spans; the pipeline is already configured for it.
+The traffic in step 2 was 6 POSTs to `/api/v1/decisions` (refused with `422` by
+request validation before authentication — the refusal is instrumented, which is
+the point) and 4 POSTs to the legacy `/v1/decision` with
+`AEGISGRAPH_LEGACY_UNAUTHENTICATED=true` (real `allow` decisions). Both routes
+appear as their own `route` label. The authenticated decision counter
+`aegisgraph_decisions_total` stays empty until a caller presents a token: the
+stack does not ship credentials, so the decision-rate panel needs either a token
+from `scripts/dev_issuer.py` or the legacy surface.
 
 ## Notes and limitations
 

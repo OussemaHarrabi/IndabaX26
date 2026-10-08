@@ -152,7 +152,7 @@ services:
     restart: unless-stopped
     command: ["--config=/etc/otelcol/config.yaml"]
     volumes:
-      - ./deploy/compose/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+      - ./deploy/observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro
     ports:
       # OTLP ingress and the Prometheus scrape endpoint stay on loopback.
       - "127.0.0.1:4317:4317"
@@ -186,7 +186,7 @@ services:
       - --storage.tsdb.retention.time=15d
       - --web.listen-address=0.0.0.0:9090
     volumes:
-      - ./deploy/compose/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     ports:
       - "127.0.0.1:9090:9090"
@@ -229,8 +229,8 @@ services:
       GF_PATHS_PLUGINS: "/tmp/plugins"
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./deploy/compose/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./deploy/compose/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
       - "127.0.0.1:3000:3000"
     read_only: true
