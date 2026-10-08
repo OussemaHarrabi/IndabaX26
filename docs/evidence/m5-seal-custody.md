@@ -63,3 +63,18 @@ AEGISGRAPH_HOLDOUT_PASSPHRASE='<custodian passphrase>' \
 Then run the holdout split with `--dataset <plaintext parent> --splits holdout`, delete the plaintext
 afterwards, and record the resulting run directory and its digest. No gateway, policy or scoring change is
 permitted between opening the seal and recording the holdout numbers.
+
+## Pre-freeze integrity check (finding I2-21, 2026-10-08)
+
+An independent audit noted that the seal-time leakage gate covered only the native dataset, so a collision
+between a holdout id and the legacy SENTINEL id namespace published in `COURSE/**` and `evaluation/**` could
+not be detected. The orchestrator (custodian) ran the equivalent check by hand against the currently sealed
+set: the seal was opened into a temporary directory outside the repository, the 20 scenario ids were extracted,
+and every tracked file was scanned (`git ls-files` + `git show HEAD:<path>`, 289 files, 8.5 MB).
+
+Result: **all 20 holdout ids share a single non-legacy prefix and none of them appears anywhere in the tracked
+tree** (0 collisions; 144 legacy-style tokens exist in tracked files and none matches). The plaintext directory
+was deleted immediately afterwards. This was a metadata check, not an evaluation: no holdout scenario has been
+run against the gateway, and the freeze checklist in `docs/benchmark/holdout.md` §4 still governs the first
+real opening. The benchmark owner is adding the same check to the sealer so it runs automatically at the next
+rotation.

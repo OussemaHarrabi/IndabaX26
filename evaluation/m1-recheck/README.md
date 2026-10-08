@@ -53,10 +53,11 @@ same score.
 
 2. **The F4 fix is behaviour-preserving on this corpus.** `_is_laundered_claim` now
    extracts addresses with a linear scan instead of `_EMAIL_ADDRESS.findall` over
-   the whole source. Both extractors were run side by side over the 50 scenario
-   files of the pinned public split (4 565 text chunks: each file plus each of its
-   lines longer than three characters) and returned identical address sets in every
-   case, so the bounded window changes no result on this corpus. The guard's intent
+   the whole source. Both extractors were run side by side over all 50 files under
+   `scenarios/**` of the pinned kit (the 40 public scenarios plus the schema and
+   validation files; 4 565 text chunks: each file plus each of its lines longer
+   than three characters) and returned identical address sets in every case, so the
+   bounded window changes no result on this corpus. The guard's intent
    is unchanged; only its cost is.
 
 3. **The F5 body bound is inert for this suite.** The middleware rejects bodies
