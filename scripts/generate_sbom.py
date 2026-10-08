@@ -145,6 +145,15 @@ def _slug(image: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", image.replace(":", "_").replace("/", "_"))
 
 
+def _display_path(path: Path) -> str:
+    """Show a repo-relative path when possible, otherwise the absolute path."""
+
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", default="aegisgraph:local", help="image reference to inventory")
@@ -177,9 +186,9 @@ def main() -> int:
         newline="\n",
     )
 
-    print(f"manifest:     {output.relative_to(REPO_ROOT)}")
+    print(f"manifest:     {_display_path(output)}")
     print(f"sha256:       {hashlib.sha256(payload.encode('utf-8')).hexdigest()}")
-    print(f"inventory:    {requirements_path.relative_to(REPO_ROOT)}")
+    print(f"inventory:    {_display_path(requirements_path)}")
     print(f"sha256:       {_sha256_file(requirements_path)}")
     print(f"packages:     {manifest['totals']['packages']}")
     print(f"image id:     {manifest['image']['id']}")
