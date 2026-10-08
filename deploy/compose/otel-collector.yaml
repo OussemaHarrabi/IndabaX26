@@ -1,0 +1,56 @@
+# OpenTelemetry Collector configuration for the local AegisGraph stack.
+#
+# Receives OTLP (gRPC 4317, HTTP 4318) and exposes Prometheus-format metrics on
+# :8889 for Prometheus to scrape. This revision of the API does not emit telemetry
+# yet (instrumentation is M2/ADR-0003), so today the collector's own internal
+# metrics — exported through the same Prometheus endpoint — are what proves the
+# data path is alive end to end.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Bound collector memory so a misbehaving exporter cannot OOM the container.
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 20
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion:
+      enabled: true
+  debug:
+    verbosity: basic
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      # Internal collector metrics (otelcol_*) in Prometheus format on :8888,
+      # bound to all interfaces so the Prometheus container can scrape them.
+      level: basic
+      address: 0.0.0.0:8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus]
