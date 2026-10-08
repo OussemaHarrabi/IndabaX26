@@ -36,3 +36,6 @@ but the committed artifact is not byte-reproducible from the final HEAD and reco
 Headline mock conclusions (ASR 0, BTU 0.8889, FBR 0.0683) are unaffected.
 
 Artifact digest: see `docs/evidence/ledger.md` row L14 and `docs/evidence/m0-baseline-report.md` section 7.
+
+This file's own SHA-256: `4ae38edd2140a4464430e8cabff0c5f9569dbc575eaab3616d8f1f7e65661bce`
+(`aegisgraph-mock-recheck-770e88d.json`).
