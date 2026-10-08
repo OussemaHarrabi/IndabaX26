@@ -1,0 +1,124 @@
+{
+  "review": "M3 telemetry, load-harness and deployment-surface adversarial security review (independent exercise, Agent H4)",
+  "reviewer": "independent read-only adversarial security reviewer; no repository file modified",
+  "date": "2026-10-08",
+  "subject": "the M3 observability surface at the integration tip, plus the container/K8s deployment surface as it stood at review time",
+  "findings": [
+    {
+      "id": "H4-01",
+      "severity": "medium",
+      "confidence": "high",
+      "path:line": "scripts/load_test.py:483-496 (log_offset captured at :483 BEFORE run_warm_up at :484; decision_record_latencies at :496)",
+      "preconditions": "Run the harness with --server-log pointing at the API stdout log (the documented protocol) and --warm-up > 0.",
+      "minimal_reproduction": "Stub reproduction (deleted after use): a local HTTP stub answering /api/v1/version, /api/v1/policies and /api/v1/decisions (appending one {\"event\":\"decision\",\"latency_ms\":1.5} line per decision), then harness.main(--concurrency 1 --requests 5 --warm-up 3 --server-log <stub log>). Observed: measured_requests=5, warm_up_requests=3, service_side.decisions_observed=8, and the printed summary said '(8 decisions in the measured window)'. Independently, the committed artifact docs/evidence/performance/m3-load-20261008T193951Z.json has service_side.decisions_observed=4296 = measured_requests 4256 + warm_up 40.",
+      "impact": "The service-side (in-process) latency block is computed over the warm-up requests as well, contradicting load_test.py's own docstring ('Reading only the bytes written after offset excludes the warm-up') and docs/ops/load-testing.md ('written after the warm-up'). The published in-process baseline in docs/ops/slo.md:44 (p50 1.573 ms, p95 3.139 ms, p99 5.175 ms, mean 1.794 ms, max 14.878 ms) is therefore derived from 4296 samples that include 40 cold-start requests, not the 4256 measured ones; the SLO headroom figures inherit the contamination.",
+      "regression_criterion": "Capture log_offset AFTER run_warm_up (or read only records with the measured run-id prefix), and assert service_side.decisions_observed == results.measured_requests for a run with warm-up > 0.",
+      "would_change_published_result": "yes — docs/ops/slo.md in-process latency baseline and the artifact's decisions_observed / service_side percentiles"
+    },
+    {
+      "id": "H4-02",
+      "severity": "medium",
+      "confidence": "high",
+      "path:line": "scripts/load_test.py:390-395 (body hashed at :392 with LF, then written in text mode at :391 which translates \\n -> \\r\\n on Windows; digest written to the .sha256 sidecar at :394)",
+      "preconditions": "Generate a report on Windows (the platform the published artifact records in environment.platform).",
+      "minimal_reproduction": "git show HEAD:docs/evidence/performance/m3-load-20261008T193951Z.json | sha256sum -> 1b1f7e2089eb286dd8dc1ab13281fdc3a8c6a3b77fa8c500864c2b0b481636f2 (117 CRLF pairs); the LF-normalised bytes hash to cb338d588a3bb86d4cd227d6a9ab25485aed3e3040e735bf6aad463b9fdb0f27, which is exactly the .sha256 sidecar and exactly the 'file SHA-256' quoted at docs/ops/slo.md:37 and in the printed summary of docs/ops/load-testing.md.",
+      "impact": "The immutable evidence artifact's declared file digest does not match the bytes committed to the repository, so the documented verification ('the .sha256 sidecar covers the exact bytes written to disk', load-testing.md) fails on the very artifact it cites; a consumer who checks the file against its sidecar sees a mismatch. report_digest_sha256 is unaffected (it recomputes correctly from parsed JSON).",
+      "regression_criterion": "Write with Path.write_bytes / open(newline='') so the sidecar equals sha256sum of the file on disk, and verify by hashing read_bytes() rather than read_text().",
+      "would_change_published_result": "yes — docs/ops/slo.md:37 'file SHA-256' and the artifact .sha256 sidecar"
+    },
+    {
+      "id": "H4-03",
+      "severity": "low",
+      "confidence": "high",
+      "path:line": "tests/test_load_smoke.py:199 (decisions_observed >= 40) and tests/test_load_smoke.py:206 (sidecar compared against hashlib.sha256(body) where body came from read_text() at :178)",
+      "preconditions": "The smoke test runs against a real server; it is the only automated check of the harness report.",
+      "minimal_reproduction": "Read the two assertions. :199 uses '>= 40' with --warm-up 5, so decisions_observed = 45 passes; the H4-01 offset bug is invisible. :206 hashes report_path.read_text(encoding='utf-8'), and Path.read_text applies universal-newline translation on every platform, so a CRLF file is compared after LF normalisation; the sidecar therefore always matches the LF digest and the H4-02 mismatch is invisible, despite the comment 'the sidecar covers the bytes on disk'.",
+      "impact": "The only automated guard for the load-test evidence pipeline asserts two weaker properties than the comments and docs claim, so both real defects above shipped unnoticed. It is a test-strength defect, not a runtime one.",
+      "regression_criterion": "Assert decisions_observed == results.measured_requests; assert sidecar[0] == hashlib.sha256(report_path.read_bytes()).hexdigest().",
+      "would_change_published_result": "no — it is the reason H4-01/H4-02 were not caught"
+    },
+    {
+      "id": "H4-04",
+      "severity": "low",
+      "confidence": "high",
+      "path:line": "scripts/load_test.py:483-496 (decision_record_latencies at :496 inside a try that only catches httpx.HTTPError/RuntimeError at :497) and scripts/load_test.py:347-357 (read_text at :355)",
+      "preconditions": "--server-log names a path that does not exist (operator typo), or the log is rotated/removed before the read; the target API is otherwise reachable.",
+      "minimal_reproduction": "Stub reproduction (deleted): stub API + harness.main(--server-log <nonexistent>) -> the call raises UNCAUGHT FileNotFoundError [Errno 2] ... does-not-exist.log instead of returning 2. Note log_path.exists() is checked at :483 only for the offset, not before the read.",
+      "impact": "A mistyped --server-log aborts the harness with an unhandled traceback after the full load has already been driven, so no report is written and the documented exit-code contract ('2 for a usage or environment problem', load-testing.md) is violated. An operator sees a stack trace and loses the run.",
+      "regression_criterion": "Catch OSError around the service-side read and return 2 with a message; add a test for a missing --server-log.",
+      "would_change_published_result": "no"
+    },
+    {
+      "id": "H4-05",
+      "severity": "low",
+      "confidence": "high",
+      "path:line": "scripts/load_test.py:52 (DEFAULT_BASE_URL) and :200-218 (ensure_policy_set publishes/activates on the target); no loopback/target validation anywhere in main (:462-548)",
+      "preconditions": "An operator or script passes --base-url for a host other than 127.0.0.1 (e.g. a staging or production URL, or a DNS name that resolves off-host).",
+      "minimal_reproduction": "Read parse_args/main: --base-url is taken verbatim; the harness sends Authorization: Bearer <token> from --token-file to it, POSTs /api/v1/policies with activate=true (a persistent write to the target's policy store), and only then drives load. There is no loopback check and no confirmation, unlike the application's own legacy-surface guard (settings._is_loopback).",
+      "impact": "Pointing the harness at a non-local target by mistake mutates that target's policy store (creating/activating a 'load-test-policy' version) and transmits the service token to it, over cleartext http by default. The docs only recommend http://127.0.0.1:8080; nothing enforces it.",
+      "regression_criterion": "Refuse a non-loopback --base-url unless an explicit --allow-remote flag is given, or document a mandatory guard in the runbook.",
+      "would_change_published_result": "no"
+    },
+    {
+      "id": "H4-06",
+      "severity": "low",
+      "confidence": "high",
+      "path:line": "backend/aegisgraph/app.py:361-372 (metrics route has no authentication dependency) + deploy/k8s/networkpolicy-api.yaml ingress (ingress-nginx on 8080, and in-namespace podSelector:{} on 8080)",
+      "preconditions": "AEGISGRAPH_METRICS_ENABLED=true (or the process in development), and a caller allowed by the NetworkPolicy to reach the pod on 8080 (the ingress controller, or any pod in the aegisgraph namespace).",
+      "minimal_reproduction": "Live: default (development) uvicorn served GET /metrics -> 200 with 2012 bytes and no Authorization header; in-process with AEGISGRAPH_ENV=production + AEGISGRAPH_METRICS_ENABLED=true -> 200 with no auth header (and 404 without the flag). NetworkPolicy is port-based (8080 for all paths), so it cannot distinguish /metrics from the API; no Ingress manifest ships to bound the paths the ingress controller forwards.",
+      "impact": "The exposition (metric names, per-route/status counts, verdict counts, policy set ids, auth-failure reason counts) is readable without authentication by anything permitted to reach 8080. It carries no content, credentials or principal identifiers (verified), so the impact is information disclosure of operational shape and tenant policy-set ids, not secret material. The doc claim that the NetworkPolicy 'restricts ingress to the pod' / 'never reachable from outside the cluster' is a port-level control that does not isolate the path.",
+      "regression_criterion": "Either bind /metrics to a separate listener/port that the NetworkPolicy restricts, or gate it with a token; and correct observability.md to state the control is port-level.",
+      "would_change_published_result": "no — qualifies a claim in docs/ops/observability.md"
+    },
+    {
+      "id": "H4-07",
+      "severity": "medium",
+      "confidence": "medium",
+      "path:line": "deploy/k8s/configmap.yaml (no AEGISGRAPH_ENV / AEGISGRAPH_AUTH_MODE / AEGISGRAPH_METRICS_ENABLED keys) + deploy/k8s/README.md and docs/ops/deployment.md:136-140 (secret creation passes only DATABASE_URL)",
+      "preconditions": "An operator follows the shipped apply procedure verbatim; the out-of-band Secret does not add AEGISGRAPH_ENV (nothing in deploy/k8s or docs/ops tells them to).",
+      "minimal_reproduction": "grep -rn AEGISGRAPH_ENV deploy/k8s docs/ops/*.md -> only a comment in deploy/observability/prometheus/prometheus.yml; the variable is documented only in docs/api/auth.md. With AEGISGRAPH_ENV unset, settings._environment defaults to development, so _metrics_enabled returns True (settings.py:462-473) and the app serves /metrics unauthenticated; validate_settings applies no production refusals (auth_mode=none is allowed in development).",
+      "impact": "The M3 posture 'off in production; a production process never exposes it by accident' is not enforced by the shipped deployment: as documented, the pod runs in development, /metrics is on, and (adjacent, M0/M1 scope) auth_mode defaults to none. Confidence is medium only because the Secret is out of band and a careful operator could set AEGISGRAPH_ENV=production there; the repository never instructs it.",
+      "regression_criterion": "Set AEGISGRAPH_ENV=production (and AUTH_MODE=required) in the deployment configmap/secret instructions, or assert it in scripts/validate_k8s_manifests.py.",
+      "would_change_published_result": "no — qualifies the production claim in docs/ops/observability.md"
+    },
+    {
+      "id": "H4-08",
+      "severity": "low",
+      "confidence": "high",
+      "path:line": "deploy/k8s/deployment.yaml:75-79 (readinessProbe path /healthz; livenessProbe /healthz at :82-86; startupProbe /healthz at :90-94)",
+      "preconditions": "A running Kubernetes deployment whose receipt store becomes unreachable after startup.",
+      "minimal_reproduction": "Read the manifest: all three probes target /healthz, which app.py:331-335 defines as liveness-only. /readyz (app.py:317-359), the dependency-aware 503, is never used as a probe. Verified live that /readyz returns 503 when the store is unreachable while /healthz stays 200 (readiness matrix reproduced).",
+      "impact": "The dependency-aware readiness signal is implemented and documented (observability.md 'Health semantics') but not wired to the orchestrator: a pod whose receipt store is down stays in the Service endpoints and answers decisions with 503, instead of being removed. docs/ops/deployment.md:129-131 explains the choice, but observability.md presents /readyz as 'the' readiness contract, so the two documents disagree about what readiness means in the shipped deployment.",
+      "regression_criterion": "Decide and document: point readinessProbe at /readyz, or state explicitly in observability.md that the deployment intentionally probes /healthz and /readyz is for humans.",
+      "would_change_published_result": "no"
+    },
+    {
+      "id": "H4-09",
+      "severity": "informational",
+      "confidence": "high",
+      "path:line": "backend/aegisgraph/app.py:349 (ready = reachable and bool(warnings) is not None)",
+      "preconditions": "Any configuration.",
+      "minimal_reproduction": "bool(x) returns True or False, never None, so the second conjunct is always True and the expression is exactly ready = reachable. No test distinguishes the two forms (test_readiness_is_liveness_plus_the_receipt_store_only passes for both), so the extra clause is dead code.",
+      "impact": "No behavioural defect today (ready == reachable is the intended semantics per the adjacent comment), but the tautology misleads a reader about intent and would silently absorb a future edit (e.g. 'and not warnings') in a way no test guards.",
+      "regression_criterion": "Simplify to ready = reachable, or express the intended condition explicitly; if intent is that warnings must not affect readiness, assert that with a test.",
+      "would_change_published_result": "no"
+    },
+    {
+      "id": "H4-10",
+      "severity": "low",
+      "confidence": "high",
+      "path:line": "backend/aegisgraph/access.py:227-249 (override_policy_identity: version = sha256(canonical_json(document))[:32]) feeding backend/aegisgraph/api_v1.py:224-226 and :288-290 (ATTR_POLICY_SET_VERSION span attribute)",
+      "preconditions": "The principal holds policy:context_override (in development every principal has ALL_SCOPES, auth.py:124-127), and the caller supplies policy_context documents.",
+      "minimal_reproduction": "In-process probe (deleted): three decisions with three different caller policy_context documents each returned policy_set.id='caller-override' with a different version; the rendered exposition had exactly one decisions_total series (policy_id='caller-override') and no canary, while the root span carried three distinct aegisgraph.policy_set.version values (sha256 of the caller document).",
+      "impact": "The metric registry stays bounded (id is a constant), but the span attribute value is caller-controlled and unbounded in distinct values. A collector that turns span attributes into metric dimensions (span metrics / service graph) would see unbounded cardinality; no content leaks (the value is a hash). The service process memory is unaffected (spans are batched and exported).",
+      "regression_criterion": "If span-metric derivation is ever enabled, map policy_set.version to the constant OVERRIDE_POLICY_ID for override decisions, or document the collector-side cardinality bound.",
+      "would_change_published_result": "no"
+    }
+  ],
+  "summary": {
+    "scope": "M3 observability/reliability surface, read-only: backend/aegisgraph/{telemetry,app,settings,api_v1,access}.py, scripts/load_test.py, tests/test_telemetry.py, tests/test_failure_injection*.py, tests/test_load_smoke.py, deploy/observability/**, deploy/k8s/{deployment,configmap,networkpolicy-api,service}.yaml, docs/ops/{observability,slo,load-testing}.md, and docs/evidence/performance/m3-load-20261008T193951Z.{json,sha256}. Reviewed revision: 75fa1b9b0eae145af1981b3b2930490cb16aac94 (worktree .worktrees/integration; HEAD advanced from df0d0f19 during the review but every M3 file above is unchanged across that move — only docs/ops/observability.md and deploy/observability/** changed, by a sibling). File hashes at that revision: telemetry.py 2a4558cc8fd4b244123bc67ecb0e8952f38ec583, load_test.py f3735aa5161ef621c25d695e66455e35aa1562b4, app.py 190a9ea41d576290f313354a17ea9ee5f631effd, slo.md b385f466b6cf520279222a7ed900772030afa66e, test_load_smoke.py 063f6262123b28c49c8a48b52f3238d22bf926ab, artifact blob 1b1f7e2089eb286dd8dc1ab13281fdc3a8c6a3b77fa8c500864c2b0b481636f2 with sidecar cb338d588a3bb86d4cd227d6a9ab25485aed3e3040e735bf6aad463b9fdb0f27.",
+    "methods": "Static reading of the telemetry/decision/load-test/deploy surface; a live uvicorn process on 127.0.0.1:58833 probed with raw sockets (custom HTTP methods) and http; in-process FastAPI TestClient probes with an in-memory span exporter; a local accept-and-never-answer socket to black-hole the OTLP exporter; a local stub API to drive scripts/load_test.py end to end; arithmetic/hash verification of the committed artifact (git cat-file vs sidecar vs LF-normalised bytes). All probes ran outside the repository and were deleted; the probe server was stopped. No repository file was modified (git status clean for backend/scripts/docs/tests/deploy).",
+    "not_covered": "No PostgreSQL was available, so the process-local store was used and RECEIPT_STORE_UNAVAILABLE/receipt-failure paths were exercised only in-process, not against a real DB. No real OTLP collector, Prometheus or Grafana ran (the dashboard JSON was inspected statically: 10 panels / 12 targets, expressions reference only declared metric names and labels). No Kubernetes cluster exists (manifests read and schema-level reasoning only; the aegisgraph-secrets contents are out of band). Long-running collector under sustained load, multi-replica behaviour, and the frozen legacy /v1/decision surface were out of scope.",
+    "residual_risk_statement": "The two governing M3 invariants held under every attempt: (a) no content reaches telemetry — a canary in candidate_action, run_id, user_goal, policy_context and request_id appeared in no metric label, no span attribute/event and nowhere in the exposition, and three distinct caller policy documents collapsed to one decisions_total series; (b) telemetry is not a decision dependency — a black-holed collector (accept, never answer, 5 s export timeout) left the worst decision at 9.92 ms with exactly one connection and one counted export failure, 3000 decisions (≈15000 spans) into the 2048-span queue neither blocked a request nor grew the thread set, and repeated facade rebuilds leaked no thread; the readiness matrix (dev 200/200, DB down 503, collector down 200, both down 503, /metrics 200 throughout) and the /metrics gating (production 404 without the flag, 200 unauthenticated with it) matched the documentation. Cardinality is bounded in practice: non-standard HTTP methods are rejected by uvicorn (400) before the app records them, standard methods are a finite set, route labels are templates, and policy_id is a constant under override. The material residual risk is therefore not in the telemetry code but in the evidence pipeline and deployment wiring: the published load-test artifact and the SLO baseline it feeds are contaminated by warm-up requests and carry a file digest that does not match the committed bytes, the smoke test cannot detect either, a mistyped --server-log crashes the harness, and the shipped Kubernetes procedure never sets AEGISGRAPH_ENV=production, so the documented 'metrics off in production, unauthenticated /metrics only behind a NetworkPolicy' posture is not actually enforced by the manifests as written."
+  }
+}
