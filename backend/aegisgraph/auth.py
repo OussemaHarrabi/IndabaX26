@@ -65,6 +65,10 @@ TRUST_CEILING_EXCEEDED: Final[str] = "TRUST_CEILING_EXCEEDED"
 TENANT_MISMATCH: Final[str] = "TENANT_MISMATCH"
 AUTHENTICATION_UNAVAILABLE: Final[str] = "AUTHENTICATION_UNAVAILABLE"
 
+JWKS_REFRESH_MIN_INTERVAL_SECONDS: Final[float] = 1.0
+"""Minimum spacing between two forced JWKS re-reads, so a stream of tokens with an
+unknown ``kid`` cannot turn into one file read per request (H3-07)."""
+
 JWT_TENANT_CLAIMS: Final[tuple[str, ...]] = ("tenant_id", "tid", "tenant")
 JWT_SCOPE_CLAIMS: Final[tuple[str, ...]] = ("scope", "scp", "scopes")
 JWT_ROLE_CLAIMS: Final[tuple[str, ...]] = ("role", "roles")
@@ -269,6 +273,8 @@ class _JwksCache:
 
     path: str
     ttl_seconds: float = 300.0
+    refresh_interval: float = JWKS_REFRESH_MIN_INTERVAL_SECONDS
+    reads: int = 0
     _document: dict[str, Any] | None = field(default=None, repr=False)
     _fetched_at: float = 0.0
 
@@ -283,7 +289,11 @@ class _JwksCache:
 
     def _keys(self, *, refresh: bool) -> tuple[Any, ...]:
         now = time.monotonic()
-        if refresh or self._document is None or now - self._fetched_at > self.ttl_seconds:
+        age = now - self._fetched_at
+        # A forced re-read (an unknown ``kid``) is rate-bounded, so a stream of
+        # tokens with a bogus key id cannot turn into a file read per request.
+        forced = refresh and age >= min(self.ttl_seconds, self.refresh_interval)
+        if self._document is None or age > self.ttl_seconds or forced:
             document = self._load()
             if document is not None:
                 self._document = document
@@ -304,6 +314,7 @@ class _JwksCache:
         return tuple(key_set.keys)
 
     def _load(self) -> dict[str, Any] | None:
+        self.reads += 1
         try:
             raw = Path(self.path).read_text(encoding="utf-8")
         except OSError:

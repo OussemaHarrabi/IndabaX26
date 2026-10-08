@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -19,6 +20,22 @@ from aegisgraph.enforcement import (
     execute_guarded,
 )
 from fastapi.testclient import TestClient
+
+
+def _expected_policy(receipt: Mapping[str, Any]) -> PolicyIdentity:
+    """Return the policy identity the receipt itself carries.
+
+    The generic surface resolves that identity server-side (H2-02, H3-04), so a
+    caller cannot assert it; these tests enforce a receipt against the identity the
+    server recorded for it, while the mismatch cases still pass a different one.
+    """
+
+    policy = receipt.get("policy_set") if isinstance(receipt, Mapping) else None
+    if not isinstance(policy, Mapping):
+        return DEFAULT_POLICY_SET
+    return PolicyIdentity.model_validate(policy)
+
+
 
 client = TestClient(app)
 
@@ -57,7 +74,7 @@ def test_allow_receipt_authorizes_exactly_the_action_it_was_issued_for() -> None
     )
     receipt = _receipt(action.model_dump(mode="json"))
 
-    outcome = enforce(receipt, action, expected_policy=DEFAULT_POLICY_SET)
+    outcome = enforce(receipt, action, expected_policy=_expected_policy(receipt))
 
     assert outcome == EnforcementOutcome(
         allowed=True, reason=None, detail="receipt authorizes this action"
@@ -73,7 +90,7 @@ def test_tampered_action_is_refused_with_a_digest_mismatch() -> None:
     )
     receipt = _receipt(approved.model_dump(mode="json"))
 
-    outcome = enforce(receipt, tampered, expected_policy=DEFAULT_POLICY_SET)
+    outcome = enforce(receipt, tampered, expected_policy=_expected_policy(receipt))
 
     assert outcome.allowed is False
     assert outcome.reason is RefusalReason.DIGEST_MISMATCH
@@ -102,7 +119,7 @@ def test_canonical_digest_collisions_are_refused_by_the_execution_digest() -> No
 
     for approved, variant in ((int_action, float_variant), (text_action, padded_variant)):
         receipt = _receipt(approved.model_dump(mode="json"))
-        outcome = enforce(receipt, variant, expected_policy=DEFAULT_POLICY_SET)
+        outcome = enforce(receipt, variant, expected_policy=_expected_policy(receipt))
         assert outcome.reason is RefusalReason.DIGEST_MISMATCH
 
 
@@ -110,10 +127,8 @@ def test_expired_receipt_is_refused() -> None:
     action = _candidate({"type": "respond", "content": "Done"})
     receipt = _receipt(action.model_dump(mode="json"))
 
-    outcome = enforce(
-        receipt,
-        action,
-        expected_policy=DEFAULT_POLICY_SET,
+    outcome = enforce(receipt, action,
+        expected_policy=_expected_policy(receipt),
         now=datetime.fromisoformat(receipt["valid_until"]) + timedelta(seconds=1),
     )
 
@@ -136,7 +151,7 @@ def test_blocked_decision_is_refused() -> None:
     receipt = _receipt(action.model_dump(mode="json"))
 
     assert receipt["decision"] == "block"
-    outcome = enforce(receipt, action, expected_policy=DEFAULT_POLICY_SET)
+    outcome = enforce(receipt, action, expected_policy=_expected_policy(receipt))
 
     assert outcome.reason is RefusalReason.VERDICT_BLOCKED
 
@@ -148,7 +163,7 @@ def test_unresolved_escalation_is_refused() -> None:
     receipt = _receipt(action.model_dump(mode="json"))
 
     assert receipt["decision"] == "escalate"
-    outcome = enforce(receipt, action, expected_policy=DEFAULT_POLICY_SET)
+    outcome = enforce(receipt, action, expected_policy=_expected_policy(receipt))
 
     assert outcome.reason is RefusalReason.UNRESOLVED_ESCALATION
 
@@ -160,7 +175,7 @@ def test_rewrite_decision_is_refused_until_revalidated() -> None:
         "decision": "rewrite",
     }
 
-    outcome = enforce(receipt, action, expected_policy=DEFAULT_POLICY_SET)
+    outcome = enforce(receipt, action, expected_policy=_expected_policy(receipt))
 
     assert outcome.reason is RefusalReason.REWRITE_NOT_REVALIDATED
 
@@ -169,7 +184,7 @@ def test_missing_receipt_is_refused() -> None:
     action = _candidate({"type": "respond", "content": "Done"})
 
     for receipt in ({}, {"decision": "allow"}):
-        outcome = enforce(receipt, action, expected_policy=DEFAULT_POLICY_SET)
+        outcome = enforce(receipt, action, expected_policy=_expected_policy(receipt))
         assert outcome.reason is RefusalReason.MISSING_RECEIPT
         assert outcome.detail
 
@@ -183,7 +198,7 @@ def test_malformed_receipt_is_refused() -> None:
     unknown_verdict = {**receipt, "decision": "quarantine"}
 
     for broken in (without_digests, without_window, unknown_verdict):
-        outcome = enforce(broken, action, expected_policy=DEFAULT_POLICY_SET)
+        outcome = enforce(broken, action, expected_policy=_expected_policy(broken))
         assert outcome.reason is RefusalReason.MALFORMED_RECEIPT
 
 
@@ -206,7 +221,13 @@ def test_every_refusal_reason_is_reachable(reason: RefusalReason) -> None:
     if reason is RefusalReason.DIGEST_MISMATCH:
         candidate = _candidate({"type": "respond", "content": "Something else"})
 
-    outcome = enforce(witnesses[reason], candidate, expected_policy=DEFAULT_POLICY_SET)
+    witness = witnesses[reason]
+    expected = (
+        PolicyIdentity(id="expected-policy", version="1")
+        if reason is RefusalReason.POLICY_MISMATCH
+        else _expected_policy(witness)
+    )
+    outcome = enforce(witness, candidate, expected_policy=expected)
 
     assert outcome.allowed is False
     assert outcome.reason is reason
@@ -222,8 +243,7 @@ def test_execute_guarded_never_calls_the_executor_on_refusal() -> None:
         calls.append(action)
         return ToolResult(tool="respond", status="simulated", detail="should not run")
 
-    guarded = execute_guarded(
-        executor, receipt, tampered, expected_policy=DEFAULT_POLICY_SET
+    guarded = execute_guarded(executor, receipt, tampered, expected_policy=_expected_policy(receipt)
     )
 
     assert guarded.executed is False
@@ -240,7 +260,7 @@ def test_execute_guarded_runs_an_authorized_action_through_an_inert_tool() -> No
     toolbox = InertToolbox()
 
     guarded = execute_guarded(
-        toolbox.executor, receipt, action, expected_policy=DEFAULT_POLICY_SET
+        toolbox.executor, receipt, action, expected_policy=_expected_policy(receipt)
     )
 
     assert guarded.executed is True
@@ -256,6 +276,6 @@ def test_enforcement_does_not_mutate_the_receipt() -> None:
     receipt = _receipt({"type": "respond", "content": "Done"})
     snapshot = json.loads(json.dumps(receipt))
 
-    enforce(receipt, action, expected_policy=DEFAULT_POLICY_SET)
+    enforce(receipt, action, expected_policy=_expected_policy(receipt))
 
     assert receipt == snapshot

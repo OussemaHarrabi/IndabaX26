@@ -30,7 +30,7 @@ from typing import Annotated, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Response
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
 from aegisgraph import telemetry
 from aegisgraph.access import (
@@ -88,6 +88,7 @@ BUILD_VERSION_ENV = "AEGISGRAPH_BUILD_VERSION"
 _LOGGER = logging.getLogger("aegisgraph.decision")
 _RECEIPT_LOGGER = logging.getLogger("aegisgraph.receipts")
 _DECISION_FAILED = "INTERNAL_EVALUATION_FAILED"
+RECEIPT_NOT_RECONSTRUCTIBLE = "RECEIPT_NOT_RECONSTRUCTIBLE"
 
 
 @dataclass(frozen=True)
@@ -351,6 +352,7 @@ def _persist_receipt(
                 "response_metadata": dict(response.metadata),
             }
         ),
+        decision_body=response.model_dump(mode="json"),
         decided_at=identity.decided_at,
         valid_until=identity.valid_until,
         created_at=identity.decided_at,
@@ -383,19 +385,22 @@ def _persist_receipt(
             "the durable receipt store is unavailable",
             status_code=503,
         ) from error
-    if stored.receipt_id == response.receipt_id:
+    if stored.decision_body == record.decision_body:
         return response, telemetry.OUTCOME_STORED
-    # A duplicate returns the stored receipt rather than creating a second one.
-    update: dict[str, object] = {
-        "receipt_id": stored.receipt_id,
-        "decided_at": stored.decided_at,
-        "valid_until": stored.valid_until,
-    }
-    if stored.verdict == response.decision:
-        update["risk_score"] = stored.risk_score
-        update["confidence"] = stored.confidence
-        update["reason_codes"] = stored.reason_codes
-    return response.model_copy(update=update), telemetry.OUTCOME_DUPLICATE
+    # A replay returns the *stored* decision, so the response and the durable receipt
+    # are the same object instead of two different evaluations of the same request
+    # (H3-02). A row whose body cannot be reconstructed faithfully is refused rather
+    # than answered with a freshly evaluated decision.
+    try:
+        replay = GenericDecisionResponse.model_validate(stored.decision_body)
+    except ValidationError as error:
+        _RECEIPT_LOGGER.error("Stored receipt body is not reconstructible")
+        raise ProblemError(
+            RECEIPT_NOT_RECONSTRUCTIBLE,
+            "the stored receipt for this request_id cannot be reconstructed faithfully",
+            status_code=409,
+        ) from error
+    return replay, telemetry.OUTCOME_DUPLICATE
 
 
 def receipt_ttl_seconds() -> int:

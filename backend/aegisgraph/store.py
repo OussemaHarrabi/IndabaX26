@@ -101,6 +101,8 @@ class ReceiptRecord:
     step_id: int | None = None
     metadata: dict[str, Any] | None = None
     metadata_redacted_at: datetime | None = None
+    decision_body: dict[str, Any] = field(default_factory=dict)
+    """The exact response body issued for this decision, so a replay can return it."""
 
 
 @dataclass(frozen=True)
@@ -312,8 +314,11 @@ class MemoryStore:
             record.execution_digest,
         )
         with self._lock:
+            stored = self._grants.get(key)
+            if stored is not None:
+                return stored
             self._grants[key] = record
-        return record
+            return record
 
     def grant_exists(
         self,
@@ -565,7 +570,30 @@ class SqlStore:
         with self._session_factory() as session:
             session.execute(statement)
             session.commit()
-        return record
+        return self._grant(record)
+
+    def _grant(self, record: GrantRecord) -> GrantRecord:
+        """Return the persisted grant row, so a response never reports a candidate."""
+
+        statement = select(ConfirmationGrant).where(
+            ConfirmationGrant.tenant_id == record.tenant_id,
+            ConfirmationGrant.run_id == record.run_id,
+            ConfirmationGrant.step_id == record.step_id,
+            ConfirmationGrant.execution_digest == record.execution_digest,
+        )
+        with self._session_factory() as session:
+            row = session.execute(statement).scalar_one_or_none()
+        if row is None:  # pragma: no cover - the insert above cannot vanish
+            raise UnknownPolicySetError("the confirmation grant vanished after insertion")
+        return GrantRecord(
+            tenant_id=row.tenant_id,
+            run_id=row.run_id,
+            step_id=row.step_id,
+            execution_digest=row.execution_digest,
+            issued_by=row.issued_by,
+            issued_at=row.issued_at,
+            expires_at=row.expires_at,
+        )
 
     def grant_exists(
         self,
@@ -784,6 +812,7 @@ def _receipt_values(record: ReceiptRecord) -> dict[str, Any]:
         "action_digest": record.action_digest,
         "execution_digest": record.execution_digest,
         "payload_digest": record.payload_digest,
+        "decision_body": record.decision_body,
         "decided_at": record.decided_at,
         "valid_until": record.valid_until,
         "created_at": record.created_at,
@@ -830,6 +859,7 @@ def _to_record(receipt: Receipt, metadata: ReceiptMetadata | None) -> ReceiptRec
         step_id=receipt.step_id,
         metadata=None if metadata is None else metadata.payload,
         metadata_redacted_at=None if metadata is None else metadata.redacted_at,
+        decision_body=dict(receipt.decision_body),
     )
 
 

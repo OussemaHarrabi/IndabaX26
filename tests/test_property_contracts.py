@@ -9,16 +9,30 @@ from __future__ import annotations
 
 import json
 import random
+from collections.abc import Mapping
 from typing import Any
 
 import pytest
 from aegisgraph.adapter import canonical_action
 from aegisgraph.api_v1 import DEFAULT_POLICY_SET
 from aegisgraph.app import MAX_BODY_BYTES_ENV, app
-from aegisgraph.contracts import CandidateAction
+from aegisgraph.contracts import CandidateAction, PolicyIdentity
 from aegisgraph.enforcement import RefusalReason, enforce
 from aegisgraph.sentinel import SentinelRequest
 from fastapi.testclient import TestClient
+
+
+def _expected_policy(receipt: Mapping[str, Any]) -> PolicyIdentity:
+    """Return the policy identity the receipt itself carries.
+
+    The generic surface resolves that identity server-side (H2-02, H3-04), so a
+    caller cannot assert it; these tests enforce a receipt against the identity the
+    server recorded for it, while the mismatch cases still pass a different one.
+    """
+
+    return PolicyIdentity.model_validate(receipt["policy_set"])
+
+
 
 client = TestClient(app)
 
@@ -134,7 +148,7 @@ def test_every_argument_tamper_changes_the_execution_digest() -> None:
             "execution_digest": action.execution_digest(),
             "valid_until": "2999-01-01T00:00:00+00:00",
         }
-        outcome = enforce(receipt, tampered, expected_policy=DEFAULT_POLICY_SET)
+        outcome = enforce(receipt, tampered, expected_policy=_expected_policy(receipt))
         assert outcome.reason in {RefusalReason.DIGEST_MISMATCH, RefusalReason.MALFORMED_RECEIPT}
         assert outcome.allowed is False
 
