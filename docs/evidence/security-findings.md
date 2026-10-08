@@ -44,6 +44,29 @@ risk with an explicit decision), `open`.
 | H2-05 | low | `request_id` echoed verbatim while documented as server-computed | M2 (follow-up) | **fixed (documented decision)** | Option (b): a caller `request_id` is preserved by design as the idempotency/correlation key (tenant-scoped, `409 REQUEST_ID_CONFLICT` on conflicting reuse), and `receipt_id` is the server-computed decision identity. Documented in `docs/api/receipts.md` §2 with two pinning tests |
 | H2-06 | low | Holdout passphrase transcript exposure | M5 | **fixed** | The seal was rotated with a key that never entered a transcript; the same 20 scenarios were re-sealed (scenario-set hashes compared), the old key is void, and `docs/evidence/m5-seal-custody.md` records the history and the rotation procedure |
 
+## Third review (M2 surface, Agent H3, at `989346c`)
+
+Artifact: `docs/evidence/reviews/M2-surface-adversarial-security-review.json` (raw). Scope: authentication,
+authorization, policy administration, the confirmation channel, receipts/audit and the new configuration
+surface. Finding vector: 1 high, 3 medium, 5 low. Out of scope by instruction: M3 telemetry (in flight).
+
+| ID | Sev | Finding | Status |
+| --- | --- | --- | --- |
+| H3-01 | high | The trust ceiling did not cover conversation-derived evidence: `access._declared_trust_levels` read only declared `provenance[]` and `least_trusted_seen`, while the adapter labels a `user`-role item with no provenance ids as `authenticated_user`, so any `decision:submit` caller could re-open the F3 relabelling move inside the ceiling | open — fix in flight (M2 owner) |
+| H3-02 | medium | An idempotent replay returned a fresh decision under the stored `receipt_id`, so the response and the durable receipt could disagree | open — fix in flight |
+| H3-03 | medium | `POST /api/v1/confirmations` returned the candidate grant rather than the stored row, so the response and the audit event could report an expiry the store does not hold | open — fix in flight |
+| H3-04 | low (medium with the override scope) | `policy:context_override` let a receipt name a policy identity that was never stored — a partial reopening of H2-02 for override holders | open — fix in flight |
+| H3-05 | low | `/readyz` reported `ready: true` for an `AUTH_MODE=none` process, contradicting the documented contract | open — fix in flight |
+| H3-06 | low | The legacy-surface loopback refusal checks the configured bind variable rather than the actual bind | open — fix in flight |
+| H3-07 | low | An unknown `kid` forced a full JWKS re-read per request, bypassing the TTL | open — fix in flight |
+| H3-08 | low | The request body is read, bounded and parsed before the credential is checked | open — fix in flight |
+| H3-09 | low | A non-finite float in a policy document escaped as an unhandled `ValueError` → 500 | open — fix in flight |
+
+**H3-01 is the most consequential finding of the whole program so far**, because it invalidates the sentence I
+wrote when closing F3: the ceiling was described as the bound on caller-declared trust, and it did not bound the
+implicit role-based path. The register keeps that correction rather than hiding it. It also means the benchmark
+reference run may need re-running after the fix, since the fix changes which requests are accepted.
+
 ## Verification log (orchestrator, live, with the artefacts in the tree)
 
 - **Legacy compatibility after M1:** pinned mock suite byte-identical to the M0 recheck — 40/40 scenario labels,
