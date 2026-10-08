@@ -72,9 +72,15 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
+          # Readiness is dependency-aware (H4-08): /readyz answers 503 when the
+          # receipt store is unreachable, so a pod whose datastore is down leaves
+          # the Service endpoints instead of staying in rotation and refusing
+          # decisions. Liveness and startup stay on /healthz, which is
+          # liveness-only by design: a dependency outage must never restart a
+          # healthy process.
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             periodSeconds: 10
             timeoutSeconds: 2
