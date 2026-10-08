@@ -50,6 +50,9 @@ DEFAULT_POLICY_SET = PolicyIdentity(id="aegisgraph-default", version="1")
 RECEIPT_TTL_ENV = "AEGISGRAPH_RECEIPT_TTL_SECONDS"
 DEFAULT_RECEIPT_TTL_SECONDS = 60
 
+BUILD_COMMIT_ENV = "AEGISGRAPH_BUILD_COMMIT"
+BUILD_VERSION_ENV = "AEGISGRAPH_BUILD_VERSION"
+
 _LOGGER = logging.getLogger("aegisgraph.decision")
 _DECISION_FAILED = "INTERNAL_EVALUATION_FAILED"
 
@@ -123,7 +126,7 @@ async def version() -> VersionResponse:
         build={
             "service": "aegisgraph",
             "version": _package_version(),
-            "commit": os.environ.get("AEGISGRAPH_BUILD_COMMIT", "unknown"),
+            "commit": os.environ.get(BUILD_COMMIT_ENV, "unknown"),
         },
     )
 
@@ -248,16 +251,25 @@ def _log_decision(response: GenericDecisionResponse, *, latency_ms: float) -> No
 
 
 def _package_version() -> str:
-    """Report the version of the distribution, source tree, or ``unknown``."""
+    """Report the build version: environment, distribution, source tree, or unknown.
 
+    CI and Compose set ``AEGISGRAPH_BUILD_VERSION`` (and
+    ``AEGISGRAPH_BUILD_COMMIT``) at image build time. When neither is present the
+    installed distribution version, then the source ``pyproject.toml`` version, is
+    reported, and ``"unknown"`` is the honest default.
+    """
+
+    declared = os.environ.get(BUILD_VERSION_ENV)
+    if declared:
+        return declared
     try:
         return importlib_metadata.version("aegisgraph")
     except importlib_metadata.PackageNotFoundError:
         pass
     pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
     try:
-        declared = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-        version = declared["project"]["version"]
+        project = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+        version = project["project"]["version"]
     except (OSError, KeyError, TypeError, tomllib.TOMLDecodeError):
         return "unknown"
     return version if isinstance(version, str) else "unknown"
@@ -265,6 +277,8 @@ def _package_version() -> str:
 
 __all__ = [
     "API_VERSION",
+    "BUILD_COMMIT_ENV",
+    "BUILD_VERSION_ENV",
     "DEFAULT_POLICY_SET",
     "DEFAULT_RECEIPT_TTL_SECONDS",
     "RECEIPT_TTL_ENV",

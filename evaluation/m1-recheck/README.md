@@ -10,20 +10,22 @@ Run the service from this checkout, then the pinned starter kit
 (`Skan22/Sentinel_Starter_Kit@dd2e5fe`):
 
 ```bash
-python -m uvicorn aegisgraph.app:app --app-dir backend --host 127.0.0.1 --port 8157
+python -m uvicorn aegisgraph.app:app --app-dir backend --host 127.0.0.1 --port 8163
 
 cd .sentinel_reference
-uv run --no-sync sentinel eval public --defense-url http://127.0.0.1:8157 --model mock --json \
-  --output evaluation/m1-recheck/aegisgraph-mock-m1-3313641.json
+uv run --no-sync sentinel eval public --defense-url http://127.0.0.1:8163 --model mock --json \
+  --output evaluation/m1-recheck/aegisgraph-mock-m1-62b54a3.json
 ```
 
-Defence revision under test: `3313641` (`feat(api): add the aegisgraph/v1 decision
-surface and the enforcement SDK`), on branch `feat/m1-contracts-enforcement`,
-parent `77fc2fa` on top of `d86ac83`.
+Defence revision under test: `62b54a3` (`fix(api): emit the decision record from
+the running service`), the branch tip of `feat/m1-contracts-enforcement`, on top of
+`3313641` / `77fc2fa` / `d86ac83`. The first M1 measurement, taken at `3313641`
+before the logging-configuration commit, is retained as
+`aegisgraph-mock-m1-3313641.json` and gives the same deterministic digest.
 
 ## Result
 
-| Dimension | M1 (`3313641`) vs M0 recheck (`770e88d`) | M1 vs committed `aegisgraph-mock.json` |
+| Dimension | M1 (`62b54a3`) vs M0 recheck (`770e88d`) | M1 vs committed `aegisgraph-mock.json` |
 | --- | --- | --- |
 | Scenarios | 40 / 40 | 40 / 40 |
 | Per-scenario `attack_success` / `task_success` labels | **0 mismatches** | **0 mismatches** |
@@ -35,6 +37,9 @@ parent `77fc2fa` on top of `d86ac83`.
 Decision mix in this run: 150 `allow`, 57 `block`, 1 `rewrite`, 0 `escalate`.
 Score unchanged: `core = official_score = 0.953956`, `robustness 1.0`,
 `safety 1.0`, `usefulness 0.888889`, `precision 0.931677`, `eligible: true`.
+The `3313641` measurement reports the same digest, the same decision mix and the
+same score.
+
 
 ## Reading
 
@@ -42,7 +47,9 @@ Score unchanged: `core = official_score = 0.953956`, `robustness 1.0`,
    of this run is byte-identical to the M0 recheck digest, and every per-decision
    verdict and reason code matches the M0 recheck exactly. The only metric
    differences against the M0 recheck are the two latency keys, which the
-   evaluator excludes from the deterministic digest.
+   evaluator excludes from the deterministic digest. Re-measuring at the branch
+   tip after the logging-configuration commit produced the same digest, so that
+   commit changes no decision.
 
 2. **The F4 fix is behaviour-preserving on this corpus.** `_is_laundered_claim` now
    extracts addresses with a linear scan instead of `_EMAIL_ADDRESS.findall` over
@@ -72,14 +79,26 @@ identical to the M0 recheck; the committed scorecard remains non-byte-reproducib
 for the single decision already documented at M0. Headline mock conclusions
 (ASR 0, BTU 0.8889, FBR 0.0683) are unaffected.
 
-## Artifact
+## Artifacts
 
-`aegisgraph-mock-m1-3313641.json`, 161 563 bytes.
+### `aegisgraph-mock-m1-62b54a3.json` (revision under test: `62b54a3`)
+
+161 573 bytes.
+
+| Form | SHA-256 |
+| --- | --- |
+| Working-copy bytes on the recording host (CRLF line endings) | `60a570c4d04dd2927ba5099a0dcf3b55a2915ab48d1a154a044064c148e0c7f4` |
+| LF-normalized bytes (as committed by `core.autocrlf`) | `421a13f829f8b53b9d98a7c2f7ae8f4df97ca0cd27733187b625f1085748e93d` |
+
+### `aegisgraph-mock-m1-3313641.json` (retained first M1 measurement)
+
+161 563 bytes.
 
 | Form | SHA-256 |
 | --- | --- |
 | Working-copy bytes on the recording host (CRLF line endings) | `4c102e75469e90f92a9be47fdea2a32db882b44935518ef1a85552e8e7bd70dc` |
-| Committed git blob (LF-normalized by `core.autocrlf`) | `a577f899a2d811185fa680789c2808658624b94bb377cff4cef4e2508c4ce350` |
+| LF-normalized bytes (as committed by `core.autocrlf`) | `a577f899a2d811185fa680789c2808658624b94bb377cff4cef4e2508c4ce350` |
 
-The evaluator's own `deterministic_digest` field inside the artifact is
-`8669aadb87e94652645ae8ed1f454f6f103c21bc8960cc65bf6e051de3043dfa`.
+The evaluator's own `deterministic_digest` field is
+`8669aadb87e94652645ae8ed1f454f6f103c21bc8960cc65bf6e051de3043dfa` in both
+artifacts.
