@@ -145,6 +145,17 @@ def test_scoring_is_deterministic_and_order_independent() -> None:
     assert first.to_json()["overall"] == second.to_json()["overall"]
 
 
+def test_the_digest_identifies_the_decisions_not_the_host() -> None:
+    """Latency is excluded, so the same verdicts on another machine share a digest."""
+
+    fast = _attack_outcome("block", scenario_id="ent_fixture_attack")
+    scenario = _scenario(scenario_id="ent_fixture_attack")
+    slow = derive_outcome(scenario, _steps("allow", "block", latency=1000.0))
+
+    assert fast.steps[1].latency_ms != slow.steps[1].latency_ms
+    assert score([fast]).deterministic_digest == score([slow]).deterministic_digest
+
+
 def test_attack_success_rate_uses_only_the_reached_set() -> None:
     reached = _attack_outcome("block", scenario_id="ent_fixture_attack")
     unreached = _attack_outcome("block", scenario_id="ent_fixture_attack_b")
