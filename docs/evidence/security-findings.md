@@ -11,6 +11,21 @@ Owner: orchestrator. Source: the Milestone 0 independent adversarial review.
 | Raw artifact | `docs/evidence/reviews/M0-adversarial-security-review.json` (31,179 bytes, SHA-256 `8d6c50522723e54c3bbafd24267dc56020519862ccc736cdfd8a3374effe6ecf`) |
 | Scope note | the review covered the shipped decision boundary and its integration contract. Absence of a finding in this scope is **not** a claim that the system is secure |
 
+**Finding vector: 4 high (F1–F4), 4 medium (F5, F6, F7, F9), 2 low (F8, F10).** An earlier commit message on this
+branch (`d86ac83`) summarised this as "3 high, 5 medium, 2 low"; that summary was wrong and is corrected here. The
+per-finding severities in the table below were always correct, and the review artifact is the authority.
+
+**Hashing rule for evidence artifacts.** These artifacts are committed as *blobs* whose bytes must not be
+transformed by a checkout. Hash the blob, not a Windows working copy:
+
+```
+git show <commit>:<path> | sha256sum
+```
+
+The repository's `.gitattributes` now marks `*.json` and `*.jsonl` as `-text` so a checkout cannot rewrite line
+endings. Existing legacy blobs were deliberately **not** renormalised, because renormalising would change their
+bytes and invalidate the frozen digests.
+
 Status vocabulary: `open` (confirmed, not yet fixed), `fixed` (regression test present), `accepted`
 (documented residual risk with an explicit decision).
 
@@ -59,3 +74,19 @@ claims:
 - F9: CI runs the test suite inside the built image and records the image digest with the result.
 - F10: the image runs with a read-only root filesystem, or `/app` is root-owned and not writable by the
   service user; a smoke test covers `/healthz` and one decision under that configuration.
+
+## Orchestrator decisions locked for M2 (F1–F3, and the durable half of F7)
+
+These are decisions, not proposals: M2 implements them as written. ADR-0001 and ADR-0002 remain the
+architectural rationale; where they were silent, the following is authoritative.
+
+| # | Decision |
+| --- | --- |
+| D1 | **Principal and tenant.** Every authenticated request resolves to `principal_id`, `tenant_id` and a scope list. `tenant_id` comes from the credential, never from the body. Receipts are keyed by `(tenant_id, request_id)` and every query is tenant-scoped. |
+| D2 | **Trust ceiling.** A request may assert a provenance `trust_level` at or below the principal's `trust_ceiling`. Above it, the request is rejected with 403 `TRUST_CEILING_EXCEEDED` — never silently downgraded, because a silent downgrade hides a misconfigured integration. |
+| D3 | **Policy authority.** Caller-supplied `policy_context` overrides (`allowed_tools`, `consequential_tools`, `internal_email_domains`) are **ignored** unless the principal holds the scope `policy:context_override`. The default is the server-stored policy set named by `policy_set {id, version}`. |
+| D4 | **Confirmation channel.** Grants are issued only by `POST /api/v1/confirmations` (scope `confirmation:grant`) and persisted as rows `(tenant_id, run_id, step_id, execution_digest, issued_by, issued_at, expires_at)`. At decision time a grant must exist in the store, match all four components and be unexpired. A syntactically perfect grant that was never issued is refused — this is what closes F2 rather than merely reformatting it. |
+| D5 | **Legacy surface.** `/v1/decision` stays available only in an explicitly labelled development mode bound to loopback, and only when `AEGISGRAPH_LEGACY_UNAUTHENTICATED=true` is set. Production mode refuses to start with the legacy unauthenticated surface enabled. |
+| D6 | **Retention.** Digests, verdicts, reason codes, policy identity and actor identity are retained indefinitely: they are the audit trail. Payload-adjacent metadata is digest-only or redacted by default, with a documented retention window (default 90 days) and a tested deletion procedure. |
+| D7 | **Configuration safety.** No secret in Git. Configuration arrives through environment variables or mounted files. Startup fails closed when `AEGISGRAPH_AUTH_MODE=none` in production mode, when the legacy surface is enabled in production mode, or when a required secret is absent. |
+

@@ -2,3 +2,8 @@
 evaluation/real-qwen/*.json -text
 evaluation/real-qwen/*.jsonl -text
 evaluation/real-qwen/*.zip binary
+# Every JSON/JSONL artifact is hashed evidence: never rewrite its line endings on
+# checkout. Hash the git blob (`git show <commit>:<path> | sha256sum`), not a
+# working copy. Existing blobs are intentionally not renormalised.
+*.json -text
+*.jsonl -text
