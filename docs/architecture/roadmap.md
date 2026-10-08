@@ -12,19 +12,19 @@ omitted: each milestone gates on its exit criteria, not on a calendar.
 
 ## 1. Milestone overview
 
-| Milestone | Program scope | Outcome | Depends on | Primary ADR |
-| --- | --- | --- | --- | --- |
-| **M0** | Charter + baseline | Intake, baseline reproduced, charter, architecture, threat model, ADRs, legacy record, ledger skeleton | — | all |
-| **M1** | Contracts + enforcement | Native versioned contracts with a policy/code revision in every decision; legacy adapter isolated; enforcement binding and integration SDK | M0 | ADR-0006 |
-| **M2** | Auth + policy + audit store | Authentication and tenancy; versioned policy; durable append-only receipt/audit store | M1 | ADR-0001, ADR-0002 |
-| **M3** | Observability + reliability | OpenTelemetry, Prometheus, Grafana, SLOs, fail-closed guarantees under load | M1, M2 | ADR-0003 |
-| **M4** | CI/CD + containers + deployment | Pipelines and gates; hardened Compose stack; Kubernetes manifests validated and smoke-tested | M1, M2 | ADR-0005 |
-| **M5** | Evaluation framework + benchmark data | Native evaluation schema authoritative; versioned legacy adapter; benchmark data + reachability gate | M1 | ADR-0004 |
-| **M6** | Empirical campaign | Real-model runs, multi-seed variance, component ablations, generalization | M2, M5 | ADR-0004 |
-| **M7** | Independent review | Adversarial and security review of the new surfaces; reproducibility audit | M3, M4, M6 | all |
-| **M8** | Docs + demo + release | Documentation, demo, versioned release, provenance manifest | M5, M6, M7 | all |
+| Milestone | Program scope | Outcome | Depends on | Primary ADR | Status (2026-10-08) |
+| --- | --- | --- | --- | --- | --- |
+| **M0** | Charter + baseline | Intake, baseline reproduced, charter, architecture, threat model, ADRs, legacy record, ledger skeleton | — | all | `implemented` (closed) |
+| **M1** | Contracts + enforcement | Native versioned contracts with a policy/code revision in every decision; legacy adapter isolated; enforcement binding and integration SDK | M0 | ADR-0006 | `implemented` — contract, enforcement SDK, bounded input and strict confirmation landed (`4013b59`, `7502df3`); legacy suite re-checked decision-identical |
+| **M2** | Auth + policy + audit store | Authentication and tenancy; versioned policy; durable append-only receipt/audit store | M1 | ADR-0001, ADR-0002 | `implemented` in code (`7a87e8b`, merged at `4350af3`) — **awaiting the orchestrator's live verification**; F1–F3 stay `open` until it is confirmed, and the coverage floor is red at that revision without a test database (ledger P15) |
+| **M3** | Observability + reliability | OpenTelemetry, Prometheus, Grafana, SLOs, fail-closed guarantees under load | M1, M2 | ADR-0003 | `proposed` — the Compose stack already ships collector, Prometheus and Grafana services, but no instrumentation claim is verified |
+| **M4** | CI/CD + containers + deployment | Pipelines and gates; hardened Compose stack; Kubernetes manifests validated and smoke-tested | M1, M2 | ADR-0005 | `implemented` with two named gaps: **no GitHub-hosted CI run has ever executed**, and **no cluster smoke test** (`kind` absent) |
+| **M5** | Evaluation framework + benchmark data | Native evaluation schema authoritative; versioned legacy adapter; benchmark data + reachability gate | M1 | ADR-0004 | `implemented` — schema, 60-scenario dataset, deterministic scoring, sealed holdout; **scripted adapter only**, no holdout run |
+| **M6** | Empirical campaign | Real-model runs, multi-seed variance, component ablations, generalization | M2, M5 | ADR-0004 | `proposed` — blocked: no `ollama`, GPU or paid API |
+| **M7** | Independent review | Adversarial and security review of the new surfaces; reproducibility audit | M3, M4, M6 | all | `proposed` — the M0 review covered the pre-M1 boundary only |
+| **M8** | Docs + demo + release | Documentation, demo, versioned release, provenance manifest | M5, M6, M7 | all | `proposed` |
 
-### M0 execution status (this milestone)
+### M0 execution status (closed)
 
 - **Entry:** legacy baseline `649f65a` reproduced in the integration worktree.
 - **Exit:** `AGENTS.md`, `PRODUCT.md`, `README.md`, system context, threat model,
@@ -72,15 +72,23 @@ Hard ordering rules:
 
 ## 3. Milestone detail
 
-### M0 — Charter and baseline *(this milestone, complete)*
+### M0 — Charter and baseline *(complete)*
 
 Baseline reproduced (`187 passed`, Ruff and mypy clean), charter and architecture
 written, ADRs proposed, legacy evidence mapped, ledger seeded. See the handoff
 for the exact commits.
 
-### M1 — Contracts + enforcement
+### M1 — Contracts + enforcement *(complete)*
 
 - **Entry:** M0 merged. Baseline suite green.
+- **Status:** landed (`4013b59`, `7502df3`). Evidence and measured numbers are in
+  the ledger, section B (rows P1, P6, P11–P14): the generic surface carries
+  version, policy set, request/receipt identity and both digests; eleven live
+  requests emitted eleven decision records whose `receipt_id` matched the
+  response; the enforcement SDK refused a tampered action with `digest_mismatch`;
+  a 1.2 MB body returned 413 and the 880k-character adversarial request decided in
+  37 ms on the local host. The legacy suite is decision-identical to the M0
+  recheck (ledger L16).
 - **Work:** extract a versioned native decision/receipt schema; carry an explicit
   **policy version and source code revision** in every decision, receipt,
   scorecard and artifact; isolate the legacy SENTINEL wire contract behind a
@@ -126,9 +134,24 @@ root filesystem); F9 remains open until CI runs the suite inside the built image
 there requires a new evaluation artifact, never an edit of the frozen scorecards
 in [`../evidence/ledger.md`](../evidence/ledger.md).
 
+**Landed.** M1's four fixes have landed and are verified in the ledger
+(P11–P14): F4 and F5 by the bounded scan and the 413 body cap, F6 by strict
+confirmation binding on the generic surface, F7 by the decision identity and the
+emitted record (the durable store remains M2's). The register's own `open`/`fixed`
+statuses are the orchestrator's to update; this roadmap records only which
+milestone owns each finding.
+
 ### M2 — Auth + policy + audit store
 
 - **Entry:** M1 frozen contracts.
+- **Status:** `implemented` in code (`7a87e8b`, merged at `4350af3`), **awaiting the
+  orchestrator's live verification** — this roadmap does not promote it on code
+  alone. F1–F3 therefore stay `open` in the register until that verification is
+  confirmed. Two facts recorded around the merge: the coverage floor of 94 is
+  **red** at `4350af3` on a machine without a test database (93.06 % = 2521/2709,
+  12 PostgreSQL tests skipped without `AEGISGRAPH_TEST_DATABASE_URL`, and
+  `ci.yml` starts no database service — ledger P15), and the second review's
+  `H2-01`…`H2-05` findings touch this surface (ledger P25–P29).
 - **Work:** OIDC/JWT for interactive principals plus scoped service tokens for
   machine callers (ADR-0002); per-tenant authorization on every read and write;
   an explicit policy store with versions and an audit trail; PostgreSQL +
@@ -155,9 +178,20 @@ in [`../evidence/ledger.md`](../evidence/ledger.md).
   invariant holds under fault injection.
 - **ADR:** ADR-0003.
 
-### M4 — CI/CD + containers + deployment
+### M4 — CI/CD + containers + deployment *(complete, two gaps named)*
 
 - **Entry:** M1, M2.
+- **Status:** landed (`6e4f6b2`, `891483d`, `79f9e59`, `40404a0`, `3889f10`).
+  Verified here: the workflow defines five jobs with SHA-pinned actions and a
+  coverage floor of 94 (measured 95.03 % = 1358/1429 at `3353886`); the image
+  builds reproducibly and runs non-root (uid 10001) with a read-only rootfs
+  serving `/healthz` and a decision; `deploy/k8s` renders 7 objects and passes 7
+  schema checks under two validators plus 22 policy assertions; the Compose
+  configuration parses to five services; the SBOM digest reproduces. Numbers and
+  caveats are in the ledger, section C.
+- **Gaps:** **no GitHub-hosted CI run has ever executed** (blocked: the workflow
+  is only reproducible locally until the branch is pushed), and **no cluster
+  smoke test** — `kind` is absent. Neither gap is papered over by a local run.
 - **Work:** CI pipelines running tests, Ruff, mypy and the reachability gate;
   hardened Compose stack (service + PostgreSQL + Prometheus + Grafana); container
   image build and live run verification; Kubernetes manifests validated by schema
@@ -171,9 +205,22 @@ in [`../evidence/ledger.md`](../evidence/ledger.md).
   Report this cell as `blocked`.
 - **ADR:** ADR-0005.
 
-### M5 — Evaluation framework + benchmark data
+### M5 — Evaluation framework + benchmark data *(complete, scripted only)*
 
 - **Entry:** M1 contracts.
+- **Status:** landed (`f8e6004`, `7138aa4`, `d2856a4`, `75966b2`). Verified here:
+  the dataset validates (`RESULT: PASS`, 60 open scenarios, 42/18 splits, six per
+  family over ten families, dataset sha256 `7e916a11…`, largest request 2118 B);
+  a scripted run against the M1 gateway reproduces the published scoring digest
+  `4373896…` and two `--json` scorings are byte-identical; run directories are
+  created once and refuse to be overwritten; the 20-scenario holdout is sealed
+  (ciphertext `52f67318…`) and verifies without the custodian passphrase; every
+  committed legacy scorecard reports `metrics reproduced: True` and
+  `digest reproduced: True` through the read-only adapter. See the ledger,
+  section D.
+- **Caveats:** the only adapter that runs here is `scripted` — every number is a
+  scripted number; the holdout is sealed and unrun; 20 holdout scenarios support
+  a direction, not a confidence interval.
 - **Work:** a native evaluation schema authoritative for platform claims; the
   legacy SENTINEL suite preserved behind a versioned, read-only adapter; the
   allow-all reachability control generalized into the native harness; benchmark
@@ -222,7 +269,9 @@ in [`../evidence/ledger.md`](../evidence/ledger.md).
 | PostgreSQL on the host | M2 | blocked | `psql` | containerized PostgreSQL (Docker) is the intended path |
 | Real-model evaluation reruns | M6 | blocked | `ollama` | install `ollama` + `qwen3:8b`, or authorize an API |
 | Paid-model benchmarking | M6 | blocked | API credentials | explicit owner authorization |
-| Docker-engine live run | M4 | available | — | `docker build` + `docker run` (Docker 29.6.2 present) |
+| GitHub-hosted CI execution | M4 | blocked | no run has executed on GitHub; `act` not installed | push the branch and read the `ci` run, or `act -j quality` |
+| Holdout result | M5/M6 | blocked | the seal may be opened only by the custodian after the policy freeze | follow `docs/benchmark/holdout.md` §4, then open once with the recorded command |
+| Docker-engine live run | M4 | verified | — | done: `docker build` + `docker run --read-only` (ledger P16) |
 
 ## 5. Single-writer map
 
@@ -242,16 +291,19 @@ The orchestrator arbitrates conflicts and owns the shared files.
 | `AGENTS.md`, `PRODUCT.md`, `README.md` | Shared operating/product docs |
 | `docs/architecture/**` | Charter (this agent, M0 only) |
 
-### Per-milestone ownership (proposed)
+### Per-milestone ownership
+
+Landing milestones record the paths that actually carried the work; unstarted
+milestones keep their proposed allocation.
 
 | Milestone | Writer role | Owned paths |
 | --- | --- | --- |
-| M1 | Contracts/API implementer + integration | `backend/aegisgraph/sentinel.py`, new `backend/aegisgraph/legacy/**`, new `backend/aegisgraph/enforce/**`, new `sdk/**`, `tests/test_contracts.py`, `tests/test_enforcement.py` |
-| M2 | Persistence engineer + security engineer | new `backend/aegisgraph/store/**`, `migrations/**`, new `backend/aegisgraph/auth/**`, new `backend/aegisgraph/policy_store/**`, `tests/test_store.py`, `tests/test_auth.py` |
-| M3 | Platform/telemetry engineer | new `backend/aegisgraph/telemetry/**`, `deploy/observability/**`, `tests/test_telemetry.py` |
-| M4 | Platform engineer | `.github/workflows/**` (with orchestrator), new `deploy/**`, `docs/runbooks/**` |
-| M5 | Evaluation engineer | `evaluation/**` (add-only; never edit legacy artifacts), new `evaluation/native/**`, `scripts/**` |
-| M6 | Evaluation engineer + research analyst | `evaluation/campaign/**`, `docs/research/**` |
+| M1 | Contracts/API implementer + integration | **landed:** `backend/aegisgraph/{api_v1,enforcement,adapter,demo_tools}.py`, `backend/aegisgraph/{app,sentinel,contracts,engine}.py`, `docs/api/**`, `examples/**`, `tests/test_{api_v1,enforcement,bounds,confirmation_strict}.py`, `evaluation/m1-recheck/**`. The originally proposed `legacy/**` and `sdk/**` packages were not created — the legacy wire stays in `sentinel.py` and the SDK in `enforcement.py`, so there is no second convention to maintain |
+| M2 | Persistence engineer + security engineer | proposed: new `backend/aegisgraph/store/**`, `migrations/**`, new `backend/aegisgraph/auth/**`, new `backend/aegisgraph/policy_store/**`, `tests/test_store.py`, `tests/test_auth.py`; the pins landed early in `requirements.lock` (`4b9eb5c`, orchestrator-owned) |
+| M3 | Platform/telemetry engineer | proposed: new `backend/aegisgraph/telemetry/**`, `deploy/observability/**`, `tests/test_telemetry.py` |
+| M4 | Platform engineer | **landed:** `.github/workflows/ci.yml` (with orchestrator), `compose.yaml`, `.env.example`, `Makefile`, `Dockerfile`, `.dockerignore`, `deploy/**`, `docs/ops/**`, `scripts/{generate_sbom,validate_k8s_manifests,install_kubeconform}.py` |
+| M5 | Evaluation engineer | **landed:** `benchmark/**` (schema, validators, dataset, splits, runner, scoring, seal, adapters), `scripts/bench_*.py`, `docs/benchmark/**`, `tests/test_benchmark_*.py`; `evaluation/**` stayed add-only (the M1 recheck added a directory, it edited nothing) |
+| M6 | Evaluation engineer + research analyst | `evaluation/campaign/**`, `docs/research/**` (research docs already landed) |
 | M7 | Independent reviewers | read-only findings; `docs/review/**` |
 | M8 | Orchestrator + documentation writer | release manifest, `docs/evidence/ledger.md`, release notes |
 
@@ -268,5 +320,10 @@ The orchestrator arbitrates conflicts and owns the shared files.
 
 Each milestone exit runs, in the integration worktree: `python -m pytest -q`,
 `python -m ruff check backend tests`, `python -m mypy`, plus the milestone's own
-smoke run. The orchestrator independently verifies each "complete" claim and
-updates `docs/evidence/ledger.md` before the milestone is closed.
+smoke run. The coverage gate is the same test command plus
+`--cov-fail-under=94` (the ratchet floor in CI). Every number quoted from a run —
+coverage, latency, a digest — must name the commit it was measured at, because
+three coverage baselines and one moved image ID were observed across M1–M5 (see
+[`../evidence/ledger.md`](../evidence/ledger.md) rows P15 and P16). The
+orchestrator independently verifies each "complete" claim and updates
+`docs/evidence/ledger.md` before the milestone is closed.
