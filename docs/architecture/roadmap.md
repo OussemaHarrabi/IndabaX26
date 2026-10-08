@@ -17,11 +17,11 @@ omitted: each milestone gates on its exit criteria, not on a calendar.
 | **M0** | Charter + baseline | Intake, baseline reproduced, charter, architecture, threat model, ADRs, legacy record, ledger skeleton | — | all | `implemented` (closed) |
 | **M1** | Contracts + enforcement | Native versioned contracts with a policy/code revision in every decision; legacy adapter isolated; enforcement binding and integration SDK | M0 | ADR-0006 | `implemented` — contract, enforcement SDK, bounded input and strict confirmation landed (`4013b59`, `7502df3`); legacy suite re-checked decision-identical |
 | **M2** | Auth + policy + audit store | Authentication and tenancy; versioned policy; durable append-only receipt/audit store | M1 | ADR-0001, ADR-0002 | `implemented` + **verified live by the orchestrator** (`7a87e8b`, merged at `4350af3`, corrective round `940ed13`): F1, F2 and F3's caller-authority half fixed (residual F3 accepted); with PostgreSQL 17 the suite is **569 passed / 2 skipped = 96.81 %** in a clean clone after the M3/SBOM rounds (497 passed / 96.85 % at `36a279a`), and **557 passed / 14 skipped = 93.76 %** without a database; the CI `quality` job now runs a PostgreSQL service and the floor is raised to **95** (`bf02ddc`), so a silent skip of the database tests cannot pass |
-| **M3** | Observability + reliability | OpenTelemetry, Prometheus, Grafana, SLOs, fail-closed guarantees under load | M1, M2 | ADR-0003 | `implemented` — telemetry, metrics, SLOs, the load harness and failure-injection tests landed (`3d0d748`, merged at `7147eb3`) and verified live by the orchestrator: 8 `aegisgraph_*` metric families with no tenant/principal/request/content label, an exporter outage counted rather than raised, and a load report (4256 requests, 212.35 req/s, service-side p95 3.14 ms, 0 errors). **Named gap:** the shipped Compose stack does not scrape the API, so the dashboard would show "no data" as shipped |
+| **M3** | Observability + reliability | OpenTelemetry, Prometheus, Grafana, SLOs, fail-closed guarantees under load | M1, M2 | ADR-0003 | `implemented` — telemetry, metrics, SLOs, the load harness and failure-injection tests landed (`3d0d748`, merged at `7147eb3`) and verified live by the orchestrator: 8 `aegisgraph_*` metric families with no tenant/principal/request/content label, an exporter outage counted rather than raised, and a load report (4256 requests, 212.35 req/s, service-side p95 3.14 ms, 0 errors). The shipped stack now scrapes the API and serves the dashboard (verified end to end, `docs/ops/compose.md`; ledger P7) — the only caveat is that it ships no credentials, so `aegisgraph_decisions_total` stays empty until a caller presents a token |
 | **M4** | CI/CD + containers + deployment | Pipelines and gates; hardened Compose stack; Kubernetes manifests validated and smoke-tested | M1, M2 | ADR-0005 | `implemented` with three named gaps: **no GitHub-hosted CI run has ever executed**, **no cluster smoke test** (`kind` absent), and **F9** — the suite must run *inside* the built image (CI now runs it with a PostgreSQL service, but not in the image) |
 | **M5** | Evaluation framework + benchmark data | Native evaluation schema authoritative; versioned legacy adapter; benchmark data + reachability gate | M1 | ADR-0004 | `implemented` — schema, 60-scenario dataset, deterministic scoring, sealed holdout; **scripted adapter only**, no holdout run |
-| **M6** | Empirical campaign | Real-model runs, multi-seed variance, component ablations, generalization | M2, M5 | ADR-0004 | `partial` — **freeze block 1 declared** (`4481e26`, pinning gateway `818cf1f`, dataset `7e916a11…`, scripted model only, holdout closed; `docs/evidence/m6-freeze.md` §7) and the scripted campaign cells are being produced; the real-model cells stay **blocked** (no `ollama`, GPU or paid API) |
-| **M7** | Independent review | Adversarial and security review of the new surfaces; reproducibility audit | M3, M4, M6 | all | `partial` — three adversarial reviews (M0 `L15`, M1–M5 `P25–P29`, M2 surface `P54–P62`) and an independent research/reproducibility audit (`P30–P52`) have landed; what remains is the reproducibility audit of every headline claim and an independent re-run of the gates |
+| **M6** | Empirical campaign | Real-model runs, multi-seed variance, component ablations, generalization | M2, M5 | ADR-0004 | `partial` — **freeze block 1 declared and its scripted results recorded** (`4481e26`/`f3129d0`, gateway `818cf1f`): C1 digest `b6951afb…`, 60 scenarios, 0 errors, ASR 0.5000 intention-to-treat, benign 0.9667, FBR 0.0556; C3 legacy recheck `8669aadb…`; delta vs the previous reference a **null result** on 60/60 verdicts, proven by the independent campaign audit (Agent I3), which reproduced every number (ledger P68). **Three provenance gaps recorded:** the gateway identity is runner-attested, the credential's scopes/ceiling are not in the artifact, and campaign latency is not comparable to the in-process run. The real-model cells stay **blocked** (no `ollama`, GPU or paid API) |
+| **M7** | Independent review | Adversarial and security review of the new surfaces; reproducibility audit | M3, M4, M6 | all | `partial` — three adversarial reviews (M0 `L15`, M1–M5 `P25–P29`, M2 surface `P54–P62`), an independent research/reproducibility audit (`P30–P52`) and an independent campaign audit (I3, `P68`) have landed; what remains is the reproducibility audit of every headline claim and an independent re-run of the gates |
 | **M8** | Docs + demo + release | Documentation, demo, versioned release, provenance manifest | M5, M6, M7 | all | `partial` — the runnable demo script (`docs/demo/demo-script.md`) and the bounded CV-claims document (`docs/evidence/cv-claims.md`) landed at `57596f3`; the release provenance manifest (ledger P8) is still `pending` |
 
 ### M0 execution status (closed)
@@ -199,20 +199,27 @@ milestone owns each finding.
   requests at 212.35 req/s with **service-side p50 1.57 ms / p95 3.14 ms / p99
   5.18 ms and 0 errors** on an honestly-labelled local host; failure injection
   covers database-down, collector-down, cancellation and overload (ledger P4).
-  **Named gap:** the *shipped* Compose stack does not scrape the API —
-  `deploy/compose/prometheus.yml` has no `aegisgraph-api` job and `compose.yaml`
-  mounts a different dashboards directory — so the 12-panel dashboard would render
-  "no data" until two one-line changes land; recorded in
-  `docs/ops/observability.md`, not applied.
+  **Gap closed (Agent E, `4d51cde`/`75fa1b9`):** the observability provisioning is
+  consolidated on one tree, **`deploy/observability/**`** (one Prometheus config
+  with the `aegisgraph-api` job, Grafana provisioning + the `aegisgraph-service`
+  dashboard, the OTel collector config), and `deploy/compose/**` is deleted.
+  Verified end to end on the running stack (`docs/ops/compose.md`):
+  `up{job="aegisgraph-api"} = 1` scraping `http://api:8080/metrics`, six non-empty
+  `aegisgraph_*` metric names after traffic,
+  `sum by (route,status) (aegisgraph_requests_total)` → `{/healthz,200}=2`,
+  `{/api/v1/decisions,422}=6`, `{/v1/decision,200}=4`, and Grafana serving the
+  provisioned dashboard (10 panels) with a healthy `prometheus` datasource
+  through its own proxy. **Caveat:** the stack ships no credentials, so
+  `aegisgraph_decisions_total` stays empty until a caller presents a token.
 - **Work:** OpenTelemetry traces across boundary → adapter → kernel → store;
   Prometheus counters/histograms (decisions by verdict/reason, latency, failures,
   enforcement outcomes); Grafana dashboards; SLOs for decision latency and
   fail-closed rate; load and failure-injection tests proving the gateway stays
   fail-closed.
 - **Exit:** a decision emits a trace and increments metrics; dashboards render
-  real data (the dashboard renders when pointed at a scraping Prometheus — the
-  shipped stack's missing scrape job is the named gap above); no content or secrets
-  in telemetry attributes; the fail-closed invariant holds under fault injection.
+  real data (verified end to end on the shipped stack — `docs/ops/compose.md`);
+  no content or secrets in telemetry attributes; the fail-closed invariant holds
+  under fault injection.
 - **ADR:** ADR-0003.
 
 ### M4 — CI/CD + containers + deployment *(complete, three gaps named)*
@@ -226,7 +233,9 @@ milestone owns each finding.
   builds reproducibly and runs non-root (uid 10001) with a read-only rootfs
   serving `/healthz` and a decision; `deploy/k8s` renders 7 objects and passes 7
   schema checks under two validators plus 22 policy assertions; the Compose
-  configuration parses to five services. The image was **rebuilt at the current
+  configuration parses to six services (`api`, `migrate`, `postgres`,
+  `otel-collector`, `prometheus`, `grafana`, with the observability provisioning
+  under `deploy/observability/**`). The image was **rebuilt at the current
   lock revision** `d0bf0f55…` (39 pinned entries) as `sha256:bb373f36…`
   (73,084,467 B, context commit `57596f3`), the SBOM was regenerated to match, and
   `scripts/check_sbom_freshness.py` now fails loudly on drift, wired into CI
@@ -296,17 +305,26 @@ milestone owns each finding.
 ### M6 — Empirical campaign
 
 - **Entry:** M2 (stored revision), M5 (harness).
-- **Status:** `partial` — the freeze is declared, not yet exercised. **Freeze
-  block 1** was declared at `4481e26`, pinning
+- **Status:** `partial` — the freeze is declared and its scripted cells have run.
+  **Freeze block 1** was declared at `4481e26`, pinning
   gateway `818cf1f` (clean tree), dataset `7e916a11…`, the scoring/runner/analysis
   blobs, `model.kind=scripted`, seed `1729`, splits `development,validation` and
-  the holdout closed; the results will be appended as "§8 Freeze block 1 —
-  recorded results" with the run directories (ledger P66). **Known deviation,
-  recorded up front:** the previous reference run (digest `8d79f032…`) is not
-  expected to reproduce, because H3-01/H3-04 changed which requests the surface
-  accepts and how an override identity is reported — that delta is a measurement
-  of the fix, not a regression. **Blocked cells:** C5/C6 (real model) and C7
-  (holdout) — see the freeze document's §2 and blocked rows B3/B4/B6.
+  the holdout closed. **Recorded results (§8):** C1+C2 in
+  `benchmark/runs/20261008T203656Z-m6-campaign/` (C1 digest `b6951afb…`, 60
+  scenarios, 0 errors, ASR **0.5000 intention-to-treat**, benign 0.9667, FBR
+  0.0556, escalation 0.0714; C2 licensed 30/30 with `effectiveness_claim = true`),
+  C3 legacy recheck `8669aadb…` byte-identical to the M0/M1 rechecks, C4 two
+  scorings byte-identical. **Delta vs the previous reference run (`8d79f032…`):
+  a null result on this dataset** — 0 of 60 verdicts changed and every aggregate
+  metric is identical; the digest moved only because `code_commit` is part of the
+  identity, and neither H3-01 nor H3-04 is reachable here. The independent
+  campaign audit (Agent I3) reproduced every number and proved the null result by
+  swapping `code_commit` back to `a94ce6f` (ledger P68); it also recorded three
+  provenance gaps — the gateway identity is runner-attested, the credential's
+  scopes/ceiling are not in the artifact, and campaign latency is not comparable
+  to the in-process run.
+  **Blocked cells:** C5/C6 (real model) and C7 (holdout) — see the freeze
+  document's §2 and blocked rows B3/B4/B6.
 - **Work:** real-model runs on the pinned and native suites; multi-seed variance;
   component ablations; generalization to an unseen tool schema; every result
   labelled synthetic or real with its revision fingerprint.
@@ -319,12 +337,13 @@ milestone owns each finding.
 ### M7 — Independent review
 
 - **Entry:** M3, M4, M6.
-- **Status:** `partial`. Four independent exercises have landed: the M0
+- **Status:** `partial`. Five independent exercises have landed: the M0
   adversarial review (ledger `L15`), the M1–M5 adversarial review (`P25–P29`), the
-  M2-surface adversarial review (`P54–P62`) and a read-only research &
+  M2-surface adversarial review (`P54–P62`), a read-only research &
   reproducibility audit (`P30–P52`, which reproduced the legacy chain, the artifact
-  hashes, the mock table and the native reference). Still open: the audit of
-  **every** headline claim and an independent re-run of the gates (ledger `P10`).
+  hashes, the mock table and the native reference) and an independent campaign
+  audit of the M6 results (`P68`). Still open: the audit of **every** headline
+  claim and an independent re-run of the gates (ledger `P10`).
 - **Work:** adversarial and security review of the new surfaces (API boundary,
   store, auth, telemetry); reproducibility audit of every headline claim;
   independent re-run of the evaluation gates.
@@ -386,8 +405,8 @@ milestones keep their proposed allocation.
 | Milestone | Writer role | Owned paths |
 | --- | --- | --- |
 | M1 | Contracts/API implementer + integration | **landed:** `backend/aegisgraph/{api_v1,enforcement,adapter,demo_tools}.py`, `backend/aegisgraph/{app,sentinel,contracts,engine}.py`, `docs/api/**`, `examples/**`, `tests/test_{api_v1,enforcement,bounds,confirmation_strict}.py`, `evaluation/m1-recheck/**`. The originally proposed `legacy/**` and `sdk/**` packages were not created — the legacy wire stays in `sentinel.py` and the SDK in `enforcement.py`, so there is no second convention to maintain |
-| M2 | Persistence engineer + security engineer | proposed: new `backend/aegisgraph/store/**`, `migrations/**`, new `backend/aegisgraph/auth/**`, new `backend/aegisgraph/policy_store/**`, `tests/test_store.py`, `tests/test_auth.py`; the pins landed early in `requirements.lock` (`4b9eb5c`, orchestrator-owned) |
-| M3 | Platform/telemetry engineer | proposed: new `backend/aegisgraph/telemetry/**`, `deploy/observability/**`, `tests/test_telemetry.py` |
+| M2 | Persistence engineer + security engineer | **landed:** `backend/aegisgraph/{store,auth,access,policy,confirmation,models,api_admin,settings}.py`, `backend/migrations/versions/{0001_initial,0002_receipt_decision_body}.py`, `tests/test_{postgres_store,authentication,authorization_policy,confirmation_channel,receipts_api,policy_kernel}.py`, `docs/api/{auth,receipts}.md`; the pins landed early in `requirements.lock` (`4b9eb5c`, orchestrator-owned) |
+| M3 | Platform/telemetry engineer | **landed:** `backend/aegisgraph/telemetry.py` (one module, not a package), `deploy/observability/**` (Prometheus config with the `aegisgraph-api` job, Grafana provisioning + the `aegisgraph-service` dashboard, the OTel collector config; `deploy/compose/**` was deleted at `4d51cde`), `scripts/load_test.py`, `docs/ops/{observability,slo,load-testing}.md`, `tests/test_{telemetry,load_smoke,failure_injection,failure_injection_telemetry}.py` |
 | M4 | Platform engineer | **landed:** `.github/workflows/ci.yml` (with orchestrator), `compose.yaml`, `.env.example`, `Makefile`, `Dockerfile`, `.dockerignore`, `deploy/**`, `docs/ops/**`, `scripts/{generate_sbom,validate_k8s_manifests,install_kubeconform}.py` |
 | M5 | Evaluation engineer | **landed:** `benchmark/**` (schema, validators, dataset, splits, runner, scoring, seal, adapters), `scripts/bench_*.py`, `docs/benchmark/**`, `tests/test_benchmark_*.py`; `evaluation/**` stayed add-only (the M1 recheck added a directory, it edited nothing) |
 | M6 | Evaluation engineer + research analyst | `evaluation/campaign/**`, `docs/research/**` (research docs already landed) |
