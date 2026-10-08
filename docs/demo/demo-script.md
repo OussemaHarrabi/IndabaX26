@@ -18,7 +18,7 @@ They are quoted as observed; nothing is reconstructed.
 | --- | --- | --- |
 | Steps 1–5 and the `/metrics`, decision-record and receipt halves of step 6 | verified in the M8 authoring run on 2026-10-08, reproduced in this document | this file |
 | Compose stack bring-up (five healthy services) and the one-shot `migrate` service | verified by the orchestrator, not repeated here | [`../ops/compose.md`](../ops/compose.md) |
-| Grafana dashboard loading and all 12 panel expressions executing | verified by the M3 owner against a live scrape; the shipped Compose stack does not yet scrape the API | [`../ops/observability.md`](../ops/observability.md) |
+| Grafana dashboard and Prometheus scrape of the API | verified by the M4/M3 owners against the running stack: the `aegisgraph-api` job is `up` scraping `http://api:8080/metrics`, real `aegisgraph_*` series appear, and Grafana serves the dashboard `aegisgraph-service` with a healthy datasource | [`../ops/compose.md`](../ops/compose.md) → "The observability data path (verified)", [`../ops/observability.md`](../ops/observability.md) |
 | Enforcement SDK refusal reasons (step 5) | verified offline and live in M1; the offline form is reproduced here | [`../../examples/enforce_decision.py`](../../examples/enforce_decision.py), [`../evidence/ledger.md`](../evidence/ledger.md) row P6 |
 | Every claim and its ledger status | the ledger is the authority for what is promoted | [`../evidence/ledger.md`](../evidence/ledger.md) |
 
@@ -540,10 +540,10 @@ With no `DATABASE_URL` this is the process-local store; set it to PostgreSQL 17
 to make every receipt append-only and to survive a restart
 ([`../ops/migrations.md`](../ops/migrations.md)).
 
-**6d — the Compose stack and the Grafana dashboard.** From the repository root,
-the five-service stack (API, PostgreSQL, OTel collector, Prometheus, Grafana)
-is brought up and verified end to end, including the one-shot `migrate` service
-applying `0001_initial`:
+**6d — the Compose stack, the API scrape and the Grafana dashboard.** From the
+repository root, the five-service stack (API, PostgreSQL, OTel collector,
+Prometheus, Grafana) is brought up and verified end to end, including the
+one-shot `migrate` service applying `0001_initial`:
 
 ```sh
 cp .env.example .env          # edit POSTGRES_PASSWORD and GRAFANA_ADMIN_PASSWORD
@@ -555,14 +555,49 @@ curl -s http://127.0.0.1:8080/readyz
 Observed by the orchestrator: five healthy services, `migrate` exits `0`,
 `/readyz` reports `receipt_store {durable: true, reachable: true}`, and a
 legacy-surface decision returns `allow / BENIGN_ACTION`
-([`../ops/compose.md`](../ops/compose.md)). Grafana serves the provisioned
-dashboard `deploy/observability/grafana/dashboards/aegisgraph-service.json`
-(uid `aegisgraph-service`); its 12 panel expressions were executed against a
-live scrape ([`../ops/observability.md`](../ops/observability.md)). One honest
-gap: the Compose stack as shipped does **not** scrape the API yet, so the panels
-would show "no data" until the API scrape job is merged into
-`deploy/compose/prometheus.yml` — a one-line change recorded in
-[`../ops/observability.md`](../ops/observability.md).
+([`../ops/compose.md`](../ops/compose.md)).
+
+Observability is now in the data path, not merely configured. One provisioning
+tree, `deploy/observability/**`, is mounted by `compose.yaml`; Prometheus scrapes
+the API's own `/metrics` through the single scrape config
+`deploy/observability/prometheus/prometheus.yml` (job `aegisgraph-api`, target
+`api:8080`). Verified on the running stack:
+
+```sh
+# the API job is up and scraping the API
+curl -sG http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=up{job="aegisgraph-api"}'
+#    up = 1        (scrapeUrl http://api:8080/metrics)
+
+# real aegisgraph_* series after traffic through the API
+curl -sG http://127.0.0.1:9090/api/v1/query \
+  --data-urlencode 'query=sum by (route,status) (aegisgraph_requests_total)'
+#    {route="/healthz",status="200"} = 2
+#    {route="/api/v1/decisions",status="422"} = 6
+#    {route="/v1/decision",status="200"} = 4
+
+# Grafana serves the provisioned dashboard through a healthy datasource
+curl -s http://127.0.0.1:3000/api/dashboards/uid/aegisgraph-service
+#    title "AegisGraph — decision service (M3)", uid aegisgraph-service, 10 panels,
+#    folder AegisGraph, datasource {"type":"prometheus","uid":"prometheus"}
+curl -s http://127.0.0.1:3000/api/datasources/uid/prometheus/health
+#    {"status":"OK","message":"Successfully queried the Prometheus API."}
+curl -sG http://127.0.0.1:3000/api/datasources/proxy/uid/prometheus/api/v1/query \
+  --data-urlencode 'query=sum(aegisgraph_requests_total)'
+#    13
+```
+
+The honest caveat is unchanged and is the point of the correlation: the stack
+ships **no credentials**, so `aegisgraph_decisions_total` stays empty until a
+caller presents a token (step 3's `scripts/dev_issuer.py` token, or the legacy
+surface). The `/api/v1/decisions` traffic above was 6 requests refused with `422`
+by request validation — instrumented refusals, not counted decisions; the 4
+legacy-surface requests were real `allow` decisions. Both routes appear under
+their own `route` label, which is why the dashboard's request-rate panel is
+populated while its decision-verdict panel needs a token. These commands and
+outputs are recorded in
+[`../ops/compose.md`](../ops/compose.md) → "The observability data path
+(verified)"; the dashboard's panel set is described in
+[`../ops/observability.md`](../ops/observability.md) §"Dashboards".
 
 **Conclusion:** the same decision is observable on three correlated surfaces —
 metrics for rates and latencies, one structured record per decision for
