@@ -48,6 +48,20 @@ from benchmark.wire import policy_document_digest as wire_policy_document_digest
 from benchmark.wire import policy_set_for as wire_policy_set_for
 
 MANIFEST_SCHEMA_VERSION = "aegisgraph-benchmark-run/v1"
+
+#: The committed files whose content turns a policy document into a decision. The
+#: H5.2 gate compares these between the freeze commit and the unseal commit: a
+#: policy *document* can be unchanged while the code that applies it is not.
+POLICY_SOURCE_BLOBS: tuple[str, ...] = (
+    "backend/aegisgraph/policy.py",
+    "backend/aegisgraph/engine.py",
+    "backend/aegisgraph/adapter.py",
+)
+
+#: The hashing convention for every policy hash this runner records: git's blob
+#: header, hashed with SHA-256 rather than git's default SHA-1 object name, so the
+#: value is comparable across freeze records without a bespoke tool.
+POLICY_HASH_CONVENTION = 'git-blob-sha256: sha256(b"blob <len>\\0" + content)'
 DEFAULT_RUNS_DIR = "benchmark/runs"
 DEFAULT_TIMEOUT_SECONDS = 10.0
 GENERIC_PATH = "/api/v1/decisions"
@@ -473,6 +487,40 @@ def _git_branch() -> str:
     return branch if result.returncode == 0 and branch else "unknown"
 
 
+def git_blob_sha256(path: Path) -> str | None:
+    """The git blob hash of a file, or ``None`` when it cannot be read.
+
+    Git's object hash is ``sha256(b"blob <len>\0" + content)``. Using it here
+    means a policy hash recorded by this runner is directly comparable with the
+    value git computes for the same content, so a freeze record and an unseal
+    record can be compared without a bespoke tool.
+    """
+
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    header = f"blob {len(data)}\0".encode("ascii")
+    return hashlib.sha256(header + data).hexdigest()
+
+
+def _policy_source_blobs(repo_root: Path) -> dict[str, Any]:
+    """Git blob hashes of the committed policy-implementing files."""
+
+    blobs: dict[str, Any] = {}
+    for relative in POLICY_SOURCE_BLOBS:
+        path = repo_root / relative
+        digest = git_blob_sha256(path)
+        blobs[relative] = digest if digest is not None else None
+    missing = sorted(name for name, value in blobs.items() if value is None)
+    return {
+        "convention": POLICY_HASH_CONVENTION,
+        "blobs": blobs,
+        "missing": missing,
+        "missing_reason": (f"not present in this checkout: {missing}" if missing else None),
+    }
+
+
 def _file_sha256(path: Path | None) -> dict[str, Any]:
     if path is None or not path.is_file():
         return {"path": None, "sha256": None, "present": False}
@@ -493,6 +541,30 @@ class RunResult:
     manifest: dict[str, Any]
     outcomes: tuple[Outcome, ...]
     control_outcomes: tuple[Outcome, ...]
+
+
+def _policy_blob_sha256(documents: dict[str, dict[str, Any]]) -> tuple[str | None, str | None]:
+    """The H5.2 gate value: a git blob hash over the documents the run decided under.
+
+    The documents are derived from the committed scenario files, so the *committed*
+    artifact that pins them is ``dataset.sha256``; this value pins the exact
+    mapping from policy-set identity to document that the requests named. It is
+    hashed with git's blob convention so it is comparable with a freeze record.
+    Returns ``(null, reason)`` rather than omitting the field when it cannot be
+    computed.
+    """
+
+    if not documents:
+        return None, "the run pinned no policy set"
+    try:
+        canonical = json.dumps(
+            {key: documents[key] for key in sorted(documents)},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError) as error:  # pragma: no cover - defensive
+        return None, f"the policy documents are not JSON-serialisable: {error}"
+    return hashlib.sha256(f"blob {len(canonical)}\0".encode("ascii") + canonical).hexdigest(), None
 
 
 def _require_decision_status(
@@ -559,9 +631,8 @@ def execute_run(config: RunConfig, dataset: Dataset | None = None) -> RunResult:
         policy_sets_used.add(key)
         policy_digests[key] = wire_policy_document_digest(wire_policy_document(scenario))
         policy_bodies[key] = wire_policy_document(scenario)
-    policy_blob_sha256 = hashlib.sha256(
-        json.dumps(policy_bodies, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
+    policy_blob_sha256, policy_blob_reason = _policy_blob_sha256(policy_bodies)
+    policy_source_blobs = _policy_source_blobs(Path(__file__).resolve().parents[1])
 
     defense = HttpClient(config.defense_url, config.timeout, config.auth)
     health = defense.get(HEALTH_PATH)
@@ -670,10 +741,14 @@ def execute_run(config: RunConfig, dataset: Dataset | None = None) -> RunResult:
         "policy": {
             "gate": "H5.2",
             "blob_sha256": policy_blob_sha256,
+            "blob_sha256_reason": policy_blob_reason,
             "blob_sha256_source": (
-                "sha256 of the canonical {policy-set-id:version -> document} map the "
-                "requests pin, computed by the benchmark before any gateway call"
+                "the policy documents the requests pinned, hashed as one git blob over the "
+                "canonical {policy-set-id:version -> document} map, computed by the "
+                "benchmark before any gateway call"
             ),
+            "hash_convention": POLICY_HASH_CONVENTION,
+            "source_blobs": policy_source_blobs,
             "source": "scenario-derived, published to the tenant and pinned per request",
             "publish_command": (
                 "python scripts/bench_policies.py publish --defense-url <url> --token-file <path>"
