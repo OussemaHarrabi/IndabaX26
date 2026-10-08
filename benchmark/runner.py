@@ -261,12 +261,17 @@ def _b64url_decode(value: str) -> bytes:
     return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
 
-def unverified_jwt_subject(token: str) -> str | None:
-    """Read the ``sub`` claim of a JWT **without verifying it**.
+#: The claim names a JWT may carry its scope list in, mirroring the gateway's
+#: ``JWT_SCOPE_CLAIMS`` so the manifest describes what the gateway will read.
+_JWT_SCOPE_CLAIMS: tuple[str, ...] = ("scope", "scp", "scopes")
 
-    This exists only so the run manifest can name the principal. It is never an
-    authorization decision — the gateway verifies the token — and an opaque
-    service token has no readable subject, so ``None`` is returned.
+
+def unverified_jwt_claims(token: str) -> dict[str, Any] | None:
+    """Decode a JWT payload **without verifying it**, or ``None`` if unreadable.
+
+    This exists only so the run manifest can describe the credential it used. It
+    is never an authorization decision — the gateway verifies the token — and an
+    opaque service token has no readable payload, so ``None`` is returned.
     """
 
     parts = token.split(".")
@@ -276,12 +281,45 @@ def unverified_jwt_subject(token: str) -> str | None:
         claims = json.loads(_b64url_decode(parts[1]).decode("utf-8"))
     except Exception:
         return None
-    if not isinstance(claims, dict):
+    return claims if isinstance(claims, dict) else None
+
+
+def unverified_jwt_subject(token: str) -> str | None:
+    """Read the ``sub`` claim of a JWT **without verifying it**."""
+
+    claims = unverified_jwt_claims(token)
+    if claims is None:
         return None
     subject = claims.get("sub")
     if isinstance(subject, str) and 0 < len(subject) <= 256:
         return subject
     return None
+
+
+def _unverified_scopes(token: str) -> list[str] | None:
+    """The scope list the token declares, or ``None`` when it declares none."""
+
+    claims = unverified_jwt_claims(token)
+    if claims is None:
+        return None
+    scopes: set[str] = set()
+    for name in _JWT_SCOPE_CLAIMS:
+        value = claims.get(name)
+        if isinstance(value, str):
+            scopes.update(part for part in value.replace(",", " ").split() if part)
+        elif isinstance(value, (list, tuple)):
+            scopes.update(item for item in value if isinstance(item, str) and item)
+    return sorted(scopes) if scopes else None
+
+
+def _unverified_trust_ceiling(token: str) -> str | None:
+    """The trust ceiling the token declares, or ``None`` when it declares none."""
+
+    claims = unverified_jwt_claims(token)
+    if claims is None:
+        return None
+    ceiling = claims.get("trust_ceiling")
+    return ceiling if isinstance(ceiling, str) and 0 < len(ceiling) <= 64 else None
 
 
 def read_token(token: str | None, token_file: str | None) -> str:
@@ -337,14 +375,27 @@ class AuthConfig:
         return f"{self.scheme} {self.token}" if self.scheme else self.token
 
     def metadata(self) -> dict[str, Any]:
-        """Non-secret metadata for the manifest: never the token, never its digest."""
+        """Non-secret metadata for the manifest: never the token, never its digest.
 
+        ``scopes`` and ``trust_ceiling`` are read from the token payload the same
+        unverified way as ``principal``, so a reviewer can check what the credential
+        was allowed to assert without holding the credential. They describe the
+        token, not the gateway's decision: the gateway verifies the signature and
+        re-derives both.
+        """
+
+        readable = unverified_jwt_claims(self.token) is not None
         return {
             "mode": "bearer",
             "header": self.header,
             "scheme": self.scheme,
             "principal": unverified_jwt_subject(self.token),
             "principal_source": "unverified-jwt-sub-or-null",
+            "scopes": _unverified_scopes(self.token),
+            "trust_ceiling": _unverified_trust_ceiling(self.token),
+            "claims_source": (
+                "unverified-jwt-payload" if readable else "no readable payload (opaque token)"
+            ),
         }
 
     def __repr__(self) -> str:
@@ -562,6 +613,32 @@ def _git_dirty(repo_root: Path) -> bool | None:
     if result.returncode != 0:
         return None
     return bool(result.stdout.strip())
+
+
+def _service_build_identity(payload: dict[str, Any] | None) -> dict[str, Any]:
+    """What the *service* says about its own build, and how to make it stronger.
+
+    The manifest's ``code.commit`` is runner-attested: the runner resolves it with
+    ``git rev-parse`` in the worktree it runs from. The service can attest to its
+    own revision when it is started with ``AEGISGRAPH_BUILD_COMMIT``, so this block
+    records what the service reported and tells an operator how to close the gap.
+    """
+
+    build = (payload or {}).get("build")
+    service_commit = build.get("commit") if isinstance(build, dict) else None
+    reported = isinstance(service_commit, str) and service_commit not in ("", "unknown")
+    return {
+        "service_commit": service_commit if isinstance(service_commit, str) else None,
+        "service_reported": reported,
+        "note": (
+            f"the service self-reports commit {service_commit}; code.commit is additionally "
+            "runner-attested"
+            if reported
+            else "the service did not report its revision; code.commit is runner-attested "
+            "only. Start the service with AEGISGRAPH_BUILD_COMMIT=<git sha> to let the "
+            "manifest cross-check it."
+        ),
+    }
 
 
 def _policy_source_blobs(repo_root: Path) -> dict[str, Any]:
@@ -797,6 +874,7 @@ def execute_run(config: RunConfig, dataset: Dataset | None = None) -> RunResult:
             "version": version.payload,
             "version_error": version.error,
             "endpoint": GENERIC_PATH,
+            "build_identity": _service_build_identity(version.payload),
         },
         "control": {"url": control_url, "kind": control_kind},
         "auth": (

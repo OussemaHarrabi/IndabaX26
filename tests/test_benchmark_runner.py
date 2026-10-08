@@ -325,7 +325,74 @@ def test_the_auth_header_is_sent_and_the_token_is_never_recorded(tmp_path: Path)
         "scheme": "",
         "principal": "bench-client",
         "principal_source": "unverified-jwt-sub-or-null",
+        "scopes": None,  # this token declares no scope claim
+        "trust_ceiling": None,
+        "claims_source": "unverified-jwt-payload",
     }
+
+
+def test_the_manifest_records_the_credentials_scopes_and_ceiling(tmp_path: Path) -> None:
+    """An auditor must be able to check what the credential could assert.
+
+    The scopes and ceiling come from the same unverified payload read as the
+    principal, and the token itself is never recorded.
+    """
+
+    import base64
+
+    claims = {
+        "sub": "audit-client",
+        "scope": "decision:submit confirmation:grant",
+        "trust_ceiling": "trusted_internal",
+    }
+    payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=")
+    token = f"header.{payload}.signature"
+    auth = AuthConfig(token=token)
+
+    with StubGateway() as stub:
+        result = execute_run(_config(stub.url, tmp_path, auth=auth))
+
+    recorded = result.manifest["auth"]
+    assert recorded["scopes"] == ["confirmation:grant", "decision:submit"]
+    assert recorded["trust_ceiling"] == "trusted_internal"
+    assert recorded["claims_source"] == "unverified-jwt-payload"
+    assert token not in (result.run_dir / "manifest.json").read_text(encoding="utf-8")
+
+
+def test_an_opaque_token_records_no_readable_claims(tmp_path: Path) -> None:
+    auth = AuthConfig(token="opaque-service-token")
+
+    with StubGateway() as stub:
+        result = execute_run(_config(stub.url, tmp_path, auth=auth))
+
+    recorded = result.manifest["auth"]
+    assert recorded["principal"] is None
+    assert recorded["scopes"] is None
+    assert recorded["trust_ceiling"] is None
+    assert recorded["claims_source"] == "no readable payload (opaque token)"
+
+
+def test_the_manifest_records_the_services_build_identity(tmp_path: Path) -> None:
+    """code.commit is runner-attested; the manifest says what the service reported."""
+
+    from benchmark.runner import _service_build_identity
+
+    with StubGateway() as stub:
+        result = execute_run(_config(stub.url, tmp_path))
+
+    build = result.manifest["defense"]["build_identity"]
+    assert build["service_commit"] == "stub"  # the stub's own payload
+    assert build["service_reported"] is True
+
+    silent = _service_build_identity({"build": {"commit": "unknown"}})
+    assert silent["service_reported"] is False
+    assert silent["service_commit"] == "unknown"
+    assert "runner-attested only" in silent["note"]
+    assert "AEGISGRAPH_BUILD_COMMIT" in silent["note"]
+
+    absent = _service_build_identity(None)
+    assert absent["service_reported"] is False
+    assert absent["service_commit"] is None
 
 
 def test_a_run_without_a_credential_records_that_it_had_none(tmp_path: Path) -> None:
