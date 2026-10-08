@@ -3,7 +3,7 @@
 - **Status:** proposed
 - **Date:** 2026-10-08
 - **Deciders:** architecture lead (proposal), security reviewer, orchestrator
-- **Milestone:** M3
+- **Milestone:** M2 (auth + policy + audit store)
 
 ## Context
 
@@ -53,5 +53,5 @@ attributed to a principal in the receipt.
   explicitly labelled dev mode that never ships enabled.
 - **Neutral:** the legacy unauthenticated localhost contract stays available as
   the preserved legacy adapter, on localhost only.
-- **Blocked:** no production IdP; M3 is verified against a local test issuer and
+- **Blocked:** no production IdP; M2 is verified against a local test issuer and
   labelled accordingly.

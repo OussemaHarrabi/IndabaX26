@@ -65,7 +65,7 @@ These are development diagnostics, never Qwen results and never a jury score.
 | Path | Purpose |
 | --- | --- |
 | [`../../REPORT.tex`](../../REPORT.tex) | Legacy technical report source (threat model, architecture, evaluation, limitations) |
-| `output/pdf/AegisGraph-SENTINEL-Technical-Report.pdf` | Compiled report PDF; restored by the orchestrator (SHA-256 `69035d00…cc975c4f`, 293,903 bytes). Present in the integration branch, not in the M0 charter branch |
+| [`../../output/pdf/AegisGraph-SENTINEL-Technical-Report.pdf`](../../output/pdf/AegisGraph-SENTINEL-Technical-Report.pdf) | Compiled report PDF; restored by the orchestrator unchanged (SHA-256 `69035d00…cc975c4f`, 293,903 bytes). Compiled from `REPORT.tex` at the legacy baseline and **not regenerated** |
 | [`../../REPORT_PLAN.md`](../../REPORT_PLAN.md) | Report plan / milestone snapshot |
 | [`../../benchmark.lock`](../../benchmark.lock) | Pinned benchmark and scenario counts |
 | [`../../scripts/validate_attack_reachability.py`](../../scripts/validate_attack_reachability.py) | Allow-all reachability gate (read-only) |

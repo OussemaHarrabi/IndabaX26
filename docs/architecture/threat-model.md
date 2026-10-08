@@ -84,7 +84,7 @@ flowchart TB
    enforcement adapter exists yet.
 4. **Caller → API `[new]`.** Today the boundary is unauthenticated and must stay
    on localhost. Authentication and per-tenant authorization are proposed
-   (ADR-0002, roadmap M3).
+   (ADR-0002, roadmap M2).
 
 ## 4. Attacker capabilities
 
@@ -139,12 +139,12 @@ imported field as text, never HTML (`backend/aegisgraph/static/index.html:36`,
 | 5 | Rewrite that weakens the original or hides a bypass | Blocked; replacement re-evaluated | implemented (`engine.py:397`–`engine.py:458`) |
 | 6 | Reference to a provenance id that does not exist | Treated as hostile; fail closed | implemented (`adapter.py:81`–`adapter.py:84`) |
 | 7 | Oversized / malformed / truncated input | Sanitized 4xx or generic `block`; never `allow` | implemented (`app.py:20`, `app.py:65`, `engine.py:472`) |
-| 8 | Replay a decision against a different action | Digest mismatch must refuse execution | `proposed` (M2/M6) |
+| 8 | Replay a decision against a different action | Digest mismatch must refuse execution | `proposed` (M1) |
 | 9 | Forge or edit a stored receipt | Append-only store rejects mutation | `proposed` (M2) |
-| 10 | Tenant A reads tenant B's receipts | Authorization enforced per tenant | `proposed` (M3) |
-| 11 | Caller inflates its own trust label | Labels come from the authenticated caller/config, not the payload | `proposed` (M3) |
-| 12 | Policy quietly changed to allow an attack | Versioned, signed policy with an audit trail | `proposed` (M1) |
-| 13 | Telemetry used to exfiltrate content | Content-free metrics; bounded attributes | `proposed` (M4) |
+| 10 | Tenant A reads tenant B's receipts | Authorization enforced per tenant | `proposed` (M2) |
+| 11 | Caller inflates its own trust label | Labels come from the authenticated caller/config, not the payload | `proposed` (M2) |
+| 12 | Policy quietly changed to allow an attack | Versioned, signed policy with an audit trail | `proposed` (M2) |
+| 13 | Telemetry used to exfiltrate content | Content-free metrics; bounded attributes | `proposed` (M3) |
 
 ## 6. Fail-closed behaviour
 

@@ -38,7 +38,7 @@ the platform sense: the legacy evidence was produced by the pinned external
 starter kit, and the inspector only loads artifacts from disk
 (`backend/aegisgraph/static/index.html:36`). A first-party client SDK, execution
 loop with enforcement binding, and escalation/resume handling are proposed
-(roadmap M1/M6).
+(roadmap M1).
 
 ### 2.2 API boundary — `implemented`
 
@@ -94,7 +94,7 @@ declarative allow/confirmation/domain facts into an immutable `PolicyFacts`
 (`policy.py:15`) plus policy-declared (`policy.py:53`), confirmation is required
 for either (`policy.py:66`), and an external, missing or ambiguous email
 recipient is treated as unsafe (`policy.py:70`). Policy is **not versioned yet**:
-there is a single fact schema and no stored policy revision (proposed, M1).
+there is a single fact schema and no stored policy revision (proposed, M2).
 
 ### 2.6 Decision kernel — `implemented`
 
@@ -152,7 +152,7 @@ and storing receipts is proposed (M2).
 Nothing in this repository executes a decided action. The digest machinery for
 binding a decision to an exact action exists (`contracts.py:265`), but the
 enforcement adapter that refuses a mismatched digest is not built. This is the
-central integrator contract (roadmap M6).
+central integrator contract (roadmap M1).
 
 ### 2.10 Telemetry / observability — `partial`
 
@@ -164,7 +164,7 @@ and withholds ambiguous outcomes (`dashboard.js:395`), and offers local export
 (`dashboard.js:434`). All rendering uses `textContent`, never HTML.
 **Gap:** there is no machine telemetry — no OpenTelemetry traces, no Prometheus
 metrics, no decision counters or latency histograms, and no audit sink
-(proposed, M4).
+(proposed, M3).
 
 ### 2.11 Audit store — `proposed` (legacy artifacts are files, not a store)
 

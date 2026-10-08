@@ -3,7 +3,7 @@
 - **Status:** proposed
 - **Date:** 2026-10-08
 - **Deciders:** architecture lead (proposal), orchestrator (approval), owner
-- **Milestone:** M2
+- **Milestone:** M2 (auth + policy + audit store)
 
 ## Context
 

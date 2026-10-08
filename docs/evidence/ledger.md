@@ -26,19 +26,33 @@ commits and are never recomputed under new code.
 | L11 | Defence code byte-identical between `649f65a` and `770e88d` | industrial | verified | `backend/**`, `tests/**` | — | `git diff 649f65a 770e88d -- backend tests` (empty) | `770e88d` | the two extra commits touch only docs |
 | L12 | Baseline reproduced at intake | industrial | verified | `docs/evidence/m0-baseline-report.md` | — | `python -m pytest -q` in the integration worktree | `770e88d` | recorded by the orchestrator (187 passed in 2.71 s) |
 | L13 | No scenario id / expected outcome is a decision input | industrial | verified | `tests/test_contracts.py:196-205` | — | run the contract tests | `770e88d` | asserts absence from contract models; rule vocabulary remains benchmark-shaped |
+| L14 | Legacy mock scorecard is **not byte-reproducible** from final HEAD | research | verified | `.audit-tmp/m0-mock-recheck.json` | fresh deterministic digest `8669aadb…` vs committed `3233dfc5…` | `uv run sentinel eval public --defense-url http://127.0.0.1:8156 --model mock --json` | `770e88d` | 40/40 outcome labels identical, 14/18 metric keys identical; exactly one decision differs — `enterprise_memory_poison` step 9 returns `rewrite`/`UNTRUSTED_AUTHORITY_REDACTED` now versus `allow`/`BENIGN_ACTION` in the committed artifact (150 allow + 57 block + 1 rewrite vs 151 allow + 57 block); `brier`, `ece` and the deterministic digest differ; latency differs by wall clock; the committed artifact carries **no defence-revision fingerprint** |
+
+**Note on L14 (legacy finding F14, reproduced).** The single differing decision is
+explained by the narrative-authority guard in
+`backend/aegisgraph/engine.py:634-705`: the current code rewrites a forged
+authority claim that the committed artifact allowed. No committed artifact
+records the defence revision that produced it, so a fresh run cannot be
+attributed byte-for-byte to the committed mock scorecard. This is the concrete
+reproduction of legacy audit finding **F14** ("traces and scorecards are not
+fingerprinted with the defense revision", `COURSE/09-audit-findings.md`) and the
+reason milestones **M1, M5 and M6 must carry an explicit policy version and code
+commit** in every contract, receipt, scorecard and artifact.
 
 ## B. New platform (pending — do not promote without evidence)
 
 | # | Claim | Type | Status | Artifact | Digest | Command | Commit | Limitation |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| P1 | Native versioned contract + policy version in every decision | industrial | pending | — | — | — | — | M1; contract not yet extracted |
+| P1 | Native versioned contract + policy/code revision in every decision | industrial | pending | — | — | — | — | M1; contract not yet extracted |
 | P2 | Receipt persistence (append-only, digest-bound) | industrial | pending | — | — | — | — | M2; ADR-0001 |
-| P3 | Authentication + per-tenant isolation | industrial | pending | — | — | — | — | M3; ADR-0002; local test issuer only |
-| P4 | Telemetry (OTel/Prometheus/Grafana) with content-free attributes | industrial | pending | — | — | — | — | M4; ADR-0003 |
+| P3 | Authentication + per-tenant isolation | industrial | pending | — | — | — | — | M2; ADR-0002; local test issuer only |
+| P4 | Telemetry (OTel/Prometheus/Grafana) with content-free attributes | industrial | pending | — | — | — | — | M3; ADR-0003 |
 | P5 | Native evaluation schema (authoritative) + legacy adapter | research | pending | — | — | — | — | M5; ADR-0004 |
-| P6 | Enforcement refuses digest-mismatched actions | industrial | pending | — | — | — | — | M6; ADR-0006 |
-| P7 | Compose stack starts from clean and passes smoke test | industrial | pending | — | — | `docker compose up` + smoke | — | M7; ADR-0005 |
+| P6 | Enforcement refuses digest-mismatched actions | industrial | pending | — | — | — | — | M1; ADR-0006 |
+| P7 | Compose stack starts from clean and passes smoke test | industrial | pending | — | — | `docker compose up` + smoke | — | M4; ADR-0005 |
 | P8 | Release provenance manifest (paths + SHA-256) | industrial | pending | — | — | — | — | M8 |
+| P9 | Empirical campaign (multi-seed real-model runs, ablation, variance) | research | pending | — | — | — | — | M6; blocked on `ollama`/API, see B3 |
+| P10 | Independent review of new surfaces and reproducibility audit | research | pending | — | — | — | — | M7 |
 
 ## C. Blocked (tooling unavailable)
 
