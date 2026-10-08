@@ -12,6 +12,10 @@ dependencies = [
   "fastapi>=0.115,<1",
   "pydantic>=2.10,<3",
   "uvicorn>=0.30,<1",
+  "sqlalchemy>=2.0,<3",
+  "alembic>=1.13,<2",
+  "psycopg[binary]>=3.2,<4",
+  "pyjwt[crypto]>=2.9,<3",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +40,9 @@ where = ["backend"]
 addopts = "-ra"
 pythonpath = ["backend"]
 testpaths = ["tests"]
+markers = [
+  "db: requires a reachable PostgreSQL (set AEGISGRAPH_TEST_DATABASE_URL); skipped cleanly when absent",
+]
 
 [tool.ruff]
 target-version = "py312"
