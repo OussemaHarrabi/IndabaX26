@@ -18,15 +18,15 @@
       "8080",
       "--no-server-header"
     ],
-    "created": "2026-10-08T19:01:22.471543958Z",
+    "created": "2026-10-08T20:15:44.804625657Z",
     "entrypoint": null,
-    "id": "sha256:f36f6e1e51ba9df381d37315224d4d0909e087c62313960153cbdfb10b97e5aa",
+    "id": "sha256:bb373f362f052ffa49f15a47ef5ffd72bb7665a275e0b79a9db54f1f6c5cb531",
     "os": "linux",
     "reference": "aegisgraph:m4",
     "repo_digests": [
-      "aegisgraph@sha256:f36f6e1e51ba9df381d37315224d4d0909e087c62313960153cbdfb10b97e5aa"
+      "aegisgraph@sha256:bb373f362f052ffa49f15a47ef5ffd72bb7665a275e0b79a9db54f1f6c5cb531"
     ],
-    "size_bytes": 69404249,
+    "size_bytes": 73084467,
     "user": "10001:10001"
   },
   "packages": [
@@ -51,9 +51,19 @@
       "version": "4.15.1"
     },
     {
+      "name": "certifi",
+      "record_sha256": "e4dbdbedae71c38d0eea3ca6aec12e989d9522fd1847a42601b703ff60cbebc4",
+      "version": "2026.7.22"
+    },
+    {
       "name": "cffi",
       "record_sha256": "c2719618c2ff8cebf16766b94b91481e0d60b5e882c0221abd36633c1ab5dd16",
       "version": "2.1.1"
+    },
+    {
+      "name": "charset-normalizer",
+      "record_sha256": "cc8382d3ba45131231a3090ea462658754e066c0f8325c1945bb51ea1ede642a",
+      "version": "3.5.2"
     },
     {
       "name": "click",
@@ -69,6 +79,11 @@
       "name": "fastapi",
       "record_sha256": "ced73e55b5c36c6aa955be026a3327ac4ecf38a111a98b04cb71f99e93221d1b",
       "version": "0.141.1"
+    },
+    {
+      "name": "googleapis-common-protos",
+      "record_sha256": "60166b978c45d37809dcc0763ba967adf3abdee1c0ee308577f6e2e5cfc9d8ee",
+      "version": "1.75.5"
     },
     {
       "name": "h11",
@@ -89,6 +104,56 @@
       "name": "MarkupSafe",
       "record_sha256": "02703d6e134e1e24e64dced626ea59326510758cb8c417f55889bac8557535a1",
       "version": "3.0.4"
+    },
+    {
+      "name": "opentelemetry-api",
+      "record_sha256": "2cb1a6ef68670da89d5fff287dcf74de52124b96ee1e1b2c55628d79cee08fa5",
+      "version": "1.45.1"
+    },
+    {
+      "name": "opentelemetry-exporter-http-transport",
+      "record_sha256": "927a322797a08724905eead98b2676a9c9c38f1edeb43602408f318b4150c141",
+      "version": "0.66b1"
+    },
+    {
+      "name": "opentelemetry-exporter-otlp-common",
+      "record_sha256": "b3930b9c1ba78034175da9a858a6615899abd431053fcc26d7453c9237f03ccd",
+      "version": "0.66b1"
+    },
+    {
+      "name": "opentelemetry-exporter-otlp-proto-common",
+      "record_sha256": "879fc585005056110caf764b063c6cb0e1fc09f59e2b12f0642c74a19307b1f9",
+      "version": "1.45.1"
+    },
+    {
+      "name": "opentelemetry-exporter-otlp-proto-http",
+      "record_sha256": "6444b02e6f733b892a3b0b59bde4658aa90f6ff297a7c5e9296a0fa7fa556dbf",
+      "version": "1.45.1"
+    },
+    {
+      "name": "opentelemetry-proto",
+      "record_sha256": "f9a89083230c77c0bf49aaef0c81800cd89cbe6d5bc72200cc8acfa216331aa2",
+      "version": "1.45.1"
+    },
+    {
+      "name": "opentelemetry-sdk",
+      "record_sha256": "5325df189661361c28ecb2bcc64b0375ea7ab6f47c63090722d8ca09e2066b4e",
+      "version": "1.45.1"
+    },
+    {
+      "name": "opentelemetry-semantic-conventions",
+      "record_sha256": "7648d517a2d1b5d05dad75a99865c2f41e9ca43422aba77506e5d833d08e9ba6",
+      "version": "0.66b1"
+    },
+    {
+      "name": "prometheus_client",
+      "record_sha256": "a3de3595cdb2152ad3a9bd8f20c4db412eec75846f8ea381e34909e43adf9237",
+      "version": "0.26.0"
+    },
+    {
+      "name": "protobuf",
+      "record_sha256": "d398ae03862eab49c2ac744b9a44ed14521a31b2d1789baa45504028780f47aa",
+      "version": "7.36.2"
     },
     {
       "name": "psycopg",
@@ -121,6 +186,16 @@
       "version": "2.15.1"
     },
     {
+      "name": "PyYAML",
+      "record_sha256": "05fc51f58555b5e19e3e6a7d32627cd54fb3384fa9fd8c98f3402e178235b6df",
+      "version": "6.0.3"
+    },
+    {
+      "name": "requests",
+      "record_sha256": "7bba0196a873a09fd85f983bc50ee47c430a4edd6e7ba3cbc8a0cce21c3cd215",
+      "version": "2.34.2"
+    },
+    {
       "name": "SQLAlchemy",
       "record_sha256": "e89fd1a29369af2f7cfad4d01ef0c35417166817a3631c9c188defdeb12854f3",
       "version": "2.1.4"
@@ -141,6 +216,11 @@
       "version": "4.16.0"
     },
     {
+      "name": "urllib3",
+      "record_sha256": "452e7f733959ed7b6588ade3fa51306b6c8893dee7b780d7f5c3346d8cb6ec9d",
+      "version": "2.8.0"
+    },
+    {
       "name": "uvicorn",
       "record_sha256": "ae4e094f42db8216d74b91fdfafef89cac0005b7ed631901f7d11e6b55602481",
       "version": "0.35.0"
@@ -151,11 +231,11 @@
   },
   "schema": "aegisgraph/sbom/v1",
   "source": {
-    "commit": "92f68036e1912d433898aa1cd16c5a7bdefd727e",
+    "commit": "57596f304b726bbd08b1c6cbf4e605d16237fd7f",
     "dirty": false,
-    "requirements_lock_sha256": "b49b8c5d328f5823f07f5aa96bbc63572376e857a982bff2050781d57b5f93fd"
+    "requirements_lock_sha256": "d0bf0f5504aa8c5da890c6913b2b4faa36f5e0476daced5ee7359eefd15730d3"
   },
   "totals": {
-    "packages": 23
+    "packages": 39
   }
 }

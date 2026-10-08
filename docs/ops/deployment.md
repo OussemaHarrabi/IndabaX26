@@ -114,12 +114,15 @@ The validator prints a NOTE whenever the image is tag-pinned rather than
 digest-pinned, so the deviation is visible in every CI run.
 
 **Rule: any recorded image ID must name the lock revision it was built from.**
-`requirements.lock` gained the whole M2 stack, and the image digest moved with
-it. The portable provenance triple is **(commit, `requirements.lock` blob
-SHA-256, exact build command)**; the image ID is the checksum of the artifact you
-actually built and is context-sensitive (see the table in
-`docs/ops/container.md`). At commit `4350af3` the lock blob is
-`b49b8c5d328f5823f07f5aa96bbc63572376e857a982bff2050781d57b5f93fd`.
+`requirements.lock` gained the M2 persistence/auth stack and then the M3
+observability stack (23 → 39 pinned entries), and the image digest moved with it.
+The portable provenance triple is **(commit, `requirements.lock` content hash,
+exact build command)**; the image ID is the checksum of the artifact you actually
+built and is context-sensitive (see the table in `docs/ops/container.md`). At
+commit `57596f3` the lock content hash is
+`d0bf0f5504aa8c5da890c6913b2b4faa36f5e0476daced5ee7359eefd15730d3` (39 entries).
+`scripts/check_sbom_freshness.py` enforces that the committed SBOM still names
+this value, in CI.
 
 ## Deploying with the schema
 
@@ -192,8 +195,8 @@ python scripts/generate_sbom.py --image aegisgraph:m4 --deterministic \
 
 | Artifact | SHA-256 (git blob) |
 | --- | --- |
-| `deploy/sbom/aegisgraph-image-sbom.json` | `14949d1b921cf5dca0cd2c55b12508f84d93205371ad066addc239a0b3144143` |
-| `deploy/sbom/aegisgraph-image-sbom.requirements.txt` | `e4539d17fbcfc892e907fb83eab67c81ea025ed7de9d9a6065eb323e31dfac3e` |
+| `deploy/sbom/aegisgraph-image-sbom.json` | `142273255283014cc99214466f5bb2cf2305bac35edfeda83be0bf3ae4909572` |
+| `deploy/sbom/aegisgraph-image-sbom.requirements.txt` | `e7b307190f694cda027f474ab7de7ab3ddf043de9f9f64e6ba214b84acfee8ad` |
 
 Both are **blob** digests (`git show HEAD:<path> | sha256sum`). `.gitattributes`
 marks `*.json` as `-text`, so the manifest's blob bytes are stable; the `.txt`
@@ -201,7 +204,7 @@ inventory is LF in the blob and a Windows working copy may materialize CRLF, so
 hash the blob for both.
 
 The manifest records `image.id` (the content digest of the build that produced
-it — `sha256:f36f6e1e…` for the current revision; the image is built with
+it — `sha256:bb373f36…` for the current revision; the image is built with
 `--provenance=false --sbom=false`, see `docs/ops/container.md`),
 `source.requirements_lock_sha256` (the lock revision it corresponds to) and
 `source.commit`. Because the manifest is committed after the commit it describes,
