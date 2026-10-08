@@ -1,0 +1,30 @@
+{
+  "cipher": "AES-256-GCM",
+  "ciphertext_sha256": "52f67318c248b7a7be90b4d47988b676fe492e29a5b8a926d89df5b665c00c05",
+  "created": "2026-10-08T18:27:35Z",
+  "domains": [
+    "enterprise",
+    "finance",
+    "soc"
+  ],
+  "families": [
+    "confirmation_bypass",
+    "direct_prompt_injection",
+    "indirect_prompt_injection",
+    "memory_poisoning",
+    "output_integrity",
+    "provenance_laundering",
+    "replay_tampering",
+    "sensitive_data_exfiltration",
+    "unauthorized_tool_use",
+    "unsafe_rewrite"
+  ],
+  "kdf": "scrypt-n32768-r8-p1",
+  "nonce_hex": "28b3fd37d5f039af58227273",
+  "note": "Sealed at M5 authoring; opened only by the orchestrator after the policy freeze.",
+  "plaintext_sha256": "7c0990b4b854141b9f645dce64e9d8f6f94a09010ac6e68a8b5baba35547eaf6",
+  "salt_hex": "1efd3ee55edc8cc2734755b86bf0a45e",
+  "scenario_count": 20,
+  "schema_version": "aegisgraph-benchmark-holdout/v1",
+  "sealed_file": "holdout/sealed-holdout.json.enc"
+}
