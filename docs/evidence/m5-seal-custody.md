@@ -2,6 +2,26 @@
 
 Owner: orchestrator. This file records **where the key is**, never the key itself.
 
+## Rotation history
+
+| | Seal #1 | Seal #2 (current) |
+| --- | --- | --- |
+| Sealed at | `2026-10-08T18:27:35Z` | `2026-10-08T19:00:55Z` |
+| Ciphertext SHA-256 | `52f67318c248b7a7be90b4d47988b676fe492e29a5b8a926d89df5b665c00c05` | `c1a32fb801e18f9a0e841ea61214401d08ab2999caf9b39fe7833ffebb78d91c` |
+| Plaintext SHA-256 | `7c0990b4b854141b…` | `7c0990b4b854141b9f645dce64e9d8f6f94a09010ac6e68a8b5baba35547eaf6` (unchanged) |
+| Scenarios | 20 | 20, proved identical by comparing every scenario hash before and after |
+| Custodian key | `sha256_8 3e841bb7` | `sha256_8 55400043` |
+
+**Why it was rotated.** An independent research review (Agent I2, finding I2-07) found that seal #1's key had been handed
+over inside an agent handover that is persisted in a local session transcript, so the key was recoverable from disk by
+anything that could read that transcript. Seal #1's key is therefore **void**; it was overwritten in place and the
+old ciphertext is preserved outside the repository at `C:/Users/oussa/.aegisgraph/rotate/old-seal/` for history only.
+
+The rotation was performed with a key generated directly into the out-of-repo file and never printed: open with the old
+key → regenerate the key → re-seal → reopen with the new key and compare the full scenario set → delete the plaintext.
+Verification with the new key: `opened: true`, `opened_scenario_count: 20`, `RESULT: PASS`, and the plaintext hash
+matches seal #1's, which is what proves the same 20 scenarios were re-sealed rather than a different set.
+
 ## What is sealed
 
 | Item | Value |
@@ -9,10 +29,10 @@ Owner: orchestrator. This file records **where the key is**, never the key itsel
 | Manifest | `benchmark/data/holdout/seal.json` |
 | Sealed payload | `benchmark/data/holdout/sealed-holdout.json.enc` |
 | Cipher / KDF | AES-256-GCM / scrypt-n32768-r8-p1 |
-| Ciphertext SHA-256 | `52f67318c248b7a7be90b4d47988b676fe492e29a5b8a926d89df5b665c00c05` |
-| Plaintext SHA-256 (recorded, not published as ids) | `7c0990b4b854141b…` (full value in `seal.json`) |
+| Ciphertext SHA-256 | `c1a32fb801e18f9a0e841ea61214401d08ab2999caf9b39fe7833ffebb78d91c` |
+| Plaintext SHA-256 (recorded, not published as ids) | `7c0990b4b854141b9f645dce64e9d8f6f94a09010ac6e68a8b5baba35547eaf6` |
 | Scenario count | 20, across enterprise / finance / SOC, ten attack families |
-| Sealed at | `2026-10-08T18:27:35Z` |
+| Sealed at | `2026-10-08T19:00:55Z` |
 
 ## Custody
 
