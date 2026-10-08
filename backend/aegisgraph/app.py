@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -39,6 +40,62 @@ _DASHBOARD_CSP = (
 MAX_BODY_BYTES_ENV = "AEGISGRAPH_MAX_BODY_BYTES"
 DEFAULT_MAX_BODY_BYTES = 1_048_576
 """Upper bound for a request body, enforced before the body is parsed (F5)."""
+
+LOG_LEVEL_ENV = "AEGISGRAPH_LOG_LEVEL"
+DEFAULT_LOG_LEVEL = logging.INFO
+_DECISION_HANDLER_NAME = "aegisgraph-decision-stdout"
+
+
+def log_level() -> int:
+    """Return the configured service log level (default ``INFO``)."""
+
+    raw = os.environ.get(LOG_LEVEL_ENV)
+    if raw is None:
+        return DEFAULT_LOG_LEVEL
+    resolved = logging.getLevelNamesMapping().get(raw.strip().upper())
+    return resolved if isinstance(resolved, int) else DEFAULT_LOG_LEVEL
+
+
+class _DecisionStreamHandler(logging.Handler):
+    """Write decision records to the current stdout.
+
+    The stream is resolved at emit time rather than captured at construction, so
+    output redirection (containers, pipes, test capture) is honoured.
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            stream = sys.stdout
+            stream.write(f"{self.format(record)}\n")
+            stream.flush()
+        except Exception:  # pragma: no cover - logging must never break a decision
+            self.handleError(record)
+
+
+def configure_logging() -> None:
+    """Route ``aegisgraph`` records to stdout for the running service.
+
+    The decision record is a structured JSON line, so the handler emits the
+    message verbatim. Only the application boundary configures logging: importing
+    a library module such as ``aegisgraph.engine`` never touches global logging
+    state. The call is idempotent, so a reloaded application does not stack
+    handlers. Records still propagate, so a host that configures the root logger
+    keeps receiving them.
+    """
+
+    level = log_level()
+    logger = logging.getLogger("aegisgraph")
+    logger.setLevel(level)
+    for handler in logger.handlers:
+        if handler.get_name() == _DECISION_HANDLER_NAME:
+            handler.setLevel(level)
+            return
+    handler = _DecisionStreamHandler()
+    handler.set_name(_DECISION_HANDLER_NAME)
+    handler.setLevel(level)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(handler)
+
 
 app = FastAPI(
     title="AegisGraph SENTINEL v1 defense API",
@@ -220,3 +277,6 @@ def _to_wire_response(decision: GuardDecision) -> SentinelResponse:
     """Translate canonical enums into the strict public response contract."""
 
     return wire_response(decision)
+
+
+configure_logging()

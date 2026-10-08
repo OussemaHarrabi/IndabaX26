@@ -102,6 +102,8 @@ no secrets and no canary values:
 `event`, `request_id`, `receipt_id`, `policy_set`, `verdict`, `reason_codes`,
 `action_digest`, `execution_digest`, `latency_ms`, `caller`.
 
+The application boundary attaches a stdout handler for this logger at start-up
+(section 3a), so the record appears in `docker logs` and on the service console.
 `caller` is a placeholder and is always `null` until Milestone 2 supplies the
 authenticated caller identity.
 
@@ -111,7 +113,17 @@ authenticated caller identity.
 | --- | --- | --- |
 | `api_version` | `"aegisgraph/v1"` | |
 | `policy_set` | `{id, version}` | the server's active policy set: `{"id": "aegisgraph-default", "version": "1"}` |
-| `build` | object | `{service, version, commit}`; `version` is the installed distribution version, else the source `pyproject.toml` version, else `"unknown"`; `commit` comes from `AEGISGRAPH_BUILD_COMMIT`, else `"unknown"` |
+| `build` | object | `{service, version, commit}`; `version` is `AEGISGRAPH_BUILD_VERSION` when set (CI and Compose set it at image build time), else the installed distribution version, else the source `pyproject.toml` version, else `"unknown"`; `commit` is `AEGISGRAPH_BUILD_COMMIT` when set, else `"unknown"` |
+
+## 3a. Service logging
+
+The application boundary (`backend/aegisgraph/app.py`) attaches one stdout handler
+to the `aegisgraph` logger at start-up. Importing a library module such as
+`aegisgraph.engine` never configures global logging, and the call is idempotent.
+The handler resolves `sys.stdout` at emit time, so container, pipe and test
+redirection are honoured. The level comes from `AEGISGRAPH_LOG_LEVEL` (default
+`INFO`; an unparsable value falls back to `INFO`). Setting the level to `WARNING`
+or higher suppresses the decision records, which are emitted at `INFO`.
 
 ## 4. Bounds and status codes
 
