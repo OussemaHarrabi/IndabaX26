@@ -21,8 +21,8 @@ omitted: each milestone gates on its exit criteria, not on a calendar.
 | **M4** | CI/CD + containers + deployment | Pipelines and gates; hardened Compose stack; Kubernetes manifests validated and smoke-tested | M1, M2 | ADR-0005 | `implemented` with three named gaps: **no GitHub-hosted CI run has ever executed**, **no cluster smoke test** (`kind` absent), and **F9** — the suite must run *inside* the built image (CI now runs it with a PostgreSQL service, but not in the image) |
 | **M5** | Evaluation framework + benchmark data | Native evaluation schema authoritative; versioned legacy adapter; benchmark data + reachability gate | M1 | ADR-0004 | `implemented` — schema, 60-scenario dataset, deterministic scoring, sealed holdout; **scripted adapter only**, no holdout run |
 | **M6** | Empirical campaign | Real-model runs, multi-seed variance, component ablations, generalization | M2, M5 | ADR-0004 | `partial` — **freeze block 1 declared and its scripted results recorded** (`4481e26`/`f3129d0`, gateway `818cf1f`): C1 digest `b6951afb…`, 60 scenarios, 0 errors, ASR 0.5000 intention-to-treat, benign 0.9667, FBR 0.0556; C3 legacy recheck `8669aadb…`; delta vs the previous reference a **null result** on 60/60 verdicts, proven by the independent campaign audit (Agent I3), which reproduced every number (ledger P68). **Three provenance gaps recorded:** the gateway identity is runner-attested, the credential's scopes/ceiling are not in the artifact, and campaign latency is not comparable to the in-process run. The real-model cells stay **blocked** (no `ollama`, GPU or paid API) |
-| **M7** | Independent review | Adversarial and security review of the new surfaces; reproducibility audit | M3, M4, M6 | all | `partial` — three adversarial reviews (M0 `L15`, M1–M5 `P25–P29`, M2 surface `P54–P62`), an independent research/reproducibility audit (`P30–P52`) and an independent campaign audit (I3, `P68`) have landed; what remains is the reproducibility audit of every headline claim and an independent re-run of the gates |
-| **M8** | Docs + demo + release | Documentation, demo, versioned release, provenance manifest | M5, M6, M7 | all | `partial` — the runnable demo script (`docs/demo/demo-script.md`) and the bounded CV-claims document (`docs/evidence/cv-claims.md`) landed at `57596f3`; the release provenance manifest (ledger P8) is still `pending` |
+| **M7** | Independent review | Adversarial and security review of the new surfaces; reproducibility audit | M3, M4, M6 | all | `partial` — three adversarial reviews (M0 `L15`, M1–M5 `P25–P29`, M2 surface `P54–P62`), an independent research/reproducibility audit (`P30–P52`), an independent campaign audit (I3, `P68`) and the M3 telemetry/load review (H4, `P75–P84`) have landed — six vectors in all; what remains is the reproducibility audit of every headline claim and an independent re-run of the gates |
+| **M8** | Docs + demo + release | Documentation, demo, versioned release, provenance manifest | M5, M6, M7 | all | `implemented` — the release is tagged **`v0.1.0-industrial`** at `eb33d2c`: `docs/release-notes.md`, the 39-entry `docs/evidence/release-manifest.json` (`scripts/release_manifest.py --verify` → all 39 digests match in a fresh clone at the tag), the runnable demo script and the bounded CV-claims document. **Residuals named, not done:** P9 (multi-seed real-model campaign — `blocked` on the runtime, which the exit asks for), P10 (the independent re-run of the gates, in flight against the tag) and P49 (no characterisation test pins the seal/scoring boundary) |
 
 ### M0 execution status (closed)
 
@@ -343,13 +343,14 @@ milestone owns each finding.
 ### M7 — Independent review
 
 - **Entry:** M3, M4, M6.
-- **Status:** `partial`. Five independent exercises have landed: the M0
+- **Status:** `partial`. **Six** independent exercises have landed: the M0
   adversarial review (ledger `L15`), the M1–M5 adversarial review (`P25–P29`), the
   M2-surface adversarial review (`P54–P62`), a read-only research &
   reproducibility audit (`P30–P52`, which reproduced the legacy chain, the artifact
-  hashes, the mock table and the native reference) and an independent campaign
-  audit of the M6 results (`P68`). Still open: the audit of **every** headline
-  claim and an independent re-run of the gates (ledger `P10`).
+  hashes, the mock table and the native reference), an independent campaign audit
+  of the M6 results (`P68`) and the M3 telemetry/load adversarial review
+  (`P75–P84`). Still open: the audit of **every** headline claim and an independent
+  re-run of the gates (ledger `P10`, in flight against the release tag).
 - **Work:** adversarial and security review of the new surfaces (API boundary,
   store, auth, telemetry); reproducibility audit of every headline claim;
   independent re-run of the evaluation gates.
@@ -359,13 +360,19 @@ milestone owns each finding.
 ### M8 — Docs + demo + release
 
 - **Entry:** M5, M6, M7.
-- **Status:** `partial` — the runnable demo script (`docs/demo/demo-script.md`)
-  and the bounded CV-claims document (`docs/evidence/cv-claims.md`, 23 bounded
-  bullets across 8 capability groups plus a `Not claimed (yet)` section) landed at
-  `57596f3` (`593c525`); the script's six steps were reproduced live by its author
-  and its Compose/Grafana step is cited from the orchestrator's verification
-  (ledger P67). Still open: the release provenance manifest (ledger P8,
-  `pending`) and the versioned release itself.
+- **Status:** `implemented` — the release is tagged **`v0.1.0-industrial`** at
+  `eb33d2c` (annotated tag; `git describe --tags --exact-match HEAD` resolves it).
+  Deliverables: `docs/release-notes.md`, `docs/evidence/release-manifest.json`
+  (39 entries, each with `sha256_raw`/`sha256_lf`/`sha256_blob` and the convention
+  the committed blob matches; `python scripts/release_manifest.py --verify …` →
+  `OK: 39 entries re-hashed, all digests match`, run in a fresh clone at the tag),
+  the runnable demo script and the bounded CV-claims document (ledger P67/P8).
+  M8's exit is "every headline claim `verified`, or explicitly `blocked` with the
+  missing tool": the ledger's residuals are **P9** (multi-seed real-model campaign
+  — `blocked` on `ollama`/GPU/paid API, exactly what the exit asks for), **P10**
+  (the independent re-run of the gates, in flight against the tag) and **P49** (no
+  characterisation test pins the seal/scoring boundary). Not `complete`: the
+  ledger's vocabulary has no such state and these three are honestly open.
 - **Work:** documentation truth pass; a demo of a decided, enforced action with a
   receipt; versioned release with a provenance manifest (paths + SHA-256);
   dependency audit; migrate the legacy evidence links.
