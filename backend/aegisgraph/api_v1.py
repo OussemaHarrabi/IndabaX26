@@ -2,9 +2,14 @@
 
 The legacy ``POST /v1/decision`` wire stays byte-compatible and is served by
 :mod:`aegisgraph.app`. This module adds the industrial contract: a required API
-version, a server-computed request and receipt identity, both action digests, a
+version, a server-computed receipt identity, both action digests, a server-resolved
 policy identity, a bounded validity window, strict confirmation binding, and one
 structured decision record per request.
+
+``request_id`` is the **caller's** correlation and idempotency key: it is preserved
+verbatim (H2-05), because a client must be able to reuse it when it retries. The
+server-computed decision identity is ``receipt_id``; it is what the audit trail and
+the enforcement SDK key on, and it is never derived from caller input.
 
 Nothing here executes a candidate action; it only decides.
 """
@@ -108,6 +113,12 @@ class GenericDecisionRequest(SentinelRequest):
         min_length=1,
         max_length=128,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+        description=(
+            "Caller-supplied correlation and idempotency key, preserved verbatim. "
+            "Receipts are keyed by (tenant_id, request_id); reusing it for the same "
+            "action returns the stored receipt, reusing it for a different action is "
+            "refused with 409. Omitted: the server generates one."
+        ),
     )
     policy_set: PolicyIdentity | None = None
 
@@ -119,7 +130,10 @@ class GenericDecisionResponse(SentinelResponse):
 
     api_version: Literal["aegisgraph/v1"]
     request_id: str = Field(min_length=1, max_length=128)
-    receipt_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    receipt_id: str = Field(
+        pattern=r"^[0-9a-f]{32}$",
+        description="Server-computed decision identity; the audit trail keys on it.",
+    )
     policy_set: PolicyIdentity
     action_digest: str = Field(pattern=r"^[0-9a-f]{24}$")
     execution_digest: str = Field(pattern=r"^[0-9a-f]{24}$")
