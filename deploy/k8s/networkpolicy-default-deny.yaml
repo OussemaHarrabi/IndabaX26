@@ -1,0 +1,13 @@
+# Default deny: no pod in the namespace accepts or initiates traffic unless a
+# later policy explicitly allows it. Every allowance below is by label and port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  labels:
+    app.kubernetes.io/name: aegisgraph
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
