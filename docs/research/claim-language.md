@@ -1,6 +1,8 @@
 # AegisGraph permitted claim language
 
-**Status:** preregistered · **Version:** 1.0 · **Date:** 2026-10-08
+**Status:** preregistered · **Version:** 1.1 · **Date:** 2026-10-08
+(amendment 1: the corrected p and the control-liveness count are required
+qualifiers; the holdout template names the `policy.blob_sha256` gate input)
 **Companion documents:** `research-plan.md` (hypotheses), `design.md` (case-series
 boundary), `statistics.md` (reporting format). Labels as in `research-plan.md`.
 
@@ -26,6 +28,13 @@ message that violates it is a defect and must be corrected before release.
    unreached attacks) travel with the numbers.
 7. **No future tense for unbuilt work.** Label `proposed` or `blocked`; never
    describe a planned capability as present.
+8. **Corrected p, not raw p.** A confirmatory claim quotes the family-corrected
+   (Holm–Bonferroni) p-value with its family size `m`; a raw p may be shown only
+   marked "uncorrected". A verdict the correction overturns is reported as
+   "not confirmed", never as "holds" (`statistics.md` §5).
+9. **Liveness count travels with the claim.** Every effectiveness claim states how
+   many attack scenarios the control licensed and how many were excluded and
+   counted; a claim that hides the excluded set is a defect (`design.md` §3).
 
 ## 2. Required qualifiers by result class
 
@@ -52,13 +61,17 @@ message that violates it is a defect and must be corrected before release.
 
 - **Template.** "On \<suite\> (\<n\> scenarios, benchmark commit \<c\>) with
   \<model\> \<quantization\> at temperature \<t\> seed \<s\>, among the `|R|`
-  attacks reached under allow-all, \<defense label\> (commit \<sha\>) stopped
+  attacks reached under allow-all (of \<attacks\> attack scenarios; \<excluded\>
+  excluded from the claim and counted), \<defense label\> (commit \<sha\>) stopped
   `b/|R|` (allow-all `|R|/|R|`; built-in provenance `p/|R|`), with benign task
-  success `k/n_benign`. Exact McNemar p = \<p\>, conditional on this fixed case
+  success `k/n_benign`. Exact McNemar p = \<p\> raw, \<p_adj\> after
+  Holm–Bonferroni over the \<m\>-member family, conditional on this fixed case
   series. One seeded run on a synthetic suite."
-- **Forbidden.** Dropping the reached-set sentence; reporting the full-suite ASR
-  (31-denominator) as the effect; calling the result "significant" without the
-  conditional qualifier; calling a null a success.
+- **Forbidden.** Dropping the reached-set sentence; dropping the liveness count;
+  reporting the full-suite ASR (31-denominator) as the effect; calling the result
+  "significant" without the conditional qualifier; calling a result significant on
+  its raw p when the corrected p does not clear the threshold; calling a null a
+  success.
 
 ### 2.3 Mock / development result
 
@@ -99,11 +112,13 @@ message that violates it is a defect and must be corrected before release.
 ### 2.7 Holdout result (RQ5)
 
 - **Allowed.** "On the sealed holdout (\<count\> scenarios, seal digest \<h\>),
-  frozen at \<tag\> with policy blob hashes unchanged between freeze and unseal, the
-  reached-attack success was `a/b`, a gap of `+g` against the public reached set.
-  One-shot evaluation; the holdout is now retired."
+  frozen at \<tag\> with `policy.blob_sha256` unchanged between freeze and unseal,
+  the reached-attack success was `a/b`, a gap of `+g` against the public reached
+  set. One-shot evaluation; the holdout is now retired."
 - **Forbidden.** Reporting a holdout result after a second use without retiring the
-  set; reporting it without the seal-integrity check; tuning on it.
+  set; reporting it without the seal-integrity check (`policy.blob_sha256`, H5.2);
+  reporting it at all while the gate is not instrumented (`research-plan.md` §6.4);
+  tuning on it.
 
 ### 2.8 Operational result (RQ4)
 
