@@ -98,9 +98,22 @@ first, single opening into a temporary directory, no tuning afterwards) and the 
 
 | Field | Value |
 | --- | --- |
-| Declared by | _not yet declared_ |
-| Declared at | _not yet declared_ |
-| Gateway commit | _not yet declared_ |
-| Dataset / scenario-set / policy hashes | _not yet declared_ |
-| Run directories | _not yet declared_ |
-| Known deviations from this document | _none yet_ |
+| Declared by | orchestrator (integration owner) |
+| Declared at | 2026-10-08, after the M2 corrective round (`29fa3ba`) and the CI/SBOM round (`818cf1f`) |
+| Gateway commit | `818cf1f` (`818cf1f29795aa5d1e92b90fe4dfd4ed13174e03`), working tree clean: `yes` |
+| Dataset hash | `7e916a11981fa6444724dc78558e51561d32a3005b182862efb52b7c5f2cf735` |
+| Scenario-set hash | recorded by the run manifest at run time (`scenario_set.sha256`) |
+| Policy set identity | published by `scripts/bench_policies.py` at run time; the manifest records `policy_set` and `policy.blob_sha256` under the `content-sha256-lf` convention |
+| Scoring code | `benchmark/scoring.py` blob `dba46280df9ddf3dca69c71a18eb2e725e1cbdffc1c424aaef601a6eab7e8c3d`; `benchmark/runner.py` blob `b75eab7e8b74736749fe4d49a471a4538b3e342de19aa22ec575200e256bf2a7`; `docs/research/analysis.py` blob `3b7c1476abdaac00bab0bf67355ecb2ff110234f0700b51c2d146626e73a94a0` |
+| Model configuration | `model.kind = scripted` (blocked cells unchanged — §4) |
+| Seed / temperature / max tokens | `1729` / `null` / `null` |
+| Splits | `development,validation`; the sealed holdout stays closed |
+| Reachability control | the runner's internal allow-all control |
+
+**Known deviation to record up front:** the earlier reference run
+(`benchmark/runs/20261008T230000Z-m2-authenticated-full/`, digest `8d79f032…`) is **not expected to reproduce** at this
+freeze, because the third review's fixes changed which requests the generic surface accepts (the induced-label trust
+ceiling, H3-01) and how an override policy identity is reported (H3-04). The campaign report must state the delta
+explicitly and treat it as a measurement of the fix, not as a regression.
+
+**No gateway, policy, dataset or scoring change is permitted between this block and the recording of the results.**
