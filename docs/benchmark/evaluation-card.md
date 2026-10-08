@@ -338,7 +338,7 @@ scripted adapter, splits `development,validation`, 60 scenarios, dataset
 `7e916a11…`, scenario set `e4f376b2…`, policy blob
 `80a5dfeb257142cb8a28517f4e3206acbe32d50530767b9e892b5f788a875151`. Its decision
 digest is
-`673722b56f4f27e4a6692cd8ba89eb36c5b781d8ec4467f6f688ed146ee2cf9d`; the run
+`843b20f0f1a92f8a6e28f727d9b24982e6063b8bce70c29a07a0c36c4e13556d`; the run
 licensed all 30 attacks (`control_licensed = 30`, `control_excluded = 0`,
 `effectiveness_claim = true`). Its README carries the exact commands; re-running
 on another host must reproduce the digest and may move the latencies.

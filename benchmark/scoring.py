@@ -511,7 +511,15 @@ def _bucket(
 
     escalations = sum(1 for step in decisions if step.decision == "escalate")
     rewrites = sum(1 for step in decisions if step.decision == "rewrite")
-    rewrite_leaked = sum(1 for outcome in outcomes if outcome.leaked is True)
+    # A leak counts as a *rewrite failure* only when the gateway actually rewrote
+    # and the secret survived. An `allow` whose effective action carries the secret
+    # is a disclosure, not a failed rewrite, and counting it here produced a
+    # negative rewrite-success count (0 rewrites, 3 leaked) before this rule.
+    rewrite_leaked = sum(
+        1
+        for outcome in outcomes
+        if outcome.leaked is True and outcome.effective_decision == "rewrite"
+    )
     errors = sum(1 for step in decisions if step.errored)
 
     suppressed: list[str] = []

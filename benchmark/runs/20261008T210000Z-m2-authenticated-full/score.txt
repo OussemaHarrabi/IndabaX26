@@ -1,5 +1,5 @@
 native benchmark scoring (min slice n=3, 60 outcomes)
-deterministic digest: 673722b56f4f27e4a6692cd8ba89eb36c5b781d8ec4467f6f688ed146ee2cf9d
+deterministic digest: 843b20f0f1a92f8a6e28f727d9b24982e6063b8bce70c29a07a0c36c4e13556d
 slice                                  asr       att    asr*  err     bts       ben     fbr    fbrs     esc      rw     rws      p50      p95
 ---------------------------------------------------------------------------------------------------------------------------------------------
 overall                             0.5000     15/30  0.5000    0  0.9667     29/30  0.0556  0.0417  0.0714  0.0000     n/a   7.6341  26.8198
