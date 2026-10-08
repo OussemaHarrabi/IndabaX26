@@ -24,17 +24,21 @@ kustomize edit set image \
   aegisgraph=ghcr.io/oussemaharrabi/aegisgraph@sha256:<digest>
 ```
 
-## Validate (offline, what CI runs)
+## Validate (offline after one pinned download, what CI runs)
 
 ```sh
-python scripts/validate_k8s_manifests.py
+python -m pip install kubernetes-validate pyyaml
+python scripts/install_kubeconform.py --dest artifacts/tools   # pinned + checksum-verified
+python scripts/validate_k8s_manifests.py --validator both
 ```
 
-This renders with `kubectl kustomize`, schema-validates with
-`kubernetes-validate` (falling back to `kubeconform` if present), and asserts the
-hardening invariants (non-root, read-only rootfs, no privilege escalation, all
-capabilities dropped, RuntimeDefault seccomp, probes, resources, default-deny
-NetworkPolicy, PodDisruptionBudget, no literal secret values).
+This renders with `kubectl kustomize`, schema-validates with both
+`kubernetes-validate` (offline) and `kubeconform` (strict, pinned v0.7.0), and
+asserts the hardening invariants (non-root, read-only rootfs, no privilege
+escalation, all capabilities dropped, RuntimeDefault seccomp, probes, resources,
+default-deny NetworkPolicy, PodDisruptionBudget, no literal secret values).
+`--validator auto` (the default) runs `kubernetes-validate` and adds
+`kubeconform` when it is available.
 
 `kubectl apply --dry-run=client` is **not** usable here: kubectl attempts API
 discovery even for client dry-run and fails without a cluster.

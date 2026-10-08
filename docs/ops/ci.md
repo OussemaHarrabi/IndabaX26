@@ -26,6 +26,27 @@ disabling it makes the recorded digest a reproducible content digest (see
 `docs/ops/deployment.md` and `docs/ops/container.md`). The equivalent local
 command is `docker build --provenance=false --sbom=false -t aegisgraph:local .`.
 
+### The `kubernetes` job's validators
+
+`kubernetes-validate` comes from pip. `kubeconform` is **not** on `PATH` by
+default, so the job installs it with `python scripts/install_kubeconform.py`,
+which pins v0.7.0 and verifies the downloaded asset against the vendor's
+published SHA-256 before extracting it. The job then runs
+`python scripts/validate_k8s_manifests.py --validator both`, so both validators
+run and must agree. The script's default `--validator auto` runs
+`kubernetes-validate` and adds `kubeconform` only if it is already available,
+printing a NOTE when it is not — it never silently claims a cross-check it did
+not perform.
+
+### Where the `compose` job's values come from
+
+The `compose` job runs `cp .env.example .env` and then
+`docker compose config --quiet`. The values are therefore the **placeholders in
+the committed `.env.example`** — no CI secret is used, nothing is started, and
+nothing is deployed. `.env` is removed afterwards (`rm -f .env`) and is never
+committed or uploaded. This is exactly why `compose.yaml` uses the `:?`
+interpolation form: the check would fail closed if the variable were absent.
+
 ## Coverage gate: the exact baseline and the ratchet rule
 
 The gate is `python -m pytest -q --cov=aegisgraph --cov-report=term-missing
@@ -64,13 +85,15 @@ python -m pip_audit -r requirements.lock --strict --progress-spinner off
 python -m bandit -r backend -q --severity-level medium
 
 # container
-docker build -t aegisgraph:ci .
+docker build --provenance=false --sbom=false -t aegisgraph:ci .
 docker run ... --read-only ... aegisgraph:ci        # see docs/ops/container.md
 python scripts/generate_sbom.py --image aegisgraph:ci
 
-# kubernetes
+# kubernetes (kubeconform is optional but reproducible: pinned + checksum-verified)
 python -m pip install kubernetes-validate pyyaml
-python scripts/validate_k8s_manifests.py
+python scripts/install_kubeconform.py --dest artifacts/tools
+python scripts/validate_k8s_manifests.py --validator both \
+    --kubeconform artifacts/tools/kubeconform.exe
 
 # compose
 cp .env.example .env && docker compose config --quiet && rm -f .env
@@ -103,6 +126,7 @@ action surface minimal; no registry push happens in M4.
 | pip-audit | 2.10.1 |
 | bandit | 1.9.4 |
 | kubernetes-validate | 1.36.0 |
+| kubeconform (pinned installer) | 0.7.0 |
 | Docker Engine / Compose | 29.6.2 / v5.3.1 |
 
 ## What is not verified here
