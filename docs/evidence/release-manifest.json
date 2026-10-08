@@ -3,16 +3,24 @@
   "generator": "scripts/release_manifest.py",
   "generator_version": "1.0.0",
   "generation": {
-    "generated_at": "2026-10-08T21:19:23.581606Z",
+    "generated_at": "2026-10-08T21:26:43.404432Z",
     "digest_bound": false,
-    "note": "the generation time is not part of any digest and nothing here hashes it"
+    "note": "the generation time is not part of any digest and nothing here hashes it",
+    "superseded": [
+      {
+        "commit": "e4a43164fb9ef14c781739d8d836137218440488",
+        "mismatches": 8,
+        "reason": "first generation, at the integration tip before the review-closure, corrected-figure and release merges; four listed documents changed afterwards, so --verify reported 8 digest mismatches (4 paths x 2 conventions) against it"
+      }
+    ]
   },
   "release": {
     "tag": "v0.1.0-industrial",
     "version": "v0.1.0-industrial",
-    "commit": "e4a43164fb9ef14c781739d8d836137218440488",
-    "commit_input": "HEAD",
-    "branch": "feat/m8-release"
+    "commit": "7f4f661d645340d642bd7c94bfdbb6dd03b7fe01",
+    "commit_input": "7f4f661",
+    "branch": "feat/m8-release",
+    "self_reference": "the digests describe the tree of release.commit; this manifest is added in that commit's child, which the tag points at, and --verify re-hashes the listed artifacts only, because a manifest cannot hash itself"
   },
   "hash_conventions": {
     "sha256_raw": "sha256 of the bytes exactly as they exist on disk in this checkout",
@@ -319,30 +327,30 @@
       "path": "docs/architecture/roadmap.md",
       "kind": "doc",
       "note": "authoritative M0-M8 milestone map and the blocked-by-tooling ledger",
-      "bytes": 31632,
-      "sha256_raw": "1ebf031380f773d8a28f492487e06748b3fb3f3da761d5455c4c357fa9b3daa0",
-      "sha256_lf": "75b771034a2e03d6fefa3e6678ed3f2e5542b0b5df21a2b9f2b0464c330b482e",
-      "sha256_blob": "75b771034a2e03d6fefa3e6678ed3f2e5542b0b5df21a2b9f2b0464c330b482e",
+      "bytes": 32214,
+      "sha256_raw": "28039dc202570d110c98ca0054a3bf7b96cb2cc396fcdf5d19f56ec650ba5c65",
+      "sha256_lf": "26c4baed925d4fc51f82146a1c3de58dd3e23aab96552442d44fd91f50026bea",
+      "sha256_blob": "26c4baed925d4fc51f82146a1c3de58dd3e23aab96552442d44fd91f50026bea",
       "blob_matches": "lf"
     },
     {
       "path": "docs/evidence/ledger.md",
       "kind": "doc",
       "note": "claim-to-evidence map: artifact, digest, command and commit per claim",
-      "bytes": 92570,
-      "sha256_raw": "aaf8eb9e032e42de933c570a87587fd06c4cde19c6e31576bfd88ade14392416",
-      "sha256_lf": "17fcf4e182e015d4721c3fceef46298728d113ae271f0d4bbc1ebf1cb2d039b8",
-      "sha256_blob": "17fcf4e182e015d4721c3fceef46298728d113ae271f0d4bbc1ebf1cb2d039b8",
+      "bytes": 102951,
+      "sha256_raw": "c2d31fbaec05a01999e138efbba1ec4b90b534ad839928cbca73e93519c154a2",
+      "sha256_lf": "983c2519c3f9d6d5cc7f35c7add3d9387b14950f959ec60840634a23d429bfb6",
+      "sha256_blob": "983c2519c3f9d6d5cc7f35c7add3d9387b14950f959ec60840634a23d429bfb6",
       "blob_matches": "lf"
     },
     {
       "path": "docs/evidence/m6-freeze.md",
       "kind": "doc",
       "note": "the freeze contract (section 7) and results (section 8), with hash conventions",
-      "bytes": 13372,
-      "sha256_raw": "3eed6266c7153d678faf5b4167e6f79af4510f19046e331ce95c683a4b621f06",
-      "sha256_lf": "e02da771612209ebd5c340cdb6e7a8c48ca482f09c65950cffd573db84e0553d",
-      "sha256_blob": "e02da771612209ebd5c340cdb6e7a8c48ca482f09c65950cffd573db84e0553d",
+      "bytes": 13805,
+      "sha256_raw": "f2e09bb2e79b5f99ef86b70f3d6b08e32a5b4fef627e05cd7a950448ebc5e896",
+      "sha256_lf": "4f36e65dfb156ce38115f41c9b8cd69c423839c45568399d832ed580e136e24e",
+      "sha256_blob": "4f36e65dfb156ce38115f41c9b8cd69c423839c45568399d832ed580e136e24e",
       "blob_matches": "lf"
     },
     {
@@ -359,10 +367,10 @@
       "path": "docs/research/report.md",
       "kind": "doc",
       "note": "the research report stating the headline numbers in the permitted claim register",
-      "bytes": 66786,
-      "sha256_raw": "728f2c782b11b3e7b9b1d7e4f22a0623f62ee87961a692c5de8adb1af78c46ea",
-      "sha256_lf": "c90b98e59c7cfdfb3bac74fdc2e2fb9db23919002458bc383d17ceeb2c182fae",
-      "sha256_blob": "c90b98e59c7cfdfb3bac74fdc2e2fb9db23919002458bc383d17ceeb2c182fae",
+      "bytes": 69282,
+      "sha256_raw": "00f4c5d680f544eb653c21b8c78175f85c196707f912c34c20c10a95f27721ce",
+      "sha256_lf": "40359a86e2613c0e28a5cbd43360b2ceee817afc52818574df701d76fc3c8f2b",
+      "sha256_blob": "40359a86e2613c0e28a5cbd43360b2ceee817afc52818574df701d76fc3c8f2b",
       "blob_matches": "lf"
     },
     {
