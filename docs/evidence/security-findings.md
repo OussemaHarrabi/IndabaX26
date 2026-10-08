@@ -1,92 +1,106 @@
 # Security findings register
 
-Owner: orchestrator. Source: the Milestone 0 independent adversarial review.
+Owner: orchestrator. Sources: two independent adversarial reviews. Statuses change only with evidence
+attached below.
 
-| Field | Value |
-| --- | --- |
-| Reviewer | Agent H (read-only adversarial security reviewer) |
-| Date | 2026-10-08 |
-| Reviewed revision | `770e88d` (defence code byte-identical to `649f65a`); re-verified at `192bc64` |
-| Method | code reading plus targeted live reproduction on the local stack and on the pinned container stack; temporary probes written outside the repository and deleted |
-| Raw artifact | `docs/evidence/reviews/M0-adversarial-security-review.json` (31,179 bytes, SHA-256 `8d6c50522723e54c3bbafd24267dc56020519862ccc736cdfd8a3374effe6ecf`) |
-| Scope note | the review covered the shipped decision boundary and its integration contract. Absence of a finding in this scope is **not** a claim that the system is secure |
+| Field | Review #1 (M0) | Review #2 (M1–M5) |
+| --- | --- | --- |
+| Reviewer | Agent H, read-only | Agent H2, read-only |
+| Date | 2026-10-08 | 2026-10-08 |
+| Reviewed revision | `770e88d` (defence code identical to `649f65a`) | `3353886` |
+| Raw artifact | `docs/evidence/reviews/M0-adversarial-security-review.json` (31,179 B, blob SHA-256 `8d6c50522723e54c3bbafd24267dc56020519862ccc736cdfd8a3374effe6ecf`) | `docs/evidence/reviews/M1-M5-adversarial-security-review.json` (28,934 B, SHA-256 `539d604b5a1e3a6b93f333a5584d68993abf7cb690dd3e6f1d3bfe381c2e9e24`) |
+| Finding vector | 4 high (F1–F4), 4 medium (F5, F6, F7, F9), 2 low (F8, F10) | 1 high (H2-01), 2 medium (H2-02, H2-03), 3 low (H2-04, H2-05, H2-06) |
 
-**Finding vector: 4 high (F1–F4), 4 medium (F5, F6, F7, F9), 2 low (F8, F10).** An earlier commit message on this
-branch (`d86ac83`) summarised this as "3 high, 5 medium, 2 low"; that summary was wrong and is corrected here. The
-per-finding severities in the table below were always correct, and the review artifact is the authority.
+An earlier commit message on this branch (`d86ac83`) summarised review #1 as "3 high, 5 medium, 2 low"; that was
+wrong and is corrected here. The per-finding severities in the table below were always correct, and the review
+artifacts are the authority.
 
 **Hashing rule for evidence artifacts.** These artifacts are committed as *blobs* whose bytes must not be
-transformed by a checkout. Hash the blob, not a Windows working copy:
+transformed by a checkout. Hash the blob, not a Windows working copy: `git show <commit>:<path> | sha256sum`.
+`.gitattributes` marks `*.json`/`*.jsonl` as `-text` so a checkout cannot rewrite line endings; existing legacy
+blobs were deliberately **not** renormalised, because that would change their bytes and invalidate the frozen
+digests.
 
-```
-git show <commit>:<path> | sha256sum
-```
+Status vocabulary: `fixed` (a regression test exists and the fix was verified), `accepted` (documented residual
+risk with an explicit decision), `open`.
 
-The repository's `.gitattributes` now marks `*.json` and `*.jsonl` as `-text` so a checkout cannot rewrite line
-endings. Existing legacy blobs were deliberately **not** renormalised, because renormalising would change their
-bytes and invalidate the frozen digests.
+| ID | Sev | Finding | Milestone | Status | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| F1 | high | Unauthenticated decision boundary: every security-relevant input supplied by the caller | M2 | **fixed** | Live: anonymous `POST /api/v1/decisions` → `401`; auditor token → `403` with the missing scope named; `decision_client` → `200`. `docs/api/auth.md`, `tests/test_authentication.py` |
+| F2 | high | Confirmation self-granted inside the same envelope | M2 | **fixed** | Live: a syntactically perfect grant that was never issued → `escalate / CONFIRMATION_REQUIRED`; the same grant issued through `POST /api/v1/confirmations` → `allow / CONFIRMATION_VERIFIED`; replayed in another run → `escalate`. `docs/api/receipts.md` §3, `tests/test_receipts_api.py` |
+| F3 | high | Provenance labels and policy facts were attacker-declared | M2 | **fixed (caller-authority half)**; residual `accepted` | Live: a `system_policy` label from a `trusted_internal`-ceiling credential → `403 TRUST_CEILING_EXCEEDED`; caller `policy_context` ignored without `policy:context_override` (server policy applied, `policy_set` reported from the server). **Residual:** the *harness* still supplies labels; a deployment must treat the caller as the source of truth for its own evidence, bounded by the ceiling. Documented in `docs/api/auth.md` §5–6 |
+| F4 | high | Quadratic scan in `_is_laundered_claim` (163 s for one 2 MiB request) | M1 | **fixed**, then **partially reopened as H2-01** | Live: 880,000 adversarial characters across 55 observations → 36 ms; linear 192 k/480 k/880 k → 9/17/36 ms. `tests/test_bounds.py` |
+| F5 | medium | No upper bound on request body size | M1 | **fixed** | Live: 1.2 MB body → `413` in 5 ms with a clean JSON body; boundary case `200`. `tests/test_bounds.py` |
+| F6 | medium | Confirmation matched a non-injective canonical digest; grants unbound and permanent | M1 (new surface) | **fixed** | Live: strict grant `run:step:execution_digest:expiry`; bare, expired and wrong-run grants escalate; the bound grant allows. Legacy surface keeps the canonical digest the pinned harness supplies — proved by the mock recheck being byte-identical (`8669aadb…`) |
+| F7 | medium | No decision identity, receipt or audit record at the wire | M1 + M2 | **fixed** | Live: response carries `request_id`, `receipt_id`, `policy_set`, both digests, `decided_at`, `valid_until`; exactly one structured decision record per decision with a matching `receipt_id`; receipts are persisted in PostgreSQL, readable per tenant, and append-only |
+| F8 | low | Lock pins versions without hashes | M4 | **accepted** | `requirements.lock` documents the refresh procedure, licence review and vulnerability review; hash pinning is deferred with the reason stated in the file header |
+| F9 | medium | The environment that runs the suite differs from the shipped image | M3/M4 | **open** | CI is being changed to run the suite with a PostgreSQL service; running the suite **inside** the image remains the acceptance criterion |
+| F10 | low | Application directory owned by the runtime user | M4 | **fixed** | Live: uid 10001, `/app` `dr-xr-xr-x root root`, `touch /app/breach` → "Read-only file system", no pip/compiler; read-only smoke passes |
+| H2-01 | high | Per-request CPU unbounded: the F4 fix bounded one scan, not the number of scans (`2 × sources × sentences`, each up to 64 KB) | M1 (follow-up) | **open — fix in flight** | Measured over HTTP: 8 sources × 1000 sentences (133 kB) → 23.9 s; 4 × 5300 (81 kB) → 38.4 s; instrumented call count 400 for 2 sources × 100 sentences. Acceptance: <2 s for that shape, call count ≤ distinct sources, plus a 1 MiB worst-case bound |
+| H2-02 | medium | Policy identity in the receipt/log/version was caller-asserted, making the SDK `POLICY_MISMATCH` check vacuous | M2 (follow-up) | **open — fix in flight** | Verification and/or fix requested from the M2 owner, with a test that fails if a caller can make a receipt claim a policy version that did not decide |
+| H2-03 | medium | Strict confirmation was self-attested before M2's store check | M2 | **fixed by M2** | Same live evidence as F2; the requested explicit regression test (never-issued grant, cross-run, cross-tenant) is in flight |
+| H2-04 | low | `parse_confirmation_grant` raises `ValueError` on superscript digits instead of returning `None` | M1 (follow-up) | **open — fix in flight** | Requested with the H2-01 fix |
+| H2-05 | low | `request_id` echoed verbatim while documented as server-computed | M2 (follow-up) | **open — fix in flight** | Decide and pin: server-generated, or documented as caller-preserved |
+| H2-06 | low | Holdout passphrase transcript exposure | M5 | **accepted** | `docs/evidence/m5-seal-custody.md` records the exposure, the out-of-repo key location, and the rotation procedure |
 
-Status vocabulary: `open` (confirmed, not yet fixed), `fixed` (regression test present), `accepted`
-(documented residual risk with an explicit decision).
+## Verification log (orchestrator, live, with the artefacts in the tree)
 
-| ID | Severity | Finding | Milestone | Status |
-| --- | --- | --- | --- | --- |
-| F1 | high (critical if internet-reachable) | Unauthenticated decision boundary: every security-relevant input (policy context, provenance labels, confirmation grants) is supplied by the caller; `Dockerfile` binds `0.0.0.0` | M2 | open |
-| F2 | high | Confirmation is self-granted inside the same envelope: an offline-computed action digest placed in `history_digest.confirmations_granted` turns `escalate` into `allow / CONFIRMATION_VERIFIED` | M2 | open |
-| F3 | high | Provenance trust/sensitivity labels and policy facts are attacker-declared, so the untrusted-instruction and sensitive-flow controls are switchable by relabelling evidence or editing `policy_context` | M2 | open |
-| F4 | high | Algorithmic-complexity denial of service in `_is_laundered_claim` (`_EMAIL_ADDRESS.findall`): measured 163 s of event-loop blockage for one 2 MiB request; quadratic in input length and multiplicative over sources × sentences | **M1** | open |
-| F5 | medium | No upper bound on request body size; per-field bounds only, and unknown keys are ignored, so bodies can be padded arbitrarily (768 MiB measured on the local stack) | **M1** | open |
-| F6 | medium | Confirmation and rewrite matching use the canonical digest, which is not injective (whitespace and integral-float variants collide), and grants are unbound, unexpiring, reusable across runs | **M1** | open |
-| F7 | medium | No decision identity, receipt or audit record at the wire boundary; `DecisionReceipt` exists but is never constructed outside tests | **M1** (identity + emitted record) / M2 (durable store) | open |
-| F8 | low | `requirements.lock` pins versions without hashes, so installed artifacts are not integrity-checked | M4 | open |
-| F9 | medium (evidence fidelity) | The environment that runs the suite differs from the shipped image, with a demonstrated behavioural difference (body-size memory amplification) | M3 (CI runs in the image) / M4 | open |
-| F10 | low | The application directory is owned by the runtime user, so a foothold could rewrite the service's own code unless the filesystem is read-only | M4 | open |
+- **Legacy compatibility after M1:** pinned mock suite byte-identical to the M0 recheck — 40/40 scenario labels,
+  deterministic digest `8669aadb87e94652645ae8ed1f454f6f103c21bc8960cc65bf6e051de3043dfa`, decision mix
+  150 allow / 57 block / 1 rewrite, score 0.953956.
+- **M1 surface:** one decision record per decision with a matching `receipt_id`; build identity from
+  `AEGISGRAPH_BUILD_COMMIT`/`_VERSION`; enforcement SDK executes the approved action and refuses the tampered
+  one with `digest_mismatch`.
+- **M2 with PostgreSQL 17:** `alembic upgrade head` from an empty database → `0001_initial`;
+  `alembic check` → "No new upgrade operations detected"; `454 passed` with the database, `442 passed, 12 skipped`
+  without; coverage **96.68 %** (2619/2709) with the database and 93.06 % without (which is why the CI quality
+  job is being given a database service and the floor is moving to 95).
+- **M2 live:** policy publish/activate → `201` with a checksum; receipts readable by the owning tenant and `404`
+  for another tenant; idempotent `request_id` returns the same receipt; the same `request_id` with a different
+  action → `409`; legacy surface → `404`; no credential or request content in the logs.
+- **M4:** read-only container smoke; compose config with five services; kustomize renders 7 objects; both
+  validators pass; pinned kubeconform installer verifies the vendor checksum; SBOM byte-identical across runs.
+- **M5:** validator `PASS` (60 scenarios, 42/18, six per family across ten families, dataset
+  `7e916a11981fa6444724dc78558e51561d32a3005b182862efb52b7c5f2cf735`); scoring deterministic (two runs
+  byte-identical); duplicate run directory refused; seal `verify` `PASS` with `opened: false`; the custodian key
+  opens it (20 scenarios) and lives outside the repository.
 
-## Effect on published results
-
-None of the findings changes the legacy scorecards: those runs measure the engine under a trusted-simulator
-model with a trusted caller, which remains a valid stated precondition. Two caveats must travel with the
-claims:
-
-- F6 touches the confirmation matching rule, which is exactly the mechanism behind the measured benign
-  failure in `enterprise_security_digest`. Any change to matching requires a **new** evaluation run recorded
-  as a new artifact; the legacy scorecard is never overwritten.
-- F9 means the "187 passed" baseline is evidence about the local interpreter, not about the shipped image,
-  until CI runs the suite inside the container.
-
-## Required regression criteria (short form)
-
-- F1: anonymous `POST` returns 401/403 and produces no decision; policy overrides and confirmation grants
-  require a verified caller identity.
-- F2: a correct digest presented in the same envelope still yields escalate/block; a grant issued for one run
-  is rejected in another; an offline-computed digest is not accepted as proof of confirmation.
-- F3: self-declared trusted labels cannot remove an untrusted-instruction block; overriding
-  `internal_email_domains` / `allowed_tools` requires an authorised caller and is otherwise ignored.
-- F4: a worst-case 2 MiB adversarial request completes or is rejected in under 1 s; a micro-benchmark asserts
-  per-character scan cost stays flat from 1 KB to 16 KB.
-- F5: a Content-Length or chunked body above the cap is rejected with 413 before JSON parsing.
-- F6: confirmation matches the exact execution digest and is bound to request identity; a whitespace or float
-  variant of an approved action is not allowed by the canonical twin's grant.
-- F7: the response carries a server-computed decision identity and the service emits one structured decision
-  record per request; identical inputs give a stable identity, a changed action gives a different one.
-- F8: `pip install --require-hashes -r requirements.lock` succeeds, or the file is renamed to reflect
-  version pinning only and the limitation is documented.
-- F9: CI runs the test suite inside the built image and records the image digest with the result.
-- F10: the image runs with a read-only root filesystem, or `/app` is root-owned and not writable by the
-  service user; a smoke test covers `/healthz` and one decision under that configuration.
-
-## Orchestrator decisions locked for M2 (F1–F3, and the durable half of F7)
-
-These are decisions, not proposals: M2 implements them as written. ADR-0001 and ADR-0002 remain the
-architectural rationale; where they were silent, the following is authoritative.
+## Orchestrator decisions locked for M2 (implemented)
 
 | # | Decision |
 | --- | --- |
-| D1 | **Principal and tenant.** Every authenticated request resolves to `principal_id`, `tenant_id` and a scope list. `tenant_id` comes from the credential, never from the body. Receipts are keyed by `(tenant_id, request_id)` and every query is tenant-scoped. |
-| D2 | **Trust ceiling.** A request may assert a provenance `trust_level` at or below the principal's `trust_ceiling`. Above it, the request is rejected with 403 `TRUST_CEILING_EXCEEDED` — never silently downgraded, because a silent downgrade hides a misconfigured integration. |
-| D3 | **Policy authority.** Caller-supplied `policy_context` overrides (`allowed_tools`, `consequential_tools`, `internal_email_domains`) are **ignored** unless the principal holds the scope `policy:context_override`. The default is the server-stored policy set named by `policy_set {id, version}`. |
-| D4 | **Confirmation channel.** Grants are issued only by `POST /api/v1/confirmations` (scope `confirmation:grant`) and persisted as rows `(tenant_id, run_id, step_id, execution_digest, issued_by, issued_at, expires_at)`. At decision time a grant must exist in the store, match all four components and be unexpired. A syntactically perfect grant that was never issued is refused — this is what closes F2 rather than merely reformatting it. |
-| D5 | **Legacy surface.** `/v1/decision` stays available only in an explicitly labelled development mode bound to loopback, and only when `AEGISGRAPH_LEGACY_UNAUTHENTICATED=true` is set. Production mode refuses to start with the legacy unauthenticated surface enabled. |
-| D6 | **Retention.** Digests, verdicts, reason codes, policy identity and actor identity are retained indefinitely: they are the audit trail. Payload-adjacent metadata is digest-only or redacted by default, with a documented retention window (default 90 days) and a tested deletion procedure. |
-| D7 | **Configuration safety.** No secret in Git. Configuration arrives through environment variables or mounted files. Startup fails closed when `AEGISGRAPH_AUTH_MODE=none` in production mode, when the legacy surface is enabled in production mode, or when a required secret is absent. |
+| D1 | Principal and tenant from the credential; receipts keyed by `(tenant_id, request_id)`; every query tenant-scoped |
+| D2 | Trust ceiling per credential; a more-trusted assertion → `403 TRUST_CEILING_EXCEEDED`, never silently downgraded |
+| D3 | Caller `policy_context` ignored unless the credential holds `policy:context_override`; the server-stored policy set is the authority; an unknown policy set → `422 POLICY_SET_UNKNOWN` |
+| D4 | Grants exist only if issued by `POST /api/v1/confirmations` and persisted; a never-issued grant is refused |
+| D5 | Legacy `/v1/decision` only in development, loopback-bound, with `AEGISGRAPH_LEGACY_UNAUTHENTICATED=true`; production refuses to start with it enabled |
+| D6 | Digests, verdicts, reason codes, policy and actor identity retained indefinitely; payload-adjacent metadata digest-only by default with a documented retention window |
+| D7 | Configuration from env or mounted files; startup fails closed on insecure production configuration |
 
+## Effect on published results
+
+None of the findings changes a legacy scorecard: those runs measure the engine under a trusted-simulator model
+with a trusted caller, which remains a valid stated precondition. Two caveats must travel with the claims:
+
+- F6 and H2-03 touch the confirmation matching rule, which is the mechanism behind the measured benign failure in
+  `enterprise_security_digest`. The strict rule applies to the **new** surface only; the legacy surface keeps the
+  canonical-digest behaviour, which is why the recheck is byte-identical. Any future change to legacy matching
+  requires a new evaluation run recorded as a new artefact — the legacy scorecard is never overwritten.
+- F9 means the "N passed" baseline is evidence about the local interpreter and, once CI has a database service,
+  about a CI runner — not yet about the shipped image.
+
+## Required regression criteria (short form)
+
+- F1: anonymous `POST` → 401/403 and no decision; policy overrides and grants require a verified credential.
+- F2: a correct-but-never-issued grant still escalates; a grant issued for one run is rejected in another.
+- F3: a self-declared trusted label above the ceiling → 403; policy overrides require the scope and are otherwise
+  ignored.
+- F4/H2-01: a 2 MiB adversarial request completes or is rejected in under 1 s; per-character scan cost stays flat
+  from 1 KB to 16 KB; the worst shape (4 × 16 kB sources, 1000 sentences) decides in under 2 s with a call count
+  bounded by the number of distinct sources.
+- F5: a body above the cap → 413 before JSON parsing, for Content-Length and chunked.
+- F6: confirmation matches the exact execution digest and is bound to the run and step.
+- F7: the response carries a server-computed identity and exactly one durable record per decision.
+- F8: `pip install --require-hashes -r requirements.lock` succeeds, or the file states version-pinning only.
+- F9: CI runs the suite inside the built image and records the image digest with the result.
+- F10: read-only root filesystem or root-owned `/app`; smoke-tested.
