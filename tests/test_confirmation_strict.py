@@ -156,6 +156,8 @@ def test_strict_mode_rejects_a_grant_for_a_colliding_action_variant() -> None:
 
 
 def test_generic_endpoint_uses_strict_confirmation_binding() -> None:
+    """F2 regression: only a grant issued through the channel is honoured (D4)."""
+
     base = _request(confirmations=[])
     bare_grant = canonical_action(base.candidate_action).digest()
     payload: dict[str, Any] = {
@@ -172,7 +174,7 @@ def test_generic_endpoint_uses_strict_confirmation_binding() -> None:
         "history_digest": {"confirmations_granted": [bare_grant]},
     }
     bare = client.post("/api/v1/decisions", json=payload)
-    bound = client.post(
+    unissued = client.post(
         "/api/v1/decisions",
         json={
             **payload,
@@ -182,8 +184,31 @@ def test_generic_endpoint_uses_strict_confirmation_binding() -> None:
 
     assert bare.status_code == 200
     assert bare.json()["decision"] == "escalate"
-    assert bound.status_code == 200
-    assert bound.json()["decision"] == "allow"
+    # A syntactically perfect but never-issued grant is refused, not honoured.
+    assert unissued.status_code == 200
+    assert unissued.json()["decision"] == "escalate"
+    assert unissued.json()["reason_codes"] == ["CONFIRMATION_REQUIRED"]
+
+    issued = client.post(
+        "/api/v1/confirmations",
+        json={
+            "run_id": RUN_ID,
+            "step_id": STEP_ID,
+            "execution_digest": _execution_digest(base),
+        },
+    )
+    assert issued.status_code == 201
+    confirmed = client.post(
+        "/api/v1/decisions",
+        json={
+            **payload,
+            "history_digest": {"confirmations_granted": [issued.json()["grant"]]},
+        },
+    )
+
+    assert confirmed.status_code == 200
+    assert confirmed.json()["decision"] == "allow"
+    assert confirmed.json()["reason_codes"] == ["CONFIRMATION_VERIFIED"]
 
 
 def test_legacy_endpoint_still_accepts_a_bare_digest() -> None:
