@@ -16,7 +16,7 @@ omitted: each milestone gates on its exit criteria, not on a calendar.
 | --- | --- | --- | --- | --- | --- |
 | **M0** | Charter + baseline | Intake, baseline reproduced, charter, architecture, threat model, ADRs, legacy record, ledger skeleton | — | all | `implemented` (closed) |
 | **M1** | Contracts + enforcement | Native versioned contracts with a policy/code revision in every decision; legacy adapter isolated; enforcement binding and integration SDK | M0 | ADR-0006 | `implemented` — contract, enforcement SDK, bounded input and strict confirmation landed (`4013b59`, `7502df3`); legacy suite re-checked decision-identical |
-| **M2** | Auth + policy + audit store | Authentication and tenancy; versioned policy; durable append-only receipt/audit store | M1 | ADR-0001, ADR-0002 | `implemented` in code (`7a87e8b`, merged at `4350af3`) — **awaiting the orchestrator's live verification**; F1–F3 stay `open` until it is confirmed, and the coverage floor is red at that revision without a test database (ledger P15) |
+| **M2** | Auth + policy + audit store | Authentication and tenancy; versioned policy; durable append-only receipt/audit store | M1 | ADR-0001, ADR-0002 | `implemented` + **verified live by the orchestrator** (`7a87e8b`, merged at `4350af3`, corrective round `940ed13`): F1, F2 and F3's caller-authority half fixed (residual F3 accepted); with PostgreSQL 17 the suite is **472 passed / 96.84 %**, without a database **460 passed / 12 skipped**; the coverage floor was red at `4350af3` without a database and the CI `quality` job gains a PostgreSQL service with the floor moving to **95** (Agent E) |
 | **M3** | Observability + reliability | OpenTelemetry, Prometheus, Grafana, SLOs, fail-closed guarantees under load | M1, M2 | ADR-0003 | `proposed` — the Compose stack already ships collector, Prometheus and Grafana services, but no instrumentation claim is verified |
 | **M4** | CI/CD + containers + deployment | Pipelines and gates; hardened Compose stack; Kubernetes manifests validated and smoke-tested | M1, M2 | ADR-0005 | `implemented` with two named gaps: **no GitHub-hosted CI run has ever executed**, and **no cluster smoke test** (`kind` absent) |
 | **M5** | Evaluation framework + benchmark data | Native evaluation schema authoritative; versioned legacy adapter; benchmark data + reachability gate | M1 | ADR-0004 | `implemented` — schema, 60-scenario dataset, deterministic scoring, sealed holdout; **scripted adapter only**, no holdout run |
@@ -100,7 +100,8 @@ for the exact commits.
   refused; an escalated action executes only after a matching confirmation.
 - **Risk:** shared contracts have the highest blast radius — single writer only.
 - **Security exit:** the F4–F7 regression criteria are covered by tests (see the
-  findings map immediately below); F1–F3 stay open by design until M2.
+  findings map immediately below); F1–F3 stay open by design until M2 (M2 has
+  since closed F1, F2 and F3's caller-authority half — see the M2 section below).
 - **ADR:** ADR-0006.
 
 ### Security findings → milestones
@@ -144,14 +145,25 @@ milestone owns each finding.
 ### M2 — Auth + policy + audit store
 
 - **Entry:** M1 frozen contracts.
-- **Status:** `implemented` in code (`7a87e8b`, merged at `4350af3`), **awaiting the
-  orchestrator's live verification** — this roadmap does not promote it on code
-  alone. F1–F3 therefore stay `open` in the register until that verification is
-  confirmed. Two facts recorded around the merge: the coverage floor of 94 is
-  **red** at `4350af3` on a machine without a test database (93.06 % = 2521/2709,
-  12 PostgreSQL tests skipped without `AEGISGRAPH_TEST_DATABASE_URL`, and
-  `ci.yml` starts no database service — ledger P15), and the second review's
-  `H2-01`…`H2-05` findings touch this surface (ledger P25–P29).
+- **Status:** `implemented` and **verified live by the orchestrator** (`7a87e8b`,
+  merged at `4350af3`, corrective round `940ed13`). Live reproductions: anonymous
+  `POST /api/v1/decisions` → `401`; an `auditor` token → `403` naming the missing
+  scope; `decision_client` → `200`; another tenant's receipt → `404`; a
+  `system_policy` label above the credential's ceiling → `403 TRUST_CEILING_EXCEEDED`;
+  caller `policy_context` ignored without `policy:context_override`. **F1 and F2
+  are fixed; F3 is fixed for its caller-authority half**, and its residual is
+  `accepted`: the *harness* still supplies provenance labels, so a deployment must
+  treat the caller as the source of truth for its own evidence, bounded by the
+  ceiling (`docs/api/auth.md` §5–6). The corrective round closed the second
+  review's policy-identity, confirmation-binding and `request_id` items
+  (H2-02/H2-03/H2-05; ledger P26–P28). With PostgreSQL 17 the suite is
+  **472 passed** at **96.84 %** coverage; without a database **460 passed, 12
+  skipped** (the 12 PostgreSQL tests skip without
+  `AEGISGRAPH_TEST_DATABASE_URL`). The coverage floor of 94 was **red** at
+  `4350af3` on such a machine (93.06 % = 2521/2709, and `ci.yml` starts no
+  database service — ledger P15); the CI `quality` job is being given a
+  PostgreSQL service and the floor moves to **95** (Agent E). `H2-01` (unbounded
+  per-request CPU) and `H2-04` remain open on this surface (ledger P25, P29).
 - **Work:** OIDC/JWT for interactive principals plus scoped service tokens for
   machine callers (ADR-0002); per-tenant authorization on every read and write;
   an explicit policy store with versions and an audit trail; PostgreSQL +
@@ -214,9 +226,10 @@ milestone owns each finding.
   a scripted run against the M1 gateway reproduces the published scoring digest
   `4373896…` and two `--json` scorings are byte-identical; run directories are
   created once and refuse to be overwritten; the 20-scenario holdout is sealed
-  (ciphertext `52f67318…`) and verifies without the custodian passphrase; every
-  committed legacy scorecard reports `metrics reproduced: True` and
-  `digest reproduced: True` through the read-only adapter. See the ledger,
+  (ciphertext `c1a32fb8…`, rotated after the independent research audit found the
+  previous key recoverable, ledger P36) and verifies without the custodian
+  passphrase; every committed legacy scorecard reports `metrics reproduced: True`
+  and `digest reproduced: True` through the read-only adapter. See the ledger,
   section D.
 - **Caveats:** the only adapter that runs here is `scripted` — every number is a
   scripted number; the holdout is sealed and unrun; 20 holdout scenarios support
