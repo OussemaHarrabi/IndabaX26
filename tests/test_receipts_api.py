@@ -485,3 +485,42 @@ def test_the_in_process_store_deactivates_the_previous_version() -> None:
 
     states = {item.version: item.active for item in store.list_policy_sets(TENANT)}
     assert states == {"1": False, "2": True}
+
+
+def test_a_caller_supplied_request_id_is_preserved_by_design(auth: AuthHarness) -> None:
+    """H2-05: the caller's correlation key is kept; the decision identity is not."""
+
+    seed_policy_set(TENANT, document=POLICY)
+    correlation = "client-correlation-0001"
+
+    first = _submit(auth, request_id=correlation)
+    second = _submit(auth, request_id=correlation)
+
+    assert first.status_code == 200
+    assert first.json()["request_id"] == correlation
+    assert second.json()["request_id"] == correlation
+    receipt_id = first.json()["receipt_id"]
+    assert len(receipt_id) == 32
+    assert receipt_id != correlation
+    assert first.json()["receipt_id"] == second.json()["receipt_id"]
+
+    store = open_store(load_settings())
+    stored = store.get_receipt(TENANT, receipt_id)
+    assert stored is not None
+    assert stored.request_id == correlation
+    assert stored.receipt_id == receipt_id
+    # The same correlation id in another tenant is a different receipt.
+    assert store.get_receipt(OTHER_TENANT, receipt_id) is None
+
+
+def test_an_omitted_request_id_is_generated_by_the_server(auth: AuthHarness) -> None:
+    seed_policy_set(TENANT, document=POLICY)
+
+    first = _submit(auth)
+    second = _submit(auth)
+
+    assert first.status_code == 200
+    generated = first.json()["request_id"]
+    assert len(generated) == 32
+    assert generated != second.json()["request_id"]
+    assert first.json()["receipt_id"] != generated
