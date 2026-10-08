@@ -87,6 +87,7 @@ claim and are never compared across defenses as evidence.
 | Discordant pairs are the only information | by construction of McNemar | n/a |
 | Pairs are independent | **violated** at the population level: scenarios are a fixed case series | Do not report population inference. Report counts and the conditional p as a descriptive index only (`design.md` §2). |
 | Sufficient discordant information | `b + c` | If `b + c < 5`, report counts and the point estimate only; **no p-value**. |
+| Slice large enough to report | subgroup reached count on `R` | Slices (H3.2/H3.3) are reportable only at reached `n ≥ 3`; below it the slice is `n/a` in every derived cell (`research-plan.md` §4.3.1). |
 | No informative missingness | count of excluded/missing rows | If exclusions or defense errors exceed 10% of rows, report the primary result as inconclusive and the sensitivity result alongside. |
 | Control stability | allow-all deterministic digest equality (H1.3) | If the digest differs, every comparison is void until the cause is found. |
 | `n` large enough for the interval to be informative | interval width | Report the width explicitly; never imply precision the interval does not have. |
