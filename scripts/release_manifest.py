@@ -62,6 +62,22 @@ DATASET_NOTE = (
     "the 60 native scenario files whose per-file hashes the campaign's dataset.sha256 aggregates"
 )
 
+#: Manifest generations that have been superseded by a later regeneration.  Kept
+#: in the script rather than passed on the command line, so the documented
+#: regeneration command stays a single line and the history stays visible to a
+#: reader who saw the earlier commit instead of being silently overwritten.
+SUPERSEDED_GENERATIONS: tuple[dict[str, Any], ...] = (
+    {
+        "commit": "e4a43164fb9ef14c781739d8d836137218440488",
+        "mismatches": 8,
+        "reason": (
+            "first generation, at the integration tip before the review-closure, corrected-figure "
+            "and release merges; four listed documents changed afterwards, so --verify reported 8 "
+            "digest mismatches (4 paths x 2 conventions) against it"
+        ),
+    },
+)
+
 #: The declared release artifact list: ``(path, kind, note)``.  Order is the
 #: published order; every path is checked for presence in the working tree *and*
 #: in the requested revision.
@@ -520,6 +536,7 @@ def build_manifest(commit_ref: str, tag: str, version: str) -> dict[str, Any]:
             "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             "digest_bound": False,
             "note": "the generation time is not part of any digest and nothing here hashes it",
+            "superseded": [dict(record) for record in SUPERSEDED_GENERATIONS],
         },
         "release": {
             "tag": tag,
@@ -527,6 +544,11 @@ def build_manifest(commit_ref: str, tag: str, version: str) -> dict[str, Any]:
             "commit": commit,
             "commit_input": commit_ref,
             "branch": branch,
+            "self_reference": (
+                "the digests describe the tree of release.commit; this manifest is added in that "
+                "commit's child, which the tag points at, and --verify re-hashes the listed "
+                "artifacts only, because a manifest cannot hash itself"
+            ),
         },
         "hash_conventions": {
             "sha256_raw": CONVENTION_RAW,
