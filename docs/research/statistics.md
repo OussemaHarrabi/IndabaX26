@@ -191,9 +191,12 @@ integrity check (H5.2) is a blob-hash comparison and is a gate, not a test.
 **Gate input (amendment 1).** The compared value is the run manifest field
 **`policy.blob_sha256`** (`policy.gate = "H5.2"`) of the unseal runs against the
 freeze commit's value; it is written by the benchmark runner
-(`docs/benchmark/evaluation-card.md` §4, `benchmark/runner.py`). Until the runner
-writes it the gate is **not instrumented** and no holdout result may be reported
-(`research-plan.md` §6.4, §8).
+(`docs/benchmark/evaluation-card.md` §4, `benchmark/runner.py`). The gate is
+**instrumented but not yet exercised**: the runner writes the field — `measured`
+on the M6 campaign manifest, `policy.blob_sha256 = 53d663b1…` under
+`content-sha256-lf` (`docs/evidence/m6-campaign.md` §1) — and exercising it is the
+freeze/unseal comparison, which the closed seal forbids, so no holdout result may
+be reported (`research-plan.md` §6.4, §8, §11).
 
 ## 8. Table → exact command
 

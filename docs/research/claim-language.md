@@ -117,8 +117,9 @@ message that violates it is a defect and must be corrected before release.
   set. One-shot evaluation; the holdout is now retired."
 - **Forbidden.** Reporting a holdout result after a second use without retiring the
   set; reporting it without the seal-integrity check (`policy.blob_sha256`, H5.2);
-  reporting it at all while the gate is not instrumented (`research-plan.md` §6.4);
-  tuning on it.
+  reporting it at all before the freeze/unseal comparison has run — the H5.2 gate
+  is instrumented but not yet exercised and the seal is closed (`research-plan.md`
+  §6.4, §11); tuning on it.
 
 ### 2.8 Operational result (RQ4)
 
