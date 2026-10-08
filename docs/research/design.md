@@ -1,6 +1,7 @@
 # AegisGraph research design
 
-**Status:** preregistered · **Version:** 1.0 · **Date:** 2026-10-08
+**Status:** preregistered · **Version:** 1.1 · **Date:** 2026-10-08
+(amendment 1: the control-liveness check in §3 and the implemented families in §6)
 **Companion documents:** `research-plan.md` (hypotheses), `statistics.md`
 (analysis), `ablation-plan.md` (components), `claim-language.md` (wording).
 Labels: `measured` / `implemented` / `proposed` / `blocked` / `[INFERENCE]` as in
@@ -48,6 +49,32 @@ the forbidden forms in `claim-language.md` include any universal security claim.
 **allow-all** configuration with the same model, backend, quantization, prompt,
 tools and seed as the defense run. `R` is derived once per model/backend from a
 raw allow-all artifact and is committed alongside the comparison.
+
+**The control-liveness check, stated so it can fail (amendment 1).** The rule above
+is only useful if the control is checked, and the check must have a falsifiable
+failure mode rather than restating the definition of `R`:
+
+- **Check.** For every `attack_present=true` scenario, ask whether the control's
+  verdict authorises the attack action (`attack_success=true` under allow-all).
+- **On pass.** The scenario is *licensed* and enters `R`; the effectiveness
+  denominator is the licensed set.
+- **On failure.** The scenario's control verdict does **not** authorise the attack
+  action. It is **excluded from the effectiveness claim and counted**, with its
+  `scenario_id` listed. It is never counted as a stop and never enters any
+  proportion; it neither supports nor falsifies the hypothesis.
+- **Failure mode of the check itself.** If the excluded set is the *whole* attack
+  set, the control authorised no attack action at all: the run measured nothing
+  about the defense, no effectiveness claim is licensed, and every derived cell is
+  void. This is the falsifiable form — it is a property of the artifact, not a
+  restatement of the definition.
+- **Instrumentation.** `docs/research/analysis.py` prints the licensed count, the
+  excluded count and the excluded IDs on every run (`liveness` block in `--json`;
+  a `Liveness …` line in Markdown). `measured` on the legacy control: 31 attack
+  scenarios, 22 licensed, 9 excluded and counted.
+
+The check is a harness/control check, not a claim about a real model: under a
+scripted plan it shows the episode assembles and the action is one a decision
+surface will authorise (`docs/benchmark/evaluation-card.md` §6).
 
 Consequences:
 
@@ -163,6 +190,17 @@ Never excluded: a scenario because its outcome is inconvenient. A non-null
   Benjamini–Hochberg FDR at q = 0.05 and label every RQ2 result "exploratory".
 - Uncorrected p-values may be shown for transparency but must be marked
   "uncorrected".
+
+**Implemented (amendment 1).** The families above are the ones
+`docs/research/analysis.py` declares and corrects: F1 effectiveness (the
+per-treatment reached-attack McNemar tests of one invocation), F2 utility (the
+per-treatment benign `task_success` tests), F3 RQ3 slices (per treatment, its
+reportable slice tests — a slice with no p-value is not a test and does not enter
+the family), and RQ2 exploratory rows under BH. Both p-values are printed
+(`exact p` raw, `Holm adj p` corrected) with the family size `m`, and a
+confirmatory verdict is read off the adjusted value; when the count rule of an H3
+hypothesis holds but the corrected gate does not, the script prints the overturn
+rather than a bare verdict (`statistics.md` §5, `research-plan.md` §10).
 
 ## 7. Exploratory versus confirmatory boundary
 

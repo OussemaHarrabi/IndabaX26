@@ -1,6 +1,7 @@
 # AegisGraph research plan (preregistration)
 
-**Status:** preregistered · **Version:** 1.0 · **Date:** 2026-10-08
+**Status:** preregistered · **Version:** 1.1 · **Date:** 2026-10-08
+(amendment 1 appended in §10; §0 and §4.3.1/§8 updated by it)
 **Branch:** `feat/m0-research-plan` · **Base commit:** `770e88d`
 **Scope of this plan:** `docs/research/**` only. It governs research claims about
 AegisGraph as an independent industrial–research platform. It does not modify
@@ -46,16 +47,24 @@ Sources: `evaluation/real-qwen/README.md` (table, hashes, non-reached set),
 evidence (`evaluation/real-qwen/README.md`).
 
 `measured` — `docs/research/analysis.py` (added with this plan) reproduces the
-paired comparison directly from the scorecards:
+paired comparison directly from the scorecards, and corrects the family it
+declares (amendment 1, §10):
 
 ```
-| Treatment | Reached n | Control ASR | Treatment ASR | Reduction | 95% CI (discordant) | 95% CI (MOVER) | Cohen h | b/c | exact p |
-| --- | ---: | ---: | ---: | ---: | --- | --- | ---: | --- | ---: |
-| provenance | 22 | 22/22 | 9/22 | +0.5909 | [+0.2989, +0.5909] | [+0.3388, +0.7674] | +1.754 | 13/0 | 0.000244 |
-| AegisGraph v1 | 22 | 22/22 | 10/22 | +0.5455 | [+0.2567, +0.5455] | [+0.2972, +0.7308] | +1.662 | 12/0 | 0.000488 |
-| AegisGraph v3 | 22 | 22/22 | 0/22 | +1.0000 | [+0.6913, +1.0000] | [+0.7898, +1.0000] | +3.142 | 22/0 | 4.77e-07 |
-| AegisGraph v5 | 22 | 22/22 | 0/22 | +1.0000 | [+0.6913, +1.0000] | [+0.7898, +1.0000] | +3.142 | 22/0 | 4.77e-07 |
+| Treatment | Reached n | Control ASR | Treatment ASR | Reduction | 95% CI (discordant) | 95% CI (MOVER) | Cohen h | b/c | exact p | Holm adj p |
+| --- | ---: | ---: | ---: | ---: | --- | --- | ---: | --- | ---: | ---: |
+| provenance | 22 | 22/22 | 9/22 | +0.5909 | [+0.2989, +0.5909] | [+0.3388, +0.7674] | +1.754 | 13/0 | 0.000244 | 0.000488 |
+| AegisGraph v1 | 22 | 22/22 | 10/22 | +0.5455 | [+0.2567, +0.5455] | [+0.2972, +0.7308] | +1.662 | 12/0 | 0.000488 | 0.000488 |
+| AegisGraph v3 | 22 | 22/22 | 0/22 | +1.0000 | [+0.6913, +1.0000] | [+0.7898, +1.0000] | +3.142 | 22/0 | 4.77e-07 | 1.91e-06 |
+| AegisGraph v5 | 22 | 22/22 | 0/22 | +1.0000 | [+0.6913, +1.0000] | [+0.7898, +1.0000] | +3.142 | 22/0 | 4.77e-07 | 1.91e-06 |
 ```
+
+`measured` — the control-liveness check on the same control: 31 attack scenarios,
+22 licensed by the control, **9 excluded from the effectiveness claim and counted**
+(`enterprise_direct_token_request`, `enterprise_memory_poison`,
+`finance_direct_transfer`, `finance_dormant_supplier_claim`, `finance_false_approval`,
+`finance_split_settlement`, `soc_direct_monitoring_off`, `soc_hostile_log_text`,
+`soc_intel_memory_poison`).
 
 BTU is 5/9 under allow-all and 4/9 under every defended configuration; the single
 lost benign task is `enterprise_security_digest` (`evaluation/real-qwen/README.md`,
@@ -278,10 +287,14 @@ comparisons are `measured` but are labelled mock in every claim.
   attack, and no family with ≥ 3 reached attacks has 0 stopped.
   *Falsified if* all stops fall in one family or a family with ≥ 3 reached attacks
   is untouched. Family labels are per outcome, so this is computable on the legacy
-  artifacts with `analysis.py --by-family` under the rule in §4.3.1.
-- **H3.3 (domain).** For every domain with ≥ 3 reached attacks, reduction > 0.
-  *Falsified if* any such domain shows zero reduction. Computable on the legacy
-  artifacts with `analysis.py --by-domain` under the rule in §4.3.1.
+  artifacts with `analysis.py --by-family` under the rule in §4.3.1. The verdict is
+  decided by the Holm–Bonferroni-corrected p within the RQ3 slice family, not by
+  the raw p (amendment 1, §10; `design.md` §6).
+- **H3.3 (domain).** For every domain with ≥ 3 reached attacks, reduction > 0 and
+  the slice's Holm–Bonferroni-adjusted McNemar p < 0.05.
+  *Falsified if* any such domain shows zero reduction or fails the corrected gate.
+  Computable on the legacy artifacts with `analysis.py --by-domain` under the rule
+  in §4.3.1.
 - **H3.4 (repeat agreement).** At temperature 0, three repeats of the same
   configuration produce identical per-scenario `attack_success` and
   `task_success`. *Falsified if* any scenario disagrees across repeats; a
@@ -323,6 +336,19 @@ inside a reportable slice:
 - slice `p` values are **uncorrected** descriptive indices; a confirmatory claim
   needs the RQ3 Holm–Bonferroni step (`design.md` §6) and the exploratory/
   confirmatory label in the caption (`design.md` §7).
+
+**Extended by amendment 1 (§10).** The floor is not a property of the ASR cells
+alone. It governs the denominator of **every** derived slice cell, so:
+
+- the decision-level cells (escalation rate, rewrite rate) are `n/a` unless the
+  slice is reportable **and** the decision denominator in that slice is ≥ 3;
+- the latency percentile is `n/a` under the same two conditions, so a p95 is never
+  printed from fewer than 3 observations or from a non-reportable slice;
+- the tables print the raw and the Holm–Bonferroni-adjusted `p` side by side, and
+  the H3 verdict is gated on the adjusted `p` and on these floors: when the count
+  rule holds but the corrected gate does not, `analysis.py` prints the overturn
+  ("holds on the count rule but is NOT CONFIRMED — overturned by …") instead of a
+  bare verdict.
 
 The `none` family label is structurally unreachable: `attack_present` is false
 for those scenarios, so they can never enter `R` and the slice is always `n/a`.
@@ -423,7 +449,13 @@ traces, and never edits the policy. Its identity is recorded in the seal commit.
 4. Unseal: run allow-all (to derive the holdout reached set) and the frozen
    configuration, once each.
 5. Publish raw artifacts and hashes; verify the policy blob hashes are unchanged
-   between steps 2 and 4.
+   between steps 2 and 4. The run manifest of each unseal run is the artifact that
+   carries this value: field **`policy.blob_sha256`** (`policy.gate = "H5.2"`),
+   written by the benchmark runner (`docs/benchmark/evaluation-card.md` §4,
+   `benchmark/runner.py`). Two runs are comparable only if `policy.blob_sha256`,
+   `dataset.sha256` and `scenario_set.sha256` are equal; a changed
+   `policy.blob_sha256` with an unchanged dataset means the policy facts changed
+   and the verdicts are not comparable (amendment 1, §10).
 
 ### 6.4 Hypotheses
 
@@ -432,6 +464,10 @@ traces, and never edits the policy. Its identity is recorded in the seal commit.
   **+ 0.15** absolute. *Falsified if* the gap exceeds 0.15.
 - **H5.2 (seal integrity).** No policy file changed between freeze and unseal.
   *Falsified if* any blob hash differs; the holdout result is then void.
+  **Gate input (amendment 1, §10):** the unseal runs' manifest field
+  `policy.blob_sha256`, compared against the freeze commit's value; until the
+  benchmark runner writes that field the gate is **not instrumented** and no
+  holdout result may be reported.
 - **H5.3 (no bypass).** No holdout scenario is stopped solely by a mechanism that
   keys on a public scenario identifier. *Falsified if* any decision trace shows a
   decision that references a public `scenario_id` or a scenario-specific constant.
@@ -479,6 +515,8 @@ deployments. Therefore:
 | Second model family | blocked | same command with the second model id on a host that has the weights |
 | Per-family / per-domain metric slices | runnable now | `python docs/research/analysis.py --control <allow-all>.json --treatment <cfg>.json --by-family` (or `--by-domain`); floor and rule in §4.3.1 |
 | Paired statistics, legacy artifacts | runnable now | `python docs/research/analysis.py --control evaluation/real-qwen/allow-all-qwen3-8b.json --treatment evaluation/real-qwen/aegisgraph-v5-qwen3-8b.json` |
+| Multiplicity correction (Holm–Bonferroni, declared families) | runnable now | same command; raw and adjusted `p` are printed side by side (`statistics.md` §5) |
+| H5.2 policy-blob-hash gate | **not instrumented** | the benchmark runner must write `policy.blob_sha256` (and `policy.gate = "H5.2"`) into each run manifest (`docs/benchmark/evaluation-card.md` §4); the research side consumes that field by name (§6.3) |
 | Concurrency/latency ladder | runnable now | load script against `POST /v1/decision` (to be added; see `statistics.md` §6) |
 | Sealed holdout | not authored | author + seal per §6 |
 | `kind` cluster, `psql`, Docker Compose | blocked | install `kind`; Compose file absent from the repo |
@@ -494,3 +532,56 @@ preregistration: hypotheses, denominators, ablation matrix, freeze rules and
 permitted wording are fixed here. Amendments are appended as dated sections with
 a new version number and are never rewritten in place. The legacy evidence package
 is referenced, never altered.
+
+## 10. Amendment 1 (2026-10-08) — multiplicity, the reportability floor, control liveness, the H5.2 gate input
+
+Appended after the independent review (I2-03, I2-04, I2-12, I2-13, I2-15). No
+hypothesis was added, removed or re-scoped; the following are the analysis rules
+that were already mandated by `design.md` §6 and `statistics.md` §5 but were not
+implemented, plus the two floors and the one gate input they depend on. Nothing in
+this amendment may be applied selectively to a favourable result.
+
+1. **Multiplicity is implemented, with declared families (`statistics.md` §5).**
+   `docs/research/analysis.py` corrects every p-value it prints inside a declared
+   family with Holm–Bonferroni at family-wise α = 0.05:
+   - **F1 effectiveness** — the per-treatment reached-attack McNemar tests of one
+     invocation;
+   - **F2 utility** — the per-treatment benign `task_success` McNemar tests of one
+     invocation;
+   - **F3 RQ3 slices** — per treatment, its reportable slice tests in the chosen
+     grouping (a slice that produced no `p` is not a test and does not enter the
+     family);
+   - the exploratory RQ2 ablation family uses Benjamini–Hochberg at q = 0.05.
+   Raw and adjusted `p` are printed side by side; the adjusted value is the
+   smallest family-wise error rate at which the test is still rejected.
+2. **The H3 verdict is gated on the corrected `p` and on the floor.** A slice
+   below the floor carries no confirmatory test, so it can neither support nor
+   falsify H3.2/H3.3. When the count rule holds but the corrected gate does not,
+   `analysis.py` prints the overturn explicitly instead of a bare "holds". This
+   changes the printed verdict for the legacy artifacts: the by-domain H3.3 verdict
+   for provenance and v1 was `holds` on the raw counts and is **not confirmed**
+   after the correction (finance and soc: raw `p = 0.0625`, adjusted `p = 0.125`;
+   enterprise carries no usable `p`), and for v3/v5 finance fails the corrected
+   gate (raw `p = 0.0625`, adjusted `p = 0.0625`). The mock by-family H3.2 verdict
+   was `holds` and is **not confirmed** (only one family carries a usable `p`;
+   two stopped families are below the discordance floor).
+3. **The reportability floor covers every derived cell, not only the ASR cells.**
+   Escalation rate, rewrite rate and latency percentiles are `n/a` unless the slice
+   is reportable and the denominator is ≥ 3 observations. No p95 is printed from
+   fewer than 3 observations or from a non-reportable slice.
+4. **Control liveness is stated as a check with a falsifiable failure mode
+   (`design.md` §3).** An attack scenario whose control verdict does not authorise
+   the attack action is excluded from the effectiveness claim and **counted**;
+   `analysis.py` prints the count and the excluded IDs. The check fails — and no
+   effectiveness claim is licensed — when the excluded set is the whole attack set.
+   `measured` on the legacy control: 31 attacks, 22 licensed, 9 excluded.
+5. **The H5.2 gate has a named input.** The gate compares the run manifest field
+   **`policy.blob_sha256`** (`policy.gate = "H5.2"`) between freeze and unseal, per
+   §6.3. The benchmark runner does not yet write it; the capability table (§8)
+   therefore records the gate as **not instrumented** and no holdout result may be
+   reported until it does. `policy.blob_sha256` joins `dataset.sha256` and
+   `scenario_set.sha256` as a comparability precondition.
+6. **The legacy point estimates are unchanged by this amendment.** Every count,
+   proportion, interval and raw `p` in §0 is byte-identical to version 1.0; the
+   tables gained the corrected column, the liveness line and (for slices) the
+   decision-level columns.
