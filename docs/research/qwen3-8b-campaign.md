@@ -349,3 +349,157 @@ Only a bundle that passes all seven is committed.
 
 Committed artifacts are the raw outcomes, the scorecards, the statistics, the
 manifests and the hashes — never a secret, never a weight, never the holdout.
+
+## 15. Implemented — the campaign driver (appended 2026-10-09)
+
+**Status: implemented and locally proven with the scripted adapter.** This section
+records what §1–§14 above are executed by. It is an *implementation* record, not a
+result: **no real-model run exists and no number here is one.** The driver is
+`benchmark/campaign.py` (library), `scripts/bench_campaign.py` (the CLI a notebook
+calls) and `tests/test_campaign.py` (stub-driven proofs). It imports the tested
+modules and reimplements no evaluation logic: request assembly is
+`benchmark.wire`, judgement is `benchmark.scoring.derive_outcome`, the manifest
+identity is `benchmark.runner.build_run_manifest`, the model and its prompt are
+`benchmark.qwen`, and it never shells out to `bench_run.py`.
+
+### 15.1 What it runs — the stage matrix as implemented
+
+| Stage | Splits | Scenarios | Seeds | Treatment surface |
+| --- | --- | --- | --- | --- |
+| A | `development,validation` | the fixed six of freeze block 1 §2.1, by id | the anchor `1729` | the gateway at `--defense-url` |
+| B | `development` | all 42 | ≥ 3, 5 preferred | the gateway at `--defense-url` |
+| C | `validation` | all 18 | 3 the floor, 5 preferred | the gateway at `--defense-url` |
+| D | `holdout` (unsealed plaintext) | all 20 | the frozen set, one run | the gateway at `--defense-url` |
+
+`--condition` selects the arm the run measures as its *treatment*: `defence` (the
+default) is the gateway; `ablation:<name>` is the ablated build you already
+started at `--defense-url`, with `<name>` recorded in `configuration.json`;
+`control` measures the harness allow-all control itself and never calls a gateway,
+so the control arm can be materialised as its own run directory. One invocation
+writes **one run directory per seed**, named
+`<UTCstamp>-<model>-<stage>[-<condition>]-s<seed>` (e.g.
+`20261009T005408Z-qwen3-8b-c-s1729`, `…-a-control-s1729`,
+`…-a-ablation-kernel-s1729`).
+
+### 15.2 The exact commands
+
+```bash
+# 0. once: publish the policy sets the scenarios pin (protocol §5)
+python scripts/bench_policies.py publish \
+  --defense-url http://127.0.0.1:8091 --token-file /tmp/policy-admin.jwt
+
+# see exactly what a command would run, touching nothing and calling nothing
+python scripts/bench_campaign.py --stage B --seed 1729 --seed 42 --seed 7 --dry-run
+
+# A — smoke, engineering evidence only, one seed
+python scripts/bench_campaign.py --stage A --seed 1729 \
+  --defense-url http://127.0.0.1:8091 --runs-dir /content/runs \
+  --model qwen --adapter-json '{"revision":"<sha>","quantization":"4bit","dtype":"bfloat16"}' \
+  --tbd-json '{"chat_template_sha256":"<sha>","max_context_tokens":32768}' \
+  --auth-token-file /tmp/decision.jwt --hardware-note "<host header from environment.json>"
+
+# B / C — the preregistered seed list in one invocation, one run dir per seed
+python scripts/bench_campaign.py --stage B --seed <s1> --seed <s2> --seed <s3> ... \
+  --defense-url http://127.0.0.1:8091 --runs-dir /content/runs --model qwen \
+  --adapter-json '…' --auth-token-file /tmp/decision.jwt
+
+# D — only after B and C are complete, the custodian has authorized the opening,
+#     and bench_seal.py open has written the plaintext outside the repository
+python scripts/bench_campaign.py --stage D --seed <frozen seed> \
+  --holdout-dir /tmp/holdout-plaintext --authorize-holdout \
+  --defense-url http://127.0.0.1:8091 --runs-dir /content/runs --model qwen --adapter-json '…'
+
+# resume an interrupted stage; score it; then package and download it
+python scripts/bench_campaign.py --stage A --seed 1729 --resume … --max-scenarios 40
+python scripts/bench_score.py --run <run-dir> --json --out <run-dir>/score.json
+python scripts/bench_score.py --run <run-dir> > <run-dir>/score.txt
+python scripts/bench_campaign.py --stage A --seed 1729 --bundle …
+```
+
+Exit codes: `0` ran (complete, or cleanly stopped early and resumable), `1`
+failed (`run failed: …`), `2` refused (`RESULT: REFUSED: …`), `130` interrupted.
+The last line is always a `RESULT:` marker: `RESULT: DRY-RUN`,
+`RESULT: CAMPAIGN COMPLETE`, `RESULT: CAMPAIGN INCOMPLETE`, `RESULT: BUNDLE OK`.
+
+### 15.3 Resume semantics
+
+- One run directory per `(stage, condition, seed)`, created with
+  `mkdir(exist_ok=False)`; there is no `--force`. A completed run directory is
+  never written to: a repeat invocation refuses (`refusing to overwrite…`) and
+  `--resume` on a completed run refuses too (`pass --bundle to package it`).
+- Each completed scenario is written to `checkpoints/<scenario_id>.json` through a
+  temporary file and an atomic rename, and the derived artifacts, the manifest and
+  `hashes.sha256` are then rewritten atomically. A killed process therefore leaves
+  either no checkpoint or a complete one, and never a half-written artifact.
+- On resume the recorded hash of every checkpoint is verified against
+  `hashes.sha256`: a verified entry is **skipped**, a missing one is run, and a
+  mismatching one is **moved** to `checkpoints/rejected/` (with the mismatch
+  recorded as a failure) and re-run as a new attempt — both attempts are kept.
+  Verified checkpoints are the source of truth: every `.jsonl` artifact is
+  re-derived from them, so an interrupted rewrite self-heals.
+- `--resume` re-checks the frozen configuration (`stage`, `condition`, `seed`,
+  scenario set, dataset hash, model signature) against `configuration.json` and
+  refuses a resume whose configuration changed — a changed configuration is a new
+  freeze block and a new directory, never a resume of this one.
+- `--max-scenarios N` stops the session cleanly after `N` new scenarios of *each*
+  run in the invocation and leaves it resumable (a Colab cell budget), reported as
+  `RESULT: CAMPAIGN INCOMPLETE`.
+
+### 15.4 Failures are recorded, never fatal
+
+A model parse failure, a gateway non-2xx, a timeout, a connection error, a control
+error and an interruption each become an **errored outcome** (`errored: true`,
+`attack_success: null`) plus a row in `failures.jsonl` carrying `stage`,
+`condition`, `seed`, `scenario_id`, `step_id`, `phase`, `attempt`, the classified
+`cause` and the bounded raw output where there is one — and the campaign continues
+to the next scenario. An errored outcome can never read as a stopped attack: the
+scorer counts it in `errored_attacks` and, intention-to-treat, as a failure, and a
+run whose control arm also errored is reported `VOID` with no effectiveness claim.
+A model that cannot load is the one exception: it aborts, because nothing can run.
+
+### 15.5 Verifying a downloaded bundle
+
+`--bundle` first verifies every recorded entry of `hashes.sha256`, then extends the
+manifest to artifacts written after the run (`score.json`, `score.txt`), then
+writes `<runs-dir>/<run-name>.zip` (atomic, never overwritten, refused for an
+incomplete run). It writes nothing to the run directory except that extension.
+`hashes.sha256` opens with the declaration line `# convention: content-sha256-lf`
+and then one `sha256sum`-format line per artifact, path relative to the run
+directory; **every** entry is taken under that one declared convention (nothing is
+hashed raw), so the file never mixes conventions. Verify a bundle exactly as
+protocol §13 requires:
+
+```bash
+unzip <run-name>.zip -d /tmp/verify && cd /tmp/verify
+sha256sum -c hashes.sha256                 # 1. every artifact against its digest
+python scripts/bench_score.py --run . --json --out /tmp/re.json   # 2. re-score, compare
+cmp /tmp/re.json score.json
+python -c "import json;m=json.load(open('manifest.json'));print(m['code'],m['dataset']['sha256'],m['model']['kind'])"
+python docs/research/analysis.py --json …  # 6. regenerate statistics.json and compare
+```
+
+On the notebook host (Colab/Kaggle) the working copies are LF, so every file the
+driver wrote and every file the scorer wrote agree with the declared convention and
+`sha256sum -c` verifies the whole bundle as written. If a host writes
+`score.json`/`score.txt` through a text mode that emits CRLF, their raw bytes differ
+from their LF-normalised digest: step 1 then reports those two as mismatches, and
+the declared convention is what makes them verifiable — the
+analysis module (`verify_run_hashes`) and this driver's `verify_hashes()` read the
+`# convention:` line and hash with CRLF normalised to LF. This is the m6 note
+(`../evidence/m6-campaign.md` §7a) restated for the campaign bundle: a file-level
+hash comparison across platforms must use the `content-sha256-lf` value.
+
+### 15.6 What is deliberately not done here
+
+- **No cloud run, no GPU, no model download.** Every proof in this section ran with
+  the `scripted` adapter and, for the generation loop, a stub generator behind the
+  real `QwenModelAdapter` — no torch is installed. The real-model path is the
+  adapter's own fail-closed message plus the stub tests; nothing here is a
+  real-model number.
+- **No notebook.** The notebook is a separate deliverable that calls
+  `scripts/bench_campaign.py`; this section fixes only what it calls.
+- **No scoring and no statistics inside the driver.** `score.json`, `score.txt` and
+  `statistics.json` stay with `scripts/bench_score.py` and the analysis module the
+  freeze block names (`docs/research/analysis.py`), so a run directory is scorable
+  by the committed scorer unchanged and the campaign writer never has to be edited
+  to add a metric.
