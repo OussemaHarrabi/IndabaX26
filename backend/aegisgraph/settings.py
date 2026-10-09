@@ -24,6 +24,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from aegisgraph.contracts import TrustLevel
+from aegisgraph.engine import Ablation
 
 ENVIRONMENT_ENV = "AEGISGRAPH_ENV"
 AUTH_MODE_ENV = "AEGISGRAPH_AUTH_MODE"
@@ -41,6 +42,8 @@ RECEIPT_TTL_ENV = "AEGISGRAPH_RECEIPT_TTL_SECONDS"
 RETENTION_DAYS_ENV = "AEGISGRAPH_RETENTION_DAYS"
 LEGACY_ENV = "AEGISGRAPH_LEGACY_UNAUTHENTICATED"
 TRUST_CEILING_ENV = "AEGISGRAPH_TRUST_CEILING_DEFAULT"
+ABLATION_ENV = "AEGISGRAPH_ABLATION"
+"""The one defence mechanism a research run may disable; refused in production."""
 DEFAULT_TENANT_ENV = "AEGISGRAPH_DEFAULT_TENANT"
 BIND_ADDRESS_ENV = "AEGISGRAPH_BIND_ADDRESS"
 STORE_PAYLOAD_METADATA_ENV = "AEGISGRAPH_STORE_PAYLOAD_METADATA"
@@ -121,6 +124,9 @@ class Settings:
     trust_ceiling_default: TrustLevel
     default_tenant: str
     bind_address: str
+    ablation: Ablation | None = None
+    """Research-only: the one defence mechanism this run disables (default: none)."""
+
     store_payload_metadata: bool = False
     metrics_enabled: bool = False
     """Whether ``GET /metrics`` is served (M3): development default, explicit in production."""
@@ -171,6 +177,7 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
     telemetry_endpoint = _telemetry_endpoint(source, problems)
     metrics_enabled = _metrics_enabled(source, environment)
     telemetry_enabled = _telemetry_enabled(source, telemetry_endpoint)
+    ablation = _ablation(source, problems)
 
     settings = Settings(
         environment=environment,
@@ -193,6 +200,7 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         trust_ceiling_default=trust_ceiling,
         default_tenant=_clean(source.get(DEFAULT_TENANT_ENV)) or DEFAULT_TENANT,
         bind_address=_clean(source.get(BIND_ADDRESS_ENV)) or DEFAULT_BIND_ADDRESS,
+        ablation=ablation,
         store_payload_metadata=_flag(source.get(STORE_PAYLOAD_METADATA_ENV)),
         metrics_enabled=metrics_enabled,
         telemetry_enabled=telemetry_enabled,
@@ -215,6 +223,12 @@ def validate_settings(settings: Settings) -> None:
 
     problems = list(settings.problems)
     if settings.production:
+        if settings.ablation is not None:
+            problems.append(
+                f"{ABLATION_ENV}={settings.ablation.value} is refused in "
+                f"{ENVIRONMENT_ENV}=production: an ablation is a research configuration, "
+                "never a product path; unset it"
+            )
         if settings.auth_mode is AuthMode.NONE:
             problems.append(
                 f"{AUTH_MODE_ENV}=none is refused in {ENVIRONMENT_ENV}=production; "
@@ -268,6 +282,7 @@ def safe_summary(settings: Settings) -> dict[str, object]:
         "retention_days": settings.retention_days,
         "legacy_unauthenticated": settings.legacy_unauthenticated,
         "trust_ceiling_default": settings.trust_ceiling_default.value,
+        "ablation": settings.ablation.value if settings.ablation is not None else None,
         "bind_address": settings.bind_address,
         "store_payload_metadata": settings.store_payload_metadata,
         "metrics_enabled": settings.metrics_enabled,
@@ -336,6 +351,25 @@ def _trust_ceiling(source: Mapping[str, str], problems: list[str]) -> TrustLevel
         allowed = ", ".join(level.value for level in TrustLevel)
         problems.append(f"{TRUST_CEILING_ENV} must be one of {allowed}; got {raw!r}")
         return DEFAULT_TRUST_CEILING
+
+
+def _ablation(source: Mapping[str, str], problems: list[str]) -> Ablation | None:
+    """Parse the single research ablation, or ``None`` (the default: the defence).
+
+    An unknown value is a configuration problem, never a silent no-op: a campaign
+    that misspells a mechanism must fail closed rather than run an unablated
+    configuration that its own labels would present as ablated.
+    """
+
+    raw = _clean(source.get(ABLATION_ENV))
+    if raw is None:
+        return None
+    try:
+        return Ablation(raw.strip().lower())
+    except ValueError:
+        allowed = ", ".join(member.value for member in Ablation)
+        problems.append(f"{ABLATION_ENV} must be one of {allowed}; got {raw!r}")
+        return None
 
 
 def _algorithms(source: Mapping[str, str], problems: list[str]) -> tuple[str, ...]:
@@ -552,6 +586,7 @@ if __name__ == "__main__":  # pragma: no cover - exercised as a subprocess
 
 
 __all__ = [
+    "ABLATION_ENV",
     "AUTH_MODE_ENV",
     "BIND_ADDRESS_ENV",
     "DATABASE_URL_ENV",

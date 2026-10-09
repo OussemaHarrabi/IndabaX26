@@ -33,6 +33,7 @@ from aegisgraph.auth import (
     resolve_principal,
 )
 from aegisgraph.contracts import PolicyIdentity, TrustLevel, thaw_json
+from aegisgraph.engine import Ablation
 from aegisgraph.sentinel import SentinelRequest
 from aegisgraph.settings import Settings, load_settings
 from aegisgraph.store import ReceiptStore, canonical_json, open_store
@@ -109,7 +110,12 @@ def require_any_scope(*alternatives: str) -> Callable[[Principal], Principal]:
     return dependency
 
 
-def assert_trust_ceiling(principal: Principal, request: SentinelRequest) -> None:
+def assert_trust_ceiling(
+    principal: Principal,
+    request: SentinelRequest,
+    *,
+    ablation: Ablation | None = None,
+) -> None:
     """Refuse a request whose induced trust labels exceed the ceiling (D2, H3-01).
 
     ``TrustLevel`` is ordered most-trusted first, so a level whose rank is *lower*
@@ -124,6 +130,15 @@ def assert_trust_ceiling(principal: Principal, request: SentinelRequest) -> None
     hostile text in a ``user``-role item and have it treated as authenticated user
     intent, which re-opened the F3 relabelling move.
     """
+
+    # --- Ablation switch site: trust-ceiling enforcement (docs/benchmark/ablations.md).
+    # This is the only bound on the trust labels a caller may induce. Disabling it
+    # lets a caller assert any label, so TRUST_CEILING_EXCEEDED can no longer fire
+    # from this gate. Nothing else in this function or in the engine consults the
+    # ceiling, so exactly this one mechanism changes. Campaign consequence: measures
+    # how much the induced-label bound contributes to security versus false refusals.
+    if ablation is Ablation.TRUST_CEILING:
+        return
 
     declared = _induced_trust_levels(request)
     offending = [
