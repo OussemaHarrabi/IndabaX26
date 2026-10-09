@@ -3,7 +3,7 @@
   "generator": "scripts/release_manifest.py",
   "generator_version": "1.0.0",
   "generation": {
-    "generated_at": "2026-10-09T01:11:23.399015Z",
+    "generated_at": "2026-10-09T01:29:39.410443Z",
     "digest_bound": false,
     "note": "the generation time is not part of any digest and nothing here hashes it",
     "superseded": [
@@ -25,11 +25,11 @@
     ]
   },
   "release": {
-    "tag": "TBD-AT-RELEASE",
-    "version": "TBD-AT-RELEASE",
-    "commit": "9d2cfd1e06665da154d90da72d3fd9ece0fc9c25",
-    "commit_input": "9d2cfd1",
-    "branch": "feat/m8-release",
+    "tag": "v0.1.1",
+    "version": "v0.1.1",
+    "commit": "f36f1d9effde8629c02adc605af5c99d4e381764",
+    "commit_input": "HEAD",
+    "branch": "feature/aegisgraph-industrial-research",
     "self_reference": "the digests describe the tree of release.commit; this manifest is added in that commit's child, which the tag points at, and --verify re-hashes the listed artifacts only, because a manifest cannot hash itself"
   },
   "hash_conventions": {
@@ -58,8 +58,8 @@
       "sbom": 2,
       "schema": 3
     },
-    "blob_matches_raw": 20,
-    "blob_matches_lf": 18,
+    "blob_matches_raw": 21,
+    "blob_matches_lf": 17,
     "blob_matches_neither": 0
   },
   "artifacts": [
@@ -217,21 +217,21 @@
       "path": "deploy/sbom/aegisgraph-image-sbom.json",
       "kind": "sbom",
       "note": "image inventory (39 packages) plus the one committed container image digest",
-      "bytes": 7478,
-      "sha256_raw": "142273255283014cc99214466f5bb2cf2305bac35edfeda83be0bf3ae4909572",
-      "sha256_lf": "142273255283014cc99214466f5bb2cf2305bac35edfeda83be0bf3ae4909572",
-      "sha256_blob": "142273255283014cc99214466f5bb2cf2305bac35edfeda83be0bf3ae4909572",
+      "bytes": 7482,
+      "sha256_raw": "9f7fa3605e36e25538f64fa99ed1bec9c7b5ac7984b8ab59f07b88585f525ed8",
+      "sha256_lf": "9f7fa3605e36e25538f64fa99ed1bec9c7b5ac7984b8ab59f07b88585f525ed8",
+      "sha256_blob": "9f7fa3605e36e25538f64fa99ed1bec9c7b5ac7984b8ab59f07b88585f525ed8",
       "blob_matches": "raw"
     },
     {
       "path": "deploy/sbom/aegisgraph-image-sbom.requirements.txt",
       "kind": "sbom",
       "note": "the pinned inventory the SBOM came from, drift-checked against requirements.lock",
-      "bytes": 911,
-      "sha256_raw": "742f94ebe8acfd5256c7e98e8a48fc113e86201acdf228d01d97f1ab03da6964",
+      "bytes": 872,
+      "sha256_raw": "e7b307190f694cda027f474ab7de7ab3ddf043de9f9f64e6ba214b84acfee8ad",
       "sha256_lf": "e7b307190f694cda027f474ab7de7ab3ddf043de9f9f64e6ba214b84acfee8ad",
       "sha256_blob": "e7b307190f694cda027f474ab7de7ab3ddf043de9f9f64e6ba214b84acfee8ad",
-      "blob_matches": "lf"
+      "blob_matches": "raw"
     },
     {
       "path": "requirements.lock",
@@ -540,13 +540,13 @@
   },
   "container_image": {
     "source_artifact": "deploy/sbom/aegisgraph-image-sbom.json",
-    "image_id": "sha256:bb373f362f052ffa49f15a47ef5ffd72bb7665a275e0b79a9db54f1f6c5cb531",
-    "repository_digest": "aegisgraph@sha256:bb373f362f052ffa49f15a47ef5ffd72bb7665a275e0b79a9db54f1f6c5cb531",
-    "size_bytes": 73084467,
+    "image_id": "sha256:9be962f4f877f94b3f9a3c6c841c3df45bd427bf063d801d642d1ca9d49824c7",
+    "repository_digest": "aegisgraph@sha256:9be962f4f877f94b3f9a3c6c841c3df45bd427bf063d801d642d1ca9d49824c7",
+    "size_bytes": 73074398,
     "user": "10001:10001",
     "runtime_python": "3.12.15",
     "package_count": 39,
-    "built_from_commit": "57596f304b726bbd08b1c6cbf4e605d16237fd7f",
+    "built_from_commit": "9d2cfd1e06665da154d90da72d3fd9ece0fc9c25",
     "requirements_lock_sha256": "d0bf0f5504aa8c5da890c6913b2b4faa36f5e0476daced5ee7359eefd15730d3",
     "note": "digest copied from the committed SBOM; the image was built at the SBOM's source commit, not rebuilt for this release"
   },
