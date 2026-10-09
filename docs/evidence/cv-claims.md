@@ -27,7 +27,7 @@ technical role · `[res-deep]` research deep role. Tags mark which bullet is wor
 raising for which audience; the evidence is the same for all.
 
 Reference revision: the integration branch `feature/aegisgraph-industrial-research`
-at `75fa1b9`. Later commits are named where a row pins one.
+at `c647588`. Later commits are named where a row pins one.
 
 ---
 
@@ -37,7 +37,7 @@ at `75fa1b9`. Later commits are named where a row pins one.
 **Evidence.** `backend/aegisgraph/engine.py` (the policy kernel: provenance
 resolution, authorization, confirmation, sensitive-flow redaction, rewrite
 re-validation); `python -m pytest -q tests/test_policy_kernel.py`; commit
-`ab4b30c` on the integration tip `75fa1b9`. Ledger row **L8** (legacy core
+`ab4b30c` on the integration tip `c647588`. Ledger row **L8** (legacy core
 passes its suite).
 **Limitation.** Deterministic rule outputs, not a learned or calibrated detector;
 the legacy headline is one seeded run, and nine of the 31 legacy attacks never
@@ -47,7 +47,7 @@ reached under allow-all, so they are not effectiveness evidence (L1).
 **Evidence.** `backend/aegisgraph/enforcement.py`, `examples/enforce_decision.py`;
 `python examples/enforce_decision.py` → observed
 `tampered action: REFUSED [digest_mismatch] the candidate action is not the action the receipt was issued for`;
-commit `3313641`, integration tip `75fa1b9`. Ledger rows **P6**, **P12**.
+commit `3313641`, integration tip `c647588`. Ledger rows **P6**, **P12**.
 **Limitation.** The executor is the inert simulated toolbox — no real side effect;
 on the legacy surface receipt validity is caller-side only.
 
@@ -206,11 +206,14 @@ the exception, so a root cause is not in the trace. `/metrics` itself has **no
 authentication dependency on the route** — the control is port-level only
 (Compose publishes `127.0.0.1:8080`; the Kubernetes NetworkPolicy restricts
 ingress), so a deployment that exposes the API port to an untrusted network
-exposes the exposition with it.
+exposes the exposition with it (ledger **P80**, `accepted`); the shipped Compose
+stack ran in development with `/metrics` on and no explicit auth mode (**P81**,
+verified), and a caller-controlled span attribute is bounded in the current
+exposition but unbounded in distinct values (**P84**, `accepted`).
 
 ## Capability: CI/CD and container hardening
 
-**O. Five CI jobs with SHA-pinned actions and a coverage floor enforced against a PostgreSQL service.** `[ind-tech]` `[ind-hybrid]`
+**O. Five CI jobs with SHA-pinned actions — green on GitHub-hosted runners — and a coverage floor enforced against a PostgreSQL service.** `[ind-tech]` `[ind-hybrid]`
 **Evidence.** `.github/workflows/ci.yml`, `docs/ops/ci.md`,
 `requirements.lock`, `pyproject.toml`;
 `python -m pytest -q --cov=aegisgraph --cov-report=term-missing --cov-fail-under=95`
@@ -220,12 +223,19 @@ exposes the exposition with it.
 (dependency additions). Ledger rows **P15**, **P65** — every dependency the
 platform added is declared, licence-reviewed and audit-clean (lock blob
 `d0bf0f5504aa8c5da890c6913b2b4faa36f5e0476daced5ee7359eefd15730d3`, 39 pinned
-entries).
-**Limitation.** **No run has executed on GitHub** (ledger **B5** `blocked`); every
-number is quoted with the commit it was measured at because the baseline moved;
-`pip-audit`'s live advisory database changes over time, and finding **F8** stays
-`accepted` (the lock pins versions, not hashes — the audit covers CVEs, not
-integrity).
+entries). The workflow executes on GitHub-hosted runners and is green on the
+release tag `v0.1.0-industrial` (`eb33d2c`, run `37846970280`, all five gates)
+and on the branch tip at the time of writing (`cb3f82f`, run `37863688964`); the
+branch's 29 runs are 10 success / 1 failure (fixed at `cc3a14f`) / 17
+concurrency cancellations; the release carries a provenance manifest
+(`docs/evidence/release-manifest.json`, `scripts/release_manifest.py`) and notes
+— ledger rows **P85**, **P8**.
+**Limitation.** `pip-audit`'s live advisory database changes over time, and
+finding **F8** stays `accepted` (the lock pins versions, not hashes — the audit
+covers CVEs, not integrity); **F9 stays `open`** — the suite is still not run
+*inside* the built image, so the "N passed" baseline is evidence about the local
+and hosted interpreters, not about the shipped artifact. The 17 cancellations are
+concurrency limits, not failures.
 
 **P. A hardened image: non-root (uid 10001), a root-owned read-only `/app`, no pip or compiler, and a read-only-rootfs smoke test that serves a decision.** `[ind-tech]`
 **Evidence.** `Dockerfile`, `docs/ops/container.md`;
@@ -268,9 +278,10 @@ commits `f8e6004`, `b0923c6`, `2db482c`. Ledger rows **P5**, **P20**. The datase
 is 60 scenarios (42 development / 18 validation, six per family across ten
 families), sha256 `7e916a11981fa6444724dc78558e51561d32a3005b182862efb52b7c5f2cf735`.
 **Limitation.** `n = 3` per family supports a direction, not a per-family
-confidence interval; several scorer/splitter defects are `pending` (see below);
-projection inferences are tagged `legacy_projection` and cannot license a native
-claim.
+confidence interval; projection inferences are tagged `legacy_projection` and
+cannot license a native claim. The scorer/splitter defects the reproducibility
+audit raised (**P31**, **P34**, **P35**, **P37–P49**) are now fixed and verified
+against the cited artifacts.
 
 **S. A native run is scored deterministically, reproduces a committed reference digest, and is written once and never overwritten.** `[res-tech]` `[res-deep]`
 **Evidence.** `benchmark/runs/20261008T230000Z-m2-authenticated-full/` (committed;
@@ -279,9 +290,12 @@ overall asr 0.5000 (15/30), benign task success 0.9667, false-block 0.0556,
 `control_licensed` 30, `control_excluded` 0), `scripts/bench_run.py`,
 `scripts/bench_score.py`; two `--json` scorings are byte-identical and a
 colliding run directory is refused; commits `a94ce6f8` (the run's `code.commit`,
-`dirty: false`), `f2222a3`, `2db482c`. Ledger rows **P21**, **P22**.
+`dirty: false`), `f2222a3`, `2db482c`. The M6 freeze-block-1 campaign run
+`benchmark/runs/20261008T203656Z-m6-campaign/` (digest `b6951afb…`) reproduces
+from its committed artifacts, and `docs/evidence/m6-campaign.md` records C1–C4.
+Ledger rows **P21**, **P22**, **P66**, **P68**.
 **Limitation.** `model.kind = scripted` — this measures the **gateway**, not a
-model; the intention-to-treat denominator defect **P31** is `pending`.
+model; the intention-to-treat denominator defect (**P31**) is fixed and verified.
 
 **T. The evaluation plan's multiplicity correction is implemented and a confirmatory verdict is gated on it.** `[res-deep]`
 **Evidence.** `docs/research/analysis.py`, `docs/research/research-plan.md` §10
@@ -289,8 +303,9 @@ model; the intention-to-treat denominator defect **P31** is `pending`.
 `python docs/research/analysis.py --control evaluation/real-qwen/allow-all-qwen3-8b.json --treatment evaluation/real-qwen/aegisgraph-v5-qwen3-8b.json --by-domain`;
 commit `6cbd79d`. Ledger rows **P32**, **P33** (Holm–Bonferroni families; the H3
 verdict prints "NOT CONFIRMED — overturned by the Holm-Bonferroni correction").
-**Limitation.** I2-12, I2-13 and I2-15 are only half-closed: the research path
-changed at `6cbd79d` but the benchmark artifact the audit cited has not.
+**Limitation.** The audit's H5.2-gate, minimum-slice and control-liveness findings
+(I2-12, I2-13, I2-15 → ledger **P41**, **P42**, **P44**) are now fixed and verified
+at the cited benchmark artifacts, not only on the research path.
 
 **U. The holdout is sealed, custody is recorded, and the seal verifies without the custodian key.** `[res-deep]`
 **Evidence.** `benchmark/data/holdout/**`, `docs/benchmark/holdout.md`,
@@ -304,16 +319,22 @@ Ledger rows **P23**, **P36**, **P50**.
 
 ## Capability: Multi-agent program management
 
-**V. An evidence ledger with a strict status vocabulary and per-row artifact, digest, command and commit, backed by three independent adversarial reviews and one reproducibility audit.** `[ind-hybrid]` `[res-deep]`
-**Evidence.** `docs/evidence/ledger.md` (rows L1–L16, P1–P67, B1–B6),
-`docs/evidence/reviews/*.json`, `docs/evidence/security-findings.md`;
+**V. An evidence ledger with a strict status vocabulary and per-row artifact, digest, command and commit, backed by four adversarial reviews and two reproducibility audits.** `[ind-hybrid]` `[res-deep]`
+**Evidence.** `docs/evidence/ledger.md` (rows L1–L16, P1–P85, B1–B6),
+`docs/evidence/reviews/*.json` (six review artifacts: four adversarial security,
+telemetry and load reviews, and two reproducibility audits),
+`docs/evidence/security-findings.md`;
 read the ledger, and hash artifacts as blobs (`git show <commit>:<path> | sha256sum`)
 because a Windows checkout rewrites line endings; commits `287acf9`, `d86ac83`,
-`444ff4f`, `fb6e42a`, `8d405a8`, `2484b09`. Ledger rows **L15**, **P10**,
-**P25–P29**, **P30–P52**, **P54–P67**.
-**Limitation.** Rows **P8–P10**, **P31**, **P34–P49**, **P66** are `pending` or
-`blocked`; the third review's findings are closed but their fixes were verified by
-the orchestrator, not re-run by this author; the review artifact digests are
+`444ff4f`, `fb6e42a`, `8d405a8`, `2484b09`. Ledger rows **L15**, **P25–P29**,
+**P30–P52**, **P54–P67**, **P68–P85** — including the M6 campaign
+reproducibility audit (**P69–P74**), the M3 telemetry/load adversarial review
+(**P75–P84**) and the hosted-CI evidence (**P85**).
+**Limitation.** Only **P9** (real-model campaign) and **P10** (M7's
+reproducibility-audit exit) remain `pending`, and the blocked set is **B1–B4** and
+**B6**; the review-driven fixes were verified by the orchestrator, not re-run by
+this author; two findings are `accepted` by decision (**P59**, **P61**) and two
+more are `accepted` residuals (**P80**, **P84**); the review artifact digests are
 **blob** digests, not working-copy digests.
 
 **W. A single-writer workstream map and milestone entry/exit criteria, with the frozen legacy evidence kept separate from the new platform.** `[ind-hybrid]`
@@ -331,34 +352,29 @@ Deliberately absent from the bullets above. Each line names the ledger row or th
 blocker that keeps it out.
 
 - **Real-model campaign results.** Ledger **P9** `pending`; blocked rows **B3**
-  (no `ollama`) and **B4** (no paid API). The committed reference run records
-  `model.kind = scripted` and its own `limitations` say it measures the gateway,
-  not a model.
+  (no `ollama`) and **B4** (no paid API). Every committed run — the M5 reference
+  and the M6 campaign — records `model.kind = scripted` and says in its own
+  `limitations` that it measures the gateway, not a model.
 - **The sealed holdout result.** Ledger **B6** `blocked`: the seal may be opened
-  once, after the policy freeze, by the custodian; it never has been.
+  once, after the policy freeze, by the custodian; it never has been (P66's freeze
+  block left it closed).
 - **A cloud deployment.** No image was pushed to a registry and no hosted
   deployment is recorded.
 - **A Kubernetes cluster smoke test.** Ledger **B1** `blocked` (`kind` is not
   installed); only schema and policy validation exist (P17).
-- **GitHub-hosted execution of the CI workflow.** Ledger **B5** `blocked`; every
-  CI step has only been reproduced locally (P15).
-- **The M6 empirical campaign as a promoted claim.** The campaign report and its
-  run are committed (`docs/evidence/m6-campaign.md`, freeze block 1), but the
-  freeze row **P66 is `pending`** — declared, not yet exercised — and the run's
-  `model.kind` is `scripted`, so it measures the gateway, not a model.
-- **A release provenance manifest (P8) and an independent review of the new
-  surfaces (P10).** Both `pending`.
-- **Native scorer and splitter defects:** **P31** (intention-to-treat
-  denominator), **P34** (slot-swapped paraphrase leakage), **P35**
-  (`unsafe_rewrite` spec tie), **P37–P40**, **P45–P49** — `pending`; **P41–P44**
-  are only half-closed (the research side changed, the cited benchmark artifact
-  did not).
+- **A PostgreSQL client on the host.** Ledger **B2** `blocked` (`psql` is not
+  installed); the containerized PostgreSQL path is the intended one.
+- **An independent review of the new surfaces as an M7 exit (P10).** `pending`:
+  the reviews themselves have landed (V), but M7's reproducibility audit of every
+  headline claim and its independent re-run of the gates is not closed.
+- **Anchored ground truth for the legacy benign-utility gap.** The kit's self-test
+  gate is not met (L6: 4/9 benign tasks), and no confidence interval or multi-seed
+  estimate exists (L1–L3 limitations). No population-level statistical claim is
+  made from the legacy single-seeded run.
 - **Fully closed F3.** F3 is claimed only for its caller-authority half (P3); the
   residual — a deployment must treat the caller as the source of truth for its
   own evidence, bounded by the ceiling — is `accepted`, and the third review's
   H3-01 fix (P54) was verified by the orchestrator, not re-run by this author.
 - **Hash-pinned lockfile (F8, `accepted`) and the suite running *inside* the
   shipped image (F9, `open`).**
-- **Any universal security claim**, any learned or fine-tuned detector, and any
-  population-level statistical claim from the legacy single-seeded run (L1–L3,
-  L6 limitations).
+- **Any universal security claim**, and any learned or fine-tuned detector.
