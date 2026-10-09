@@ -64,15 +64,33 @@ def test_every_relative_link_resolves() -> None:
     assert broken == [], f"broken relative links in README.md: {broken}"
 
 
-def test_the_documented_endpoints_exist_in_the_application() -> None:
-    routes = {
+def _served_operations() -> set[tuple[str, str]]:
+    """Every ``(METHOD, path)`` the application serves.
+
+    ``app.routes`` covers the app-level routes, including the ones hidden from the
+    published schema (``/`` and ``/metrics``); the OpenAPI operations cover the
+    versioned surface even on FastAPI versions that no longer flatten an included
+    router into ``app.routes``. This test first failed on CI for exactly that
+    reason: locally (FastAPI 0.128) the included routes appear in ``app.routes``,
+    on the runner (FastAPI 0.141) they do not, although the service answers them.
+    """
+
+    served = {
         (method, route.path)
         for route in app.routes
         for method in (getattr(route, "methods", None) or ())
     }
+    for path, operations in app.openapi().get("paths", {}).items():
+        for method in operations:
+            served.add((method.upper(), path))
+    return served
+
+
+def test_the_documented_endpoints_exist_in_the_application() -> None:
+    served = _served_operations()
     documented = set(API_ROW.findall(_text()))
     assert documented, "the README's API table did not parse"
-    unknown = sorted(documented - routes)
+    unknown = sorted(documented - served)
     assert unknown == [], f"the README documents endpoints that do not exist: {unknown}"
     missing = sorted(REQUIRED_DOCUMENTED - documented)
     assert missing == [], f"the README omits required endpoints: {missing}"
