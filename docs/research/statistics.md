@@ -348,7 +348,7 @@ analysis and this run-directory analysis cannot drift apart.
 | H1.1 / H1.2 count rules (falsifiable) | `_hypothesis_verdicts` | `test_h1_count_rules`; `test_h1_1_is_falsified_when_reached_success_exceeds_one_half` |
 | §10 reportability: identity, counts before proportions, liveness count, artifact hashes | `paired_table`, `slices_table`, `accounting_table`, `scripts/bench_analyze.py` | `test_cli_runs_and_refuses_to_overwrite`; `test_committed_m6_run_reproduces_and_pairs` |
 | Reproducibility gate: every aggregate in the committed `score.json` recomputed from the raw outcomes, mismatch is an error | `reproduce_score` | `test_score_that_does_not_reproduce_fails_loudly`; `test_reproduce_score_accepts_a_faithful_run`; `test_committed_m6_run_reproduces_and_pairs` |
-| Run hash verification before analysis; a mismatch names the file and refuses the run | `verify_run_hashes`, `_expected_hashes` | `test_hash_mismatch_is_refused_naming_the_file`; `test_hashes_file_source_is_honoured` |
+| Run hash verification before analysis; a mismatch names the file and refuses the run; the `content-sha256-lf` convention header is honoured | `verify_run_hashes`, `_expected_hashes`, `_digest_file` | `test_hash_mismatch_is_refused_naming_the_file`; `test_hashes_file_source_is_honoured`; `test_content_sha256_lf_convention_normalises_crlf` |
 | Paired bootstrap interval clustered by scenario (fixed seed) | `bootstrap_reduction_ci` | `test_degenerate_ci_contains_zero`; `test_statistics_json_is_byte_identical_across_runs` |
 | Deterministic output: same input ⇒ byte-identical `statistics.json` | `_payload_digest`, `write_analysis_outputs` | `test_statistics_json_is_byte_identical_across_runs` |
 | Plots only when a plotting library is importable; their absence never fails the command | `render_plots` | `test_plots_absence_never_fails` |
@@ -392,8 +392,12 @@ left untouched.
   with its replicate count and seed in `statistics.json` so it is reproducible.
   It is not a normal approximation and it never replaces the exact interval.
 - **Hash source.** A run directory records its file hashes in
-  `manifest.json["artifacts"]` (written by the runner); a `hashes.sha256` file is
-  honoured when present and takes precedence. A run with neither is refused as
+  `manifest.json["artifacts"]` (written by the runner); a `hashes.sha256` file
+  written by the campaign driver is honoured when present and takes precedence.
+  Its `# convention:` header is honoured: under `content-sha256-lf`
+  (`benchmark/runner.py::HASH_CONVENTION`) the digests are taken over the bytes
+  with CRLF normalised to LF, so a `score.json` that a Windows text-mode write
+  leaves with CRLF still verifies. A run with neither hash record is refused as
   unverifiable.
 - **H1.1b** is reported only when a `--baseline` run is supplied (the same-suite
   provenance baseline); otherwise the verdict says "not computable", never a

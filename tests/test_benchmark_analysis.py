@@ -317,6 +317,38 @@ def test_hashes_file_source_is_honoured(tmp_path: Path) -> None:
     assert set(verified) == {"outcomes.jsonl", "control.jsonl"}
 
 
+def test_content_sha256_lf_convention_normalises_crlf(tmp_path: Path) -> None:
+    """A CRLF score.json verifies under content-sha256-lf and fails without it."""
+
+    run = _write_run(tmp_path, "r", _reachable_control(2), _reachable_control(2))
+    score_path = run / "score.json"
+    score_path.write_bytes(score_path.read_bytes().replace(b"\n", b"\r\n"))
+    lf_digest = hashlib.sha256(score_path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+    raw_digest = hashlib.sha256(score_path.read_bytes()).hexdigest()
+    assert lf_digest != raw_digest
+
+    manifest = json.loads((run / "manifest.json").read_text("utf-8"))
+    entries = [f"{digest}  {name}" for name, digest in sorted(manifest["artifacts"].items())]
+    header = (
+        "# convention: content-sha256-lf: sha256(bytes) with CRLF normalised to LF, "
+        "no object header"
+    )
+    (run / "hashes.sha256").write_text(
+        "\n".join([header, *entries, f"{lf_digest}  score.json"]) + "\n", encoding="utf-8"
+    )
+    verified, source = analysis.verify_run_hashes(run)
+    assert source == "hashes.sha256"
+    assert verified["score.json"] == lf_digest
+
+    # The same CRLF file under the raw convention is a mismatch, and it is named.
+    (run / "hashes.sha256").write_text(
+        "\n".join([*entries, f"{lf_digest}  score.json"]) + "\n", encoding="utf-8"
+    )
+    with pytest.raises(analysis.AnalysisError) as excinfo:
+        analysis.verify_run_hashes(run)
+    assert "score.json" in str(excinfo.value)
+
+
 # --------------------------------------------------------------------------- #
 # multiplicity: hand-checked, monotone, and overturning
 # --------------------------------------------------------------------------- #
