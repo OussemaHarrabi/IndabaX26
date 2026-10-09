@@ -283,7 +283,12 @@ def test_tampering_with_the_sealed_bytes_is_detected(tmp_path: Path) -> None:
     )
     seal_holdout([scenario], PASSPHRASE, tmp_path)
     sealed_path = tmp_path / "holdout" / "sealed-holdout.json.enc"
-    sealed_path.write_bytes(sealed_path.read_bytes()[:-1] + b"\x00")
+    # Flip the last byte rather than overwrite it with a constant: writing b"\x00"
+    # over a byte that already is 0x00 leaves the ciphertext unchanged, so the
+    # "tampering" would be a no-op about once in 256 runs and this test would fail
+    # for the wrong reason (observed once on a coverage run, 2026-10-09).
+    original = sealed_path.read_bytes()
+    sealed_path.write_bytes(original[:-1] + bytes([original[-1] ^ 0xFF]))
 
     result = verify_seal(tmp_path, PASSPHRASE)
 
