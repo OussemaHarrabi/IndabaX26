@@ -1,0 +1,159 @@
+{
+  "environment": {
+    "recorded_at": "2026-10-08T23:59:02Z",
+    "commit": "22250dece8733ff49599fbbc496ebc2414e2bafd",
+    "commit_short": "22250de",
+    "branch": "feature/aegisgraph-industrial-research",
+    "dirty": "yes",
+    "python": "3.13.14",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "core_autocrlf": "true",
+    "db_url": "postgresql+psycopg://aegisgraph:verify@127.0.0.1:15533/aegisgraph_verify",
+    "docker": "Docker version 29.6.2, build dfc4efb",
+    "kubectl": "clientVersion:"
+  },
+  "summary": {
+    "passed": 11,
+    "failed": 6,
+    "unavailable": 0
+  },
+  "checks": [
+    {
+      "name": "tests without PostgreSQL",
+      "command": "python -m pytest -q",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "586 passed, 12 skipped, 2 warnings in 206.77s (0:03:26)"
+    },
+    {
+      "name": "tests with PostgreSQL 17",
+      "command": "python -m pytest -q",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "598 passed, 2 warnings in 209.78s (0:03:29)"
+    },
+    {
+      "name": "PostgreSQL-marked tests only",
+      "command": "python -m pytest -q -m db -p no:cacheprovider",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "12 passed, 586 deselected in 7.76s"
+    },
+    {
+      "name": "coverage with PostgreSQL (floor 95)",
+      "command": "python -m pytest -q --cov=aegisgraph --cov-report=term --cov-fail-under=95",
+      "status": "failed",
+      "exit_code": 1,
+      "note": "",
+      "last_line": "1 failed, 597 passed, 2 warnings in 214.02s (0:03:34)"
+    },
+    {
+      "name": "ruff",
+      "command": "python -m ruff check backend tests scripts benchmark",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "All checks passed!"
+    },
+    {
+      "name": "mypy (strict)",
+      "command": "python -m mypy",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "Success: no issues found in 19 source files"
+    },
+    {
+      "name": "native benchmark validation",
+      "command": "python scripts bench_validate.py",
+      "status": "failed",
+      "exit_code": 1,
+      "note": "",
+      "last_line": "C:\\Users\\oussa\\AppData\\Local\\Programs\\Python\\Python313\\python.exe: can't find '__main__' module in 'C:\\\\Users\\\\oussa\\\\oussema\\\\indabax\\\\.worktrees\\\\integration\\"
+    },
+    {
+      "name": "SBOM freshness",
+      "command": "python scripts check_sbom_freshness.py",
+      "status": "failed",
+      "exit_code": 1,
+      "note": "",
+      "last_line": "C:\\Users\\oussa\\AppData\\Local\\Programs\\Python\\Python313\\python.exe: can't find '__main__' module in 'C:\\\\Users\\\\oussa\\\\oussema\\\\indabax\\\\.worktrees\\\\integration\\"
+    },
+    {
+      "name": "release manifest verification",
+      "command": "python scripts release_manifest.py --verify docs/evidence/release-manifest.json",
+      "status": "failed",
+      "exit_code": 1,
+      "note": "",
+      "last_line": "C:\\Users\\oussa\\AppData\\Local\\Programs\\Python\\Python313\\python.exe: can't find '__main__' module in 'C:\\\\Users\\\\oussa\\\\oussema\\\\indabax\\\\.worktrees\\\\integration\\"
+    },
+    {
+      "name": "Kubernetes manifests (both validators)",
+      "command": "python scripts validate_k8s_manifests.py --validator both",
+      "status": "failed",
+      "exit_code": 1,
+      "note": "",
+      "last_line": "C:\\Users\\oussa\\AppData\\Local\\Programs\\Python\\Python313\\python.exe: can't find '__main__' module in 'C:\\\\Users\\\\oussa\\\\oussema\\\\indabax\\\\.worktrees\\\\integration\\"
+    },
+    {
+      "name": "alembic upgrade head from an empty database",
+      "command": "python -m alembic upgrade head",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "INFO  [alembic.runtime.migration] Running upgrade 0001_initial -> 0002_receipt_decision_body, Store the exact decision body on a receipt so a replay is faithful"
+    },
+    {
+      "name": "alembic check (no unapplied operations)",
+      "command": "python -m alembic check",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "INFO  [alembic.ddl.postgresql] Detected sequence named 'audit_events_id_seq' as owned by integer column 'audit_events(id)', assuming SERIAL and omitting"
+    },
+    {
+      "name": "alembic upgrade 0001_initial (incremental base)",
+      "command": "python -m alembic upgrade 0001_initial",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "INFO  [alembic.runtime.migration] Running upgrade  -> 0001_initial, Initial AegisGraph persistence schema (M2)."
+    },
+    {
+      "name": "alembic upgrade head (incremental from 0001)",
+      "command": "python -m alembic upgrade head",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "INFO  [alembic.runtime.migration] Running upgrade 0001_initial -> 0002_receipt_decision_body, Store the exact decision body on a receipt so a replay is faithful"
+    },
+    {
+      "name": "container build",
+      "command": "docker build -t aegisgraph:verify-22250de .",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "#16 DONE 0.6s"
+    },
+    {
+      "name": "container smoke: /healthz",
+      "command": "curl http://127.0.0.1:18080/healthz",
+      "status": "passed",
+      "exit_code": 200,
+      "note": "",
+      "last_line": "{\"status\":\"ok\"}"
+    },
+    {
+      "name": "container smoke: /readyz reports the insecure development posture",
+      "command": "docker exec aegisgraph-verify-22250de python -c import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8080/readyz').read().decode())",
+      "status": "failed",
+      "exit_code": 1,
+      "note": "",
+      "last_line": "urllib.error.URLError: <urlopen error [Errno 111] Connection refused>"
+    }
+  ],
+  "transcript": "20261009T001004Z-battery.txt"
+}
