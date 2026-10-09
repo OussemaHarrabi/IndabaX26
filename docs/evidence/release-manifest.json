@@ -3,7 +3,7 @@
   "generator": "scripts/release_manifest.py",
   "generator_version": "1.0.0",
   "generation": {
-    "generated_at": "2026-10-09T00:22:58.498877Z",
+    "generated_at": "2026-10-09T01:11:23.399015Z",
     "digest_bound": false,
     "note": "the generation time is not part of any digest and nothing here hashes it",
     "superseded": [
@@ -16,14 +16,19 @@
         "commit": "7f4f661d645340d642bd7c94bfdbb6dd03b7fe01",
         "mismatches": 4,
         "reason": "second generation, the one carried by tag v0.1.0-industrial; the hosted-CI evidence landing changed docs/architecture/roadmap.md and docs/evidence/ledger.md afterwards, so --verify reported 4 digest mismatches (2 paths x 2 conventions) against it"
+      },
+      {
+        "commit": "c6475887a7908f3f7448b1b89ebe71458dad8e29",
+        "mismatches": 6,
+        "reason": "third generation, cut for the truth-pass corrections; the research-infrastructure commits then changed benchmark/runner.py, backend/aegisgraph/engine.py and docs/research/report.md, so --verify reported 6 digest mismatches (3 paths x 2 conventions) against it"
       }
     ]
   },
   "release": {
-    "tag": "v0.1.0-industrial",
-    "version": "v0.1.0-industrial",
-    "commit": "c6475887a7908f3f7448b1b89ebe71458dad8e29",
-    "commit_input": "c647588",
+    "tag": "TBD-AT-RELEASE",
+    "version": "TBD-AT-RELEASE",
+    "commit": "9d2cfd1e06665da154d90da72d3fd9ece0fc9c25",
+    "commit_input": "9d2cfd1",
     "branch": "feat/m8-release",
     "self_reference": "the digests describe the tree of release.commit; this manifest is added in that commit's child, which the tag points at, and --verify re-hashes the listed artifacts only, because a manifest cannot hash itself"
   },
@@ -262,10 +267,10 @@
       "path": "benchmark/runner.py",
       "kind": "campaign-identity-source",
       "note": "campaign runner pinned by the identity; carries the repository's hash conventions",
-      "bytes": 39092,
-      "sha256_raw": "fc316a15f1ef2bffb46dced0b096888c666dba9acb37cbe3649e92b633ac6c56",
-      "sha256_lf": "eefa90a78bb0be096ac627e3d57df7158a45370c08c1db2917f4adb2159665c1",
-      "sha256_blob": "eefa90a78bb0be096ac627e3d57df7158a45370c08c1db2917f4adb2159665c1",
+      "bytes": 42391,
+      "sha256_raw": "e4d01e5f0ba346492fd13cf9d4fed281602a2a013d37046d5760cf02da67c05b",
+      "sha256_lf": "d87b6d5c47edae88714f932f7bec2acbff5a2f954f8e0781cca8e1aee25bd677",
+      "sha256_blob": "d87b6d5c47edae88714f932f7bec2acbff5a2f954f8e0781cca8e1aee25bd677",
       "blob_matches": "lf"
     },
     {
@@ -292,10 +297,10 @@
       "path": "backend/aegisgraph/engine.py",
       "kind": "campaign-identity-source",
       "note": "decision-kernel source blob pinned by the campaign identity",
-      "bytes": 52848,
-      "sha256_raw": "126d33842fb576564f0aa5944f523d155aa1de4a6e837667dcc6e04234b9c721",
-      "sha256_lf": "011111e10254d8cf148116e39a918216ca58bb7ba95cf217b39b1ea8bc1c4af2",
-      "sha256_blob": "011111e10254d8cf148116e39a918216ca58bb7ba95cf217b39b1ea8bc1c4af2",
+      "bytes": 59441,
+      "sha256_raw": "b542e12b8a8a20103a7966a3b5f3853f2df3ed35fa31cf6791300eefc19ec5a9",
+      "sha256_lf": "fc7e5321106508e141076e8c6c35b93f7b2b152dfe95db3f5fdfa0115fe65495",
+      "sha256_blob": "fc7e5321106508e141076e8c6c35b93f7b2b152dfe95db3f5fdfa0115fe65495",
       "blob_matches": "lf"
     },
     {
@@ -372,10 +377,10 @@
       "path": "docs/research/report.md",
       "kind": "doc",
       "note": "the research report stating the headline numbers in the permitted claim register",
-      "bytes": 69282,
-      "sha256_raw": "00f4c5d680f544eb653c21b8c78175f85c196707f912c34c20c10a95f27721ce",
-      "sha256_lf": "40359a86e2613c0e28a5cbd43360b2ceee817afc52818574df701d76fc3c8f2b",
-      "sha256_blob": "40359a86e2613c0e28a5cbd43360b2ceee817afc52818574df701d76fc3c8f2b",
+      "bytes": 70390,
+      "sha256_raw": "5754d1c30cc3245e126ce1cd470ac7b9b6e48bd69b4855a60644ec79369aa5e2",
+      "sha256_lf": "b5a27a2b54d566d304efdf46f81b868cf1b4f2758eada4db32f412c87bb7d5a1",
+      "sha256_blob": "b5a27a2b54d566d304efdf46f81b868cf1b4f2758eada4db32f412c87bb7d5a1",
       "blob_matches": "lf"
     },
     {

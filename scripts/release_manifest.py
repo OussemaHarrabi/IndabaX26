@@ -85,6 +85,16 @@ SUPERSEDED_GENERATIONS: tuple[dict[str, Any], ...] = (
             "so --verify reported 4 digest mismatches (2 paths x 2 conventions) against it"
         ),
     },
+    {
+        "commit": "c6475887a7908f3f7448b1b89ebe71458dad8e29",
+        "mismatches": 6,
+        "reason": (
+            "third generation, cut for the truth-pass corrections; the research-infrastructure "
+            "commits then changed benchmark/runner.py, backend/aegisgraph/engine.py and "
+            "docs/research/report.md, so --verify reported 6 digest mismatches (3 paths x 2 "
+            "conventions) against it"
+        ),
+    },
 )
 
 #: The declared release artifact list: ``(path, kind, note)``.  Order is the
