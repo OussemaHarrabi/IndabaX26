@@ -132,6 +132,28 @@ default and must not be exposed to an untrusted network.
 Fuller demo (dashboards, container, the whole story):
 [`docs/demo/demo-script.md`](docs/demo/demo-script.md).
 
+## Run the real-model campaign (Colab / Kaggle)
+
+The Qwen3-8B campaign is prepared as notebooks that are **thin interfaces over the
+tested modules** — no evaluation logic lives in a cell. They install pinned
+dependencies, check the runtime, run the stages (smoke → development → validation →
+sealed holdout), resume an interrupted run, and analyse a downloaded bundle.
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/OussemaHarrabi/IndabaX26/blob/main/notebooks/00_environment_and_smoke.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/OussemaHarrabi/IndabaX26/blob/main/notebooks/01_qwen3_8b_public_campaign.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/OussemaHarrabi/IndabaX26/blob/main/notebooks/02_qwen3_8b_ablations.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/OussemaHarrabi/IndabaX26/blob/main/notebooks/03_qwen_results_analysis.ipynb)
+
+`00` checks the runtime and runs the six-scenario smoke set · `01` runs the public
+development and validation campaign (resumable, per-scenario atomic writes) · `02`
+runs the preregistered component ablations · `03` verifies and analyses a bundle,
+**on CPU against the committed scripted run too**. Kaggle needs no per-file badge:
+import a notebook and follow [`notebooks/README.md`](notebooks/README.md), which
+documents the GPU memory expectations, secret handling, Drive checkpoints, resume
+and the local hash verification of a downloaded bundle. **No real-model result
+exists yet** — the campaign is prepared, not run; see
+[the evidence classes](#measured-results-by-evidence-class).
+
 ## Architecture
 
 ```mermaid
