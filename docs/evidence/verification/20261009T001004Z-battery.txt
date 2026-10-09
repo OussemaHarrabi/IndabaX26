@@ -1,0 +1,325 @@
+AegisGraph release verification battery — 2026-10-08T23:59:02Z
+commit 22250dece8733ff49599fbbc496ebc2414e2bafd (feature/aegisgraph-industrial-research, dirty=yes)
+
+environment:
+  recorded_at: 2026-10-08T23:59:02Z
+  commit: 22250dece8733ff49599fbbc496ebc2414e2bafd
+  commit_short: 22250de
+  branch: feature/aegisgraph-industrial-research
+  dirty: yes
+  python: 3.13.14
+  platform: Windows-11-10.0.26200-SP0
+  core_autocrlf: true
+  db_url: postgresql+psycopg://aegisgraph:verify@127.0.0.1:15533/aegisgraph_verify
+  docker: Docker version 29.6.2, build dfc4efb
+  kubectl: clientVersion:
+
+$ python -m pytest -q
+[passed] exit=0 
+........................................................................ [ 12%]
+........................................................................ [ 24%]
+........................................................................ [ 36%]
+........................................................................ [ 48%]
+........................................................................ [ 60%]
+........................................................................ [ 72%]
+............................................................ssssssssssss [ 84%]
+........................................................................ [ 96%]
+......................                                                   [100%]
+============================== warnings summary ===============================
+tests/test_benchmark_runner.py::test_dry_run_against_a_local_gateway_writes_an_immutable_run
+  C:\Users\oussa\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\legacy\__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+tests/test_benchmark_runner.py::test_dry_run_against_a_local_gateway_writes_an_immutable_run
+  C:\Users\oussa\AppData\Local\Programs\Python\Python313\Lib\site-packages\uvicorn\protocols\websockets\websockets_impl.py:17: DeprecationWarning: websockets.server.WebSocketServerProtocol is deprecated
+    from websockets.server import WebSocketServerProtocol
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] tests\test_postgres_store.py:98: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:137: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:171: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:201: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:222: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:237: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:271: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:299: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:326: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:367: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:415: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:491: AEGISGRAPH_TEST_DATABASE_URL is not set
+586 passed, 12 skipped, 2 warnings in 206.77s (0:03:26)
+
+$ python -m pytest -q
+[passed] exit=0 
+........................................................................ [ 12%]
+........................................................................ [ 24%]
+........................................................................ [ 36%]
+........................................................................ [ 48%]
+........................................................................ [ 60%]
+........................................................................ [ 72%]
+........................................................................ [ 84%]
+........................................................................ [ 96%]
+......................                                                   [100%]
+============================== warnings summary ===============================
+tests/test_benchmark_runner.py::test_dry_run_against_a_local_gateway_writes_an_immutable_run
+  C:\Users\oussa\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\legacy\__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+tests/test_benchmark_runner.py::test_dry_run_against_a_local_gateway_writes_an_immutable_run
+  C:\Users\oussa\AppData\Local\Programs\Python\Python313\Lib\site-packages\uvicorn\protocols\websockets\websockets_impl.py:17: DeprecationWarning: websockets.server.WebSocketServerProtocol is deprecated
+    from websockets.server import WebSocketServerProtocol
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+598 passed, 2 warnings in 209.78s (0:03:29)
+
+$ python -m pytest -q -m db -p no:cacheprovider
+[passed] exit=0 
+............                                                             [100%]
+12 passed, 586 deselected in 7.76s
+
+$ python -m pytest -q --cov=aegisgraph --cov-report=term --cov-fail-under=95
+[failed] exit=1 
+........................................................................ [ 12%]
+........................................................................ [ 24%]
+............................F........................................... [ 36%]
+........................................................................ [ 48%]
+........................................................................ [ 60%]
+........................................................................ [ 72%]
+........................................................................ [ 84%]
+........................................................................ [ 96%]
+......................                                                   [100%]
+================================== FAILURES ===================================
+______________ test_tampering_with_the_sealed_bytes_is_detected _______________
+
+tmp_path = WindowsPath('C:/Users/oussa/AppData/Local/Temp/pytest-of-oussa/pytest-675/test_tampering_with_the_sealed0')
+
+    def test_tampering_with_the_sealed_bytes_is_detected(tmp_path: Path) -> None:
+        scenario = Scenario.model_validate(
+            scenario_dict(scenario_id="hold_enterprise_y", split="holdout")
+        )
+        seal_holdout([scenario], PASSPHRASE, tmp_path)
+        sealed_path = tmp_path / "holdout" / "sealed-holdout.json.enc"
+        sealed_path.write_bytes(sealed_path.read_bytes()[:-1] + b"\x00")
+    
+        result = verify_seal(tmp_path, PASSPHRASE)
+    
+>       assert result["ciphertext_matches"] is False
+E       assert True is False
+
+tests\test_benchmark_splits.py:290: AssertionError
+============================== warnings summary ===============================
+tests/test_benchmark_runner.py::test_dry_run_against_a_local_gateway_writes_an_immutable_run
+  C:\Users\oussa\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\legacy\__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+tests/test_benchmark_runner.py::test_dry_run_against_a_local_gateway_writes_an_immutable_run
+  C:\Users\oussa\AppData\Local\Programs\Python\Python313\Lib\site-packages\uvicorn\protocols\websockets\websockets_impl.py:17: DeprecationWarning: websockets.server.WebSocketServerProtocol is deprecated
+    from websockets.server import WebSocketServerProtocol
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=============================== tests coverage ================================
+______________ coverage: platform win32, python 3.13.14-final-0 _______________
+
+Name                                 Stmts   Miss  Cover
+--------------------------------------------------------
+backend\aegisgraph\__init__.py           2      0   100%
+backend\aegisgraph\access.py            91      8    91%
+backend\aegisgraph\adapter.py           91      1    99%
+backend\aegisgraph\api_admin.py        158      0   100%
+backend\aegisgraph\api_v1.py           192      5    97%
+backend\aegisgraph\app.py              215      5    98%
+backend\aegisgraph\auth.py             203      5    98%
+backend\aegisgraph\confirmation.py      57      0   100%
+backend\aegisgraph\contracts.py        240     16    93%
+backend\aegisgraph\demo_tools.py        14      0   100%
+backend\aegisgraph\enforcement.py       81      4    95%
+backend\aegisgraph\engine.py           530     29    95%
+backend\aegisgraph\models.py            93      0   100%
+backend\aegisgraph\policy.py            90      6    93%
+backend\aegisgraph\sentinel.py         159      2    99%
+backend\aegisgraph\settings.py         311      5    98%
+backend\aegisgraph\store.py            393      3    99%
+backend\aegisgraph\telemetry.py        246      6    98%
+--------------------------------------------------------
+TOTAL                                 3166     95    97%
+Required test coverage of 95% reached. Total coverage: 97.00%
+=========================== short test summary info ===========================
+FAILED tests/test_benchmark_splits.py::test_tampering_with_the_sealed_bytes_is_detected - assert True is False
+1 failed, 597 passed, 2 warnings in 214.02s (0:03:34)
+
+$ python -m ruff check backend tests scripts benchmark
+[passed] exit=0 
+All checks passed!
+
+$ python -m mypy
+[passed] exit=0 
+Success: no issues found in 19 source files
+
+$ python scripts bench_validate.py
+[failed] exit=1 
+C:\Users\oussa\AppData\Local\Programs\Python\Python313\python.exe: can't find '__main__' module in 'C:\\Users\\oussa\\oussema\\indabax\\.worktrees\\integration\\scripts'
+
+$ python scripts check_sbom_freshness.py
+[failed] exit=1 
+C:\Users\oussa\AppData\Local\Programs\Python\Python313\python.exe: can't find '__main__' module in 'C:\\Users\\oussa\\oussema\\indabax\\.worktrees\\integration\\scripts'
+
+$ python scripts release_manifest.py --verify docs/evidence/release-manifest.json
+[failed] exit=1 
+C:\Users\oussa\AppData\Local\Programs\Python\Python313\python.exe: can't find '__main__' module in 'C:\\Users\\oussa\\oussema\\indabax\\.worktrees\\integration\\scripts'
+
+$ python scripts validate_k8s_manifests.py --validator both
+[failed] exit=1 
+C:\Users\oussa\AppData\Local\Programs\Python\Python313\python.exe: can't find '__main__' module in 'C:\\Users\\oussa\\oussema\\indabax\\.worktrees\\integration\\scripts'
+
+$ python -m alembic upgrade head
+[passed] exit=0 
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001_initial, Initial AegisGraph persistence schema (M2).
+INFO  [alembic.runtime.migration] Running upgrade 0001_initial -> 0002_receipt_decision_body, Store the exact decision body on a receipt so a replay is faithful (H3-02).
+
+$ python -m alembic check
+[passed] exit=0 
+No new upgrade operations detected.
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.schemas
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.tables
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.types
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.constraints
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.defaults
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.comments
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.checkconstraint_byname
+INFO  [alembic.ddl.postgresql] Detected sequence named 'confirmation_grants_id_seq' as owned by integer column 'confirmation_grants(id)', assuming SERIAL and omitting
+INFO  [alembic.ddl.postgresql] Detected sequence named 'audit_events_id_seq' as owned by integer column 'audit_events(id)', assuming SERIAL and omitting
+
+$ python -m alembic upgrade 0001_initial
+[passed] exit=0 
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001_initial, Initial AegisGraph persistence schema (M2).
+
+$ python -m alembic upgrade head
+[passed] exit=0 
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade 0001_initial -> 0002_receipt_decision_body, Store the exact decision body on a receipt so a replay is faithful (H3-02).
+
+$ docker build -t aegisgraph:verify-22250de .
+[passed] exit=0 
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 4.79kB 0.0s done
+#1 DONE 0.1s
+
+#2 [internal] load metadata for docker.io/library/python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f
+#2 DONE 0.5s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 837B done
+#3 DONE 0.0s
+
+#4 [builder 1/4] FROM docker.io/library/python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f
+#4 resolve docker.io/library/python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 448.66kB 0.1s done
+#5 DONE 0.1s
+
+#6 [builder 4/4] RUN python -m pip install --no-cache-dir --target=/install --requirement requirements.lock
+#6 CACHED
+
+#7 [runtime 3/8] RUN rm -rf /usr/local/lib/python3.12/site-packages/pip            /usr/local/lib/python3.12/site-packages/pip-*.dist-info            /usr/local/lib/python3.12/site-packages/setuptools            /usr/local/lib/python3.12/site-packages/setuptools-*.dist-info            /usr/local/lib/python3.12/site-packages/wheel            /usr/local/lib/python3.12/site-packages/wheel-*.dist-info            /usr/local/lib/python3.12/site-packages/_distutils_hack            /usr/local/lib/python3.12/site-packages/pkg_resources            /usr/local/lib/python3.12/site-packages/distutils-precedence.pth            /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.12     && addgroup --system --gid 10001 aegisgraph     && adduser --system --uid 10001 --ingroup aegisgraph --home /nonexistent --no-create-home aegisgraph
+#7 CACHED
+
+#8 [runtime 2/8] COPY --from=builder --chown=root:root /install /usr/local/lib/python3.12/site-packages
+#8 CACHED
+
+#9 [builder 2/4] WORKDIR /build
+#9 CACHED
+
+#10 [builder 3/4] COPY requirements.lock ./requirements.lock
+#10 CACHED
+
+#11 [runtime 4/8] WORKDIR /app
+#11 CACHED
+
+#12 [runtime 5/8] COPY --chown=root:root backend ./backend
+#12 DONE 0.1s
+
+#13 [runtime 6/8] COPY --chown=root:root alembic.ini ./alembic.ini
+#13 DONE 0.2s
+
+#14 [runtime 7/8] COPY --chown=root:root requirements.lock ./requirements.lock
+#14 DONE 0.1s
+
+#15 [runtime 8/8] RUN chmod -R a-w /app && chmod a-w /app
+#15 DONE 1.3s
+
+#16 exporting to image
+#16 exporting layers
+#16 exporting layers 0.3s done
+#16 exporting manifest sha256:72a47aa0fb556803ca5d2d24a4699b362047351130ff2be1d148289b853aa067 0.0s done
+#16 exporting config sha256:a5b95ebec1ece4bc70949747de7368b642ed30ce915be84ed2f745338b0f593c 0.0s done
+#16 exporting attestation manifest sha256:bb3bd7c43c9dc159748baa305dcf36c53c2c67a1785808844cf15badb8e51c20 0.0s done
+#16 exporting manifest list sha256:157ac41763247eebce7d83ad95e752ca98f26271b7f87df99be47bf206ea2958
+#16 exporting manifest list sha256:157ac41763247eebce7d83ad95e752ca98f26271b7f87df99be47bf206ea2958 0.0s done
+#16 naming to docker.io/library/aegisgraph:verify-22250de done
+#16 unpacking to docker.io/library/aegisgraph:verify-22250de
+#16 unpacking to docker.io/library/aegisgraph:verify-22250de 0.2s done
+#16 DONE 0.6s
+
+$ curl http://127.0.0.1:18080/healthz
+[passed] exit=200 
+{"status":"ok"}
+
+$ docker exec aegisgraph-verify-22250de python -c import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8080/readyz').read().decode())
+[failed] exit=1 
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/urllib/request.py", line 1357, in do_open
+    h.request(req.get_method(), req.selector, req.data, headers,
+  File "/usr/local/lib/python3.12/http/client.py", line 1386, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+  File "/usr/local/lib/python3.12/http/client.py", line 1432, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+  File "/usr/local/lib/python3.12/http/client.py", line 1381, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+  File "/usr/local/lib/python3.12/http/client.py", line 1141, in _send_output
+    self.send(msg)
+  File "/usr/local/lib/python3.12/http/client.py", line 1085, in send
+    self.connect()
+  File "/usr/local/lib/python3.12/http/client.py", line 1051, in connect
+    self.sock = self._create_connection(
+                ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/socket.py", line 865, in create_connection
+    raise exceptions[0]
+  File "/usr/local/lib/python3.12/socket.py", line 850, in create_connection
+    sock.connect(sa)
+ConnectionRefusedError: [Errno 111] Connection refused
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/local/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 515, in open
+    response = self._open(req, data)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 532, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 1386, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 1360, in do_open
+    raise URLError(err)
+urllib.error.URLError: <urlopen error [Errno 111] Connection refused>
+
