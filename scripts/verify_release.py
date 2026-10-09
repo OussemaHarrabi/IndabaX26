@@ -33,7 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = REPO_ROOT / "docs" / "evidence" / "verification"
 DB_ENV = "AEGISGRAPH_TEST_DATABASE_URL"
 DEFAULT_DB_URL = "postgresql+psycopg://aegisgraph:verify@127.0.0.1:15533/aegisgraph_verify"
-CONTAINER_HOST_PORT = 18080
+CONTAINER_HOST_PORT = 18080  # the default; check_container picks a free one when busy
 
 
 @dataclass
@@ -218,6 +218,21 @@ def check_alembic(battery: Battery, db_url: str) -> None:
                 _drop_database(db_url, name)
 
 
+def _free_port(preferred: int) -> int:
+    """``preferred`` when it is free, otherwise an ephemeral port the OS hands out."""
+
+    import socket
+
+    for candidate in (preferred, 0):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            try:
+                probe.bind(("127.0.0.1", candidate))
+            except OSError:
+                continue
+            return int(probe.getsockname()[1])
+    return preferred
+
+
 def check_container(battery: Battery, commit: str) -> None:
     if shutil.which("docker") is None:
         battery.add(
@@ -234,6 +249,9 @@ def check_container(battery: Battery, commit: str) -> None:
 
     tag = f"aegisgraph:verify-{commit[:12]}"
     name = f"aegisgraph-verify-{commit[:8]}"
+    # A peer process may already hold the preferred port (observed: two agents
+    # running this battery concurrently), so ask the OS for a free one.
+    host_port = _free_port(CONTAINER_HOST_PORT)
     build = _run("container build", ["docker", "build", "-t", tag, "."], timeout=3600)
     battery.add(build)
     if build.status != "passed":
@@ -256,7 +274,7 @@ def check_container(battery: Battery, commit: str) -> None:
             "--pids-limit=64",
             "--memory=512m",
             "-p",
-            f"{CONTAINER_HOST_PORT}:8080",
+            f"{host_port}:8080",
             tag,
         ],
     )
@@ -274,12 +292,12 @@ def check_container(battery: Battery, commit: str) -> None:
         while time.monotonic() < deadline:
             try:
                 with urllib.request.urlopen(
-                    f"http://127.0.0.1:{CONTAINER_HOST_PORT}/healthz", timeout=2
+                    f"http://127.0.0.1:{host_port}/healthz", timeout=2
                 ) as response:
                     body = response.read().decode()
                     healthy = Result(
                         "container smoke: /healthz",
-                        f"curl http://127.0.0.1:{CONTAINER_HOST_PORT}/healthz",
+                        f"curl http://127.0.0.1:{host_port}/healthz",
                         "passed" if response.status == 200 else "failed",
                         response.status,
                         body,
@@ -291,7 +309,7 @@ def check_container(battery: Battery, commit: str) -> None:
         else:
             healthy = Result(
                 "container smoke: /healthz",
-                f"curl http://127.0.0.1:{CONTAINER_HOST_PORT}/healthz",
+                f"curl http://127.0.0.1:{host_port}/healthz",
                 "failed",
                 None,
                 last,
@@ -301,7 +319,7 @@ def check_container(battery: Battery, commit: str) -> None:
         # earlier `docker exec … urlopen(127.0.0.1:8080)` form failed with
         # "connection refused" because the container's loopback is not the mapped
         # interface; the host port is what a reader would actually probe.
-        ready_url = f"http://127.0.0.1:{CONTAINER_HOST_PORT}/readyz"
+        ready_url = f"http://127.0.0.1:{host_port}/readyz"
         try:
             with urllib.request.urlopen(ready_url, timeout=10) as response:
                 report = json.loads(response.read().decode())
