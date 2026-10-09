@@ -1,0 +1,159 @@
+{
+  "environment": {
+    "recorded_at": "2026-10-09T01:29:49Z",
+    "commit": "46cb37b5274ffa165c365faee77bdc6227912755",
+    "commit_short": "46cb37b",
+    "branch": "feature/aegisgraph-industrial-research",
+    "dirty": "yes",
+    "python": "3.13.14",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "core_autocrlf": "true",
+    "db_url": "postgresql+psycopg://aegisgraph:verify@127.0.0.1:15533/aegisgraph_verify",
+    "docker": "Docker version 29.6.2, build dfc4efb",
+    "kubectl": "clientVersion:"
+  },
+  "summary": {
+    "passed": 17,
+    "failed": 0,
+    "unavailable": 0
+  },
+  "checks": [
+    {
+      "name": "tests without PostgreSQL",
+      "command": "python -m pytest -q",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "705 passed, 12 skipped, 2 warnings in 225.77s (0:03:45)"
+    },
+    {
+      "name": "tests with PostgreSQL 17",
+      "command": "python -m pytest -q",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "717 passed, 2 warnings in 232.52s (0:03:52)"
+    },
+    {
+      "name": "PostgreSQL-marked tests only",
+      "command": "python -m pytest -q -m db -p no:cacheprovider",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "12 passed, 705 deselected in 6.80s"
+    },
+    {
+      "name": "coverage with PostgreSQL (floor 95)",
+      "command": "python -m pytest -q --cov=aegisgraph --cov-report=term --cov-fail-under=95",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "717 passed, 2 warnings in 237.04s (0:03:57)"
+    },
+    {
+      "name": "ruff",
+      "command": "python -m ruff check backend tests scripts benchmark",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "All checks passed!"
+    },
+    {
+      "name": "mypy (strict)",
+      "command": "python -m mypy",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "Success: no issues found in 19 source files"
+    },
+    {
+      "name": "native benchmark validation",
+      "command": "python scripts/bench_validate.py",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "RESULT: PASS"
+    },
+    {
+      "name": "SBOM freshness",
+      "command": "python scripts/check_sbom_freshness.py",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "PASS: the SBOM matches the lock at HEAD."
+    },
+    {
+      "name": "release manifest verification",
+      "command": "python scripts/release_manifest.py --verify docs/evidence/release-manifest.json",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "release_manifest: OK: 39 entries re-hashed, all digests match"
+    },
+    {
+      "name": "Kubernetes manifests (both validators)",
+      "command": "python scripts/validate_k8s_manifests.py --validator both",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "all manifest checks passed"
+    },
+    {
+      "name": "alembic upgrade head from an empty database",
+      "command": "python -m alembic upgrade head",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "INFO  [alembic.runtime.migration] Running upgrade 0001_initial -> 0002_receipt_decision_body, Store the exact decision body on a receipt so a replay is faithful"
+    },
+    {
+      "name": "alembic check (no unapplied operations)",
+      "command": "python -m alembic check",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "INFO  [alembic.ddl.postgresql] Detected sequence named 'confirmation_grants_id_seq' as owned by integer column 'confirmation_grants(id)', assuming SERIAL and om"
+    },
+    {
+      "name": "alembic upgrade 0001_initial (incremental base)",
+      "command": "python -m alembic upgrade 0001_initial",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "INFO  [alembic.runtime.migration] Running upgrade  -> 0001_initial, Initial AegisGraph persistence schema (M2)."
+    },
+    {
+      "name": "alembic upgrade head (incremental from 0001)",
+      "command": "python -m alembic upgrade head",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "INFO  [alembic.runtime.migration] Running upgrade 0001_initial -> 0002_receipt_decision_body, Store the exact decision body on a receipt so a replay is faithful"
+    },
+    {
+      "name": "container build",
+      "command": "docker build -t aegisgraph:verify-46cb37b .",
+      "status": "passed",
+      "exit_code": 0,
+      "note": "",
+      "last_line": "#16 DONE 0.2s"
+    },
+    {
+      "name": "container smoke: /healthz",
+      "command": "curl http://127.0.0.1:64374/healthz",
+      "status": "passed",
+      "exit_code": 200,
+      "note": "",
+      "last_line": "{\"status\":\"ok\"}"
+    },
+    {
+      "name": "container smoke: /readyz reports the development posture",
+      "command": "curl http://127.0.0.1:64374/readyz",
+      "status": "passed",
+      "exit_code": 200,
+      "note": "",
+      "last_line": "}"
+    }
+  ],
+  "transcript": "20261009T014151Z-battery.txt"
+}

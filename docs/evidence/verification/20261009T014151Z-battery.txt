@@ -1,0 +1,344 @@
+AegisGraph release verification battery — 2026-10-09T01:29:49Z
+commit 46cb37b5274ffa165c365faee77bdc6227912755 (feature/aegisgraph-industrial-research, dirty=yes)
+
+environment:
+  recorded_at: 2026-10-09T01:29:49Z
+  commit: 46cb37b5274ffa165c365faee77bdc6227912755
+  commit_short: 46cb37b
+  branch: feature/aegisgraph-industrial-research
+  dirty: yes
+  python: 3.13.14
+  platform: Windows-11-10.0.26200-SP0
+  core_autocrlf: true
+  db_url: postgresql+psycopg://aegisgraph:verify@127.0.0.1:15533/aegisgraph_verify
+  docker: Docker version 29.6.2, build dfc4efb
+  kubectl: clientVersion:
+
+$ python -m pytest -q
+[passed] exit=0 
+........................................................................ [ 10%]
+........................................................................ [ 20%]
+........................................................................ [ 30%]
+........................................................................ [ 40%]
+........................................................................ [ 50%]
+........................................................................ [ 60%]
+........................................................................ [ 70%]
+........................................................................ [ 80%]
+...................ssssssssssss......................................... [ 90%]
+.....................................................................    [100%]
+============================== warnings summary ===============================
+tests/test_benchmark_runner.py::test_dry_run_against_a_local_gateway_writes_an_immutable_run
+  C:\Users\oussa\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\legacy\__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+tests/test_benchmark_runner.py::test_dry_run_against_a_local_gateway_writes_an_immutable_run
+  C:\Users\oussa\AppData\Local\Programs\Python\Python313\Lib\site-packages\uvicorn\protocols\websockets\websockets_impl.py:17: DeprecationWarning: websockets.server.WebSocketServerProtocol is deprecated
+    from websockets.server import WebSocketServerProtocol
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] tests\test_postgres_store.py:98: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:137: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:171: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:201: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:222: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:237: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:271: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:299: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:326: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:367: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:415: AEGISGRAPH_TEST_DATABASE_URL is not set
+SKIPPED [1] tests\test_postgres_store.py:491: AEGISGRAPH_TEST_DATABASE_URL is not set
+705 passed, 12 skipped, 2 warnings in 225.77s (0:03:45)
+
+$ python -m pytest -q
+[passed] exit=0 
+........................................................................ [ 10%]
+........................................................................ [ 20%]
+........................................................................ [ 30%]
+........................................................................ [ 40%]
+........................................................................ [ 50%]
+........................................................................ [ 60%]
+........................................................................ [ 70%]
+........................................................................ [ 80%]
+........................................................................ [ 90%]
+.....................................................................    [100%]
+============================== warnings summary ===============================
+tests/test_benchmark_runner.py::test_dry_run_against_a_local_gateway_writes_an_immutable_run
+  C:\Users\oussa\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\legacy\__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+tests/test_benchmark_runner.py::test_dry_run_against_a_local_gateway_writes_an_immutable_run
+  C:\Users\oussa\AppData\Local\Programs\Python\Python313\Lib\site-packages\uvicorn\protocols\websockets\websockets_impl.py:17: DeprecationWarning: websockets.server.WebSocketServerProtocol is deprecated
+    from websockets.server import WebSocketServerProtocol
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+717 passed, 2 warnings in 232.52s (0:03:52)
+
+$ python -m pytest -q -m db -p no:cacheprovider
+[passed] exit=0 
+............                                                             [100%]
+12 passed, 705 deselected in 6.80s
+
+$ python -m pytest -q --cov=aegisgraph --cov-report=term --cov-fail-under=95
+[passed] exit=0 
+........................................................................ [ 10%]
+........................................................................ [ 20%]
+........................................................................ [ 30%]
+........................................................................ [ 40%]
+........................................................................ [ 50%]
+........................................................................ [ 60%]
+........................................................................ [ 70%]
+........................................................................ [ 80%]
+........................................................................ [ 90%]
+.....................................................................    [100%]
+============================== warnings summary ===============================
+tests/test_benchmark_runner.py::test_dry_run_against_a_local_gateway_writes_an_immutable_run
+  C:\Users\oussa\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\legacy\__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+tests/test_benchmark_runner.py::test_dry_run_against_a_local_gateway_writes_an_immutable_run
+  C:\Users\oussa\AppData\Local\Programs\Python\Python313\Lib\site-packages\uvicorn\protocols\websockets\websockets_impl.py:17: DeprecationWarning: websockets.server.WebSocketServerProtocol is deprecated
+    from websockets.server import WebSocketServerProtocol
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=============================== tests coverage ================================
+______________ coverage: platform win32, python 3.13.14-final-0 _______________
+
+Name                                 Stmts   Miss  Cover
+--------------------------------------------------------
+backend\aegisgraph\__init__.py           2      0   100%
+backend\aegisgraph\access.py            94      8    91%
+backend\aegisgraph\adapter.py           91      1    99%
+backend\aegisgraph\api_admin.py        158      0   100%
+backend\aegisgraph\api_v1.py           198      5    97%
+backend\aegisgraph\app.py              216      5    98%
+backend\aegisgraph\auth.py             203      5    98%
+backend\aegisgraph\confirmation.py      57      0   100%
+backend\aegisgraph\contracts.py        240     16    93%
+backend\aegisgraph\demo_tools.py        14      0   100%
+backend\aegisgraph\enforcement.py       81      4    95%
+backend\aegisgraph\engine.py           556     29    95%
+backend\aegisgraph\models.py            93      0   100%
+backend\aegisgraph\policy.py            90      6    93%
+backend\aegisgraph\sentinel.py         159      2    99%
+backend\aegisgraph\settings.py         329      5    98%
+backend\aegisgraph\store.py            393      3    99%
+backend\aegisgraph\telemetry.py        246      6    98%
+--------------------------------------------------------
+TOTAL                                 3220     95    97%
+Required test coverage of 95% reached. Total coverage: 97.05%
+717 passed, 2 warnings in 237.04s (0:03:57)
+
+$ python -m ruff check backend tests scripts benchmark
+[passed] exit=0 
+All checks passed!
+
+$ python -m mypy
+[passed] exit=0 
+Success: no issues found in 19 source files
+
+$ python scripts/bench_validate.py
+[passed] exit=0 
+native benchmark validation: C:\Users\oussa\oussema\indabax\.worktrees\integration\benchmark\data
+scenarios=60 splits={'development': 42, 'validation': 18} domains={'enterprise': 20, 'finance': 20, 'soc': 20} families={'confirmation_bypass': 6, 'direct_prompt_injection': 6, 'indirect_prompt_injection': 6, 'memory_poisoning': 6, 'output_integrity': 6, 'provenance_laundering': 6, 'replay_tampering': 6, 'sensitive_data_exfiltration': 6, 'unauthorized_tool_use': 6, 'unsafe_rewrite': 6}
+dataset sha256: 7e916a11981fa6444724dc78558e51561d32a3005b182862efb52b7c5f2cf735
+max assembled request: 2177 bytes (limit 1048576)
+sealed holdout: scenarios=20 ciphertext_sha256=c1a32fb801e18f9a… plaintext_sha256=7c0990b4b854141b…
+errors=0 warnings=0
+RESULT: PASS
+
+$ python scripts/check_sbom_freshness.py
+[passed] exit=0 
+sbom:              deploy\sbom\aegisgraph-image-sbom.json
+lock (HEAD):       d0bf0f5504aa8c5da890c6913b2b4faa36f5e0476daced5ee7359eefd15730d3  (39 pinned entries)
+lock (in SBOM):    d0bf0f5504aa8c5da890c6913b2b4faa36f5e0476daced5ee7359eefd15730d3  (39 entries)
+HEAD:              46cb37b5274f
+source.commit:     9d2cfd1e0666
+
+PASS: the SBOM matches the lock at HEAD.
+
+$ python scripts/release_manifest.py --verify docs/evidence/release-manifest.json
+[passed] exit=0 
+release_manifest: OK: 39 entries re-hashed, all digests match
+
+$ python scripts/validate_k8s_manifests.py --validator both
+[passed] exit=0 
+rendered 9 objects via `kubectl kustomize C:\Users\oussa\oussema\indabax\.worktrees\integration\deploy\k8s`
+[PASS] schema[kubernetes-validate] Namespace/aegisgraph
+[PASS] schema[kubernetes-validate] ConfigMap/aegisgraph-config
+[PASS] schema[kubernetes-validate] Service/aegisgraph-api
+[PASS] schema[kubernetes-validate] Deployment/aegisgraph-api
+[PASS] schema[kubernetes-validate] PodDisruptionBudget/aegisgraph-api
+[PASS] schema[kubernetes-validate] Job/aegisgraph-migrate
+[PASS] schema[kubernetes-validate] NetworkPolicy/aegisgraph-api
+[PASS] schema[kubernetes-validate] NetworkPolicy/aegisgraph-migrate
+[PASS] schema[kubernetes-validate] NetworkPolicy/default-deny-all
+[PASS] schema[kubeconform]: Summary: 9 resources found in 1 file - Valid: 9, Invalid: 0, Errors: 0, Skipped: 0
+[PASS] pod runAsNonRoot=true
+[PASS] pod seccompProfile=RuntimeDefault
+[PASS] container allowPrivilegeEscalation=false
+[PASS] container readOnlyRootFilesystem=true
+[PASS] container drops ALL capabilities
+[PASS] automountServiceAccountToken=false
+[PASS] api: cpu+memory requests set
+[PASS] api: cpu+memory limits set
+[PASS] api: readinessProbe on /readyz (got '/readyz')
+[PASS] api: livenessProbe on /healthz (got '/healthz')
+[PASS] api: startupProbe on /healthz (got '/healthz')
+[PASS] Service present
+[PASS] ConfigMap present
+[PASS] ConfigMap sets AEGISGRAPH_ENV=production (got 'production')
+[PASS] ConfigMap sets AEGISGRAPH_AUTH_MODE=required (got 'required')
+[PASS] ConfigMap sets AEGISGRAPH_METRICS_ENABLED=false (got 'false')
+[PASS] ConfigMap sets AEGISGRAPH_LEGACY_UNAUTHENTICATED=false (got 'false')
+[PASS] no Secret resource carries literal values (offenders: [])
+[PASS] default-deny NetworkPolicy present
+[PASS] default-deny covers Ingress and Egress
+[PASS] api NetworkPolicy present
+[PASS] api ingress limited to 8080 (got [8080])
+[PASS] api egress limited to DNS/DB/OTLP (got [53, 4317, 4318, 5432])
+[PASS] PodDisruptionBudget present
+[PASS] PodDisruptionBudget bounds voluntary disruption
+[PASS] image is not a floating :latest tag (ghcr.io/oussemaharrabi/aegisgraph:0.1.0)
+[PASS] image carries a digest or an explicit non-latest tag (ghcr.io/oussemaharrabi/aegisgraph:0.1.0)
+[NOTE] image is tag-pinned, not digest-pinned; production must use the digest recorded by CI (docs/ops/deployment.md)
+[PASS] migration Job present
+[PASS] migration Job runs `alembic upgrade head`
+[PASS] migration Job uses the same image as the API
+[PASS] migration Job reads DATABASE_URL from the secret (not a ConfigMap)
+[PASS] migration Job is hardened like the API container
+[PASS] migration Job has its own egress policy
+[PASS] migration Job egress limited to DNS and PostgreSQL (got [53, 5432])
+
+all manifest checks passed
+
+$ python -m alembic upgrade head
+[passed] exit=0 
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001_initial, Initial AegisGraph persistence schema (M2).
+INFO  [alembic.runtime.migration] Running upgrade 0001_initial -> 0002_receipt_decision_body, Store the exact decision body on a receipt so a replay is faithful (H3-02).
+
+$ python -m alembic check
+[passed] exit=0 
+No new upgrade operations detected.
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.schemas
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.tables
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.types
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.constraints
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.defaults
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.comments
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.checkconstraint_byname
+INFO  [alembic.ddl.postgresql] Detected sequence named 'audit_events_id_seq' as owned by integer column 'audit_events(id)', assuming SERIAL and omitting
+INFO  [alembic.ddl.postgresql] Detected sequence named 'confirmation_grants_id_seq' as owned by integer column 'confirmation_grants(id)', assuming SERIAL and omitting
+
+$ python -m alembic upgrade 0001_initial
+[passed] exit=0 
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001_initial, Initial AegisGraph persistence schema (M2).
+
+$ python -m alembic upgrade head
+[passed] exit=0 
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade 0001_initial -> 0002_receipt_decision_body, Store the exact decision body on a receipt so a replay is faithful (H3-02).
+
+$ docker build -t aegisgraph:verify-46cb37b .
+[passed] exit=0 
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 4.79kB 0.0s done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f
+#2 DONE 0.1s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 837B done
+#3 DONE 0.0s
+
+#4 [builder 1/4] FROM docker.io/library/python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f
+#4 resolve docker.io/library/python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 3.34kB done
+#5 DONE 0.0s
+
+#6 [runtime 4/8] WORKDIR /app
+#6 CACHED
+
+#7 [builder 2/4] WORKDIR /build
+#7 CACHED
+
+#8 [builder 3/4] COPY requirements.lock ./requirements.lock
+#8 CACHED
+
+#9 [runtime 5/8] COPY --chown=root:root backend ./backend
+#9 CACHED
+
+#10 [runtime 7/8] COPY --chown=root:root requirements.lock ./requirements.lock
+#10 CACHED
+
+#11 [builder 4/4] RUN python -m pip install --no-cache-dir --target=/install --requirement requirements.lock
+#11 CACHED
+
+#12 [runtime 3/8] RUN rm -rf /usr/local/lib/python3.12/site-packages/pip            /usr/local/lib/python3.12/site-packages/pip-*.dist-info            /usr/local/lib/python3.12/site-packages/setuptools            /usr/local/lib/python3.12/site-packages/setuptools-*.dist-info            /usr/local/lib/python3.12/site-packages/wheel            /usr/local/lib/python3.12/site-packages/wheel-*.dist-info            /usr/local/lib/python3.12/site-packages/_distutils_hack            /usr/local/lib/python3.12/site-packages/pkg_resources            /usr/local/lib/python3.12/site-packages/distutils-precedence.pth            /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.12     && addgroup --system --gid 10001 aegisgraph     && adduser --system --uid 10001 --ingroup aegisgraph --home /nonexistent --no-create-home aegisgraph
+#12 CACHED
+
+#13 [runtime 2/8] COPY --from=builder --chown=root:root /install /usr/local/lib/python3.12/site-packages
+#13 CACHED
+
+#14 [runtime 6/8] COPY --chown=root:root alembic.ini ./alembic.ini
+#14 CACHED
+
+#15 [runtime 8/8] RUN chmod -R a-w /app && chmod a-w /app
+#15 CACHED
+
+#16 exporting to image
+#16 exporting layers done
+#16 exporting manifest sha256:32d8d949c1c069ace0f0fa6d3c9944469e8980f9d506cd05aa657adfae5fb84f done
+#16 exporting config sha256:19bd0ac7cdca5b1ace2e599781c52b443d6ee8f825b4d16ffed01ac04e1ccfcb done
+#16 exporting attestation manifest sha256:dfdba0a02c12561da02b9104a5b6ab1f9745ddc6262653c880f89fa46077af86
+#16 exporting attestation manifest sha256:dfdba0a02c12561da02b9104a5b6ab1f9745ddc6262653c880f89fa46077af86 0.0s done
+#16 exporting manifest list sha256:f1137f2dee0bb60c2e7ff4993f3ffc464d553273a38e2c350cc96eebc3f03bf6 0.0s done
+#16 naming to docker.io/library/aegisgraph:verify-46cb37b done
+#16 unpacking to docker.io/library/aegisgraph:verify-46cb37b 0.0s done
+#16 DONE 0.2s
+
+$ curl http://127.0.0.1:64374/healthz
+[passed] exit=200 
+{"status":"ok"}
+
+$ curl http://127.0.0.1:64374/readyz
+[passed] exit=200 
+{
+  "status": "ready",
+  "ready": true,
+  "insecure": true,
+  "warnings": [
+    "AUTH_MODE_NONE",
+    "LEGACY_UNAUTHENTICATED",
+    "RECEIPT_STORE_NOT_DURABLE",
+    "NOT_PRODUCTION"
+  ],
+  "dependencies": {
+    "authentication": {
+      "mode": "none",
+      "jwt_configured": false,
+      "service_tokens_configured": 0,
+      "legacy_unauthenticated": true
+    },
+    "receipt_store": {
+      "durable": false,
+      "reachable": true
+    },
+    "environment": "development"
+  }
+}
+
