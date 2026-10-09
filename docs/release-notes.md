@@ -45,10 +45,10 @@ security in general.
 | M1 | Versioned `aegisgraph/v1` contract; enforcement SDK that refuses a digest-mismatched action; bounded body and scan cost | implemented | [`api/contracts.md`](api/contracts.md), [`api/decision.schema.json`](api/decision.schema.json) |
 | M2 | Authentication, tenancy, scoped tokens, versioned policy, durable append-only receipt store (PostgreSQL 17) | implemented | [`api/auth.md`](api/auth.md), [`api/receipts.md`](api/receipts.md) |
 | M3 | OpenTelemetry, Prometheus, Grafana, SLOs, load harness, fail-closed under fault injection | implemented | [`ops/observability.md`](ops/observability.md), [`ops/slo.md`](ops/slo.md), [`ops/load-testing.md`](ops/load-testing.md) |
-| M4 | CI gates with SHA-pinned actions and a coverage floor of 95; hardened image; Compose stack; validated Kubernetes manifests; drift-guarded SBOM | implemented, three gaps named | [`ops/ci.md`](ops/ci.md), [`ops/container.md`](ops/container.md), [`ops/deployment.md`](ops/deployment.md) |
+| M4 | CI gates with SHA-pinned actions and a coverage floor of 95; hardened image; Compose stack; validated Kubernetes manifests; drift-guarded SBOM | implemented, two gaps named — no cluster smoke test, and F9 (the suite does not run inside the built image); the hosted workflow is verified running (ledger P85) | [`ops/ci.md`](ops/ci.md), [`ops/container.md`](ops/container.md), [`ops/deployment.md`](ops/deployment.md) |
 | M5 | Native evaluation schema authoritative; legacy suite behind a read-only adapter; 60-scenario dataset; sealed 20-scenario holdout | implemented, scripted only | [`docs/benchmark/data-card.md`](benchmark/data-card.md), [`docs/benchmark/evaluation-card.md`](benchmark/evaluation-card.md) |
 | M6 | Freeze block 1 declared and exercised: C1/C2 native scripted, C3 legacy re-check, C4 determinism, plus the null delta | partial — model cells blocked | [`evidence/m6-freeze.md`](evidence/m6-freeze.md), [`evidence/m6-campaign.md`](evidence/m6-campaign.md) |
-| M7 | Six independent review/audit vectors | partial — not every headline claim independently re-run | [`evidence/ledger.md`](evidence/ledger.md), [`evidence/reviews/`](evidence/reviews/) |
+| M7 | Six independent review/audit vectors | partial — six vectors landed; what remains is the reproducibility audit of every headline claim and an independent re-run of the gates | [`evidence/ledger.md`](evidence/ledger.md), [`evidence/reviews/`](evidence/reviews/) |
 | M8 | Runnable demo, bounded CV-claims document, this release and its provenance manifest | this release | [`demo/demo-script.md`](demo/demo-script.md), [`evidence/cv-claims.md`](evidence/cv-claims.md) |
 
 The milestone definitions, the blocked-by-tooling ledger and the per-milestone
@@ -179,16 +179,20 @@ not be quoted. **It is not quoted here**, and it is not in the release manifest.
 
 | Quantity | Value | Artifact / command |
 | --- | --- | --- |
-| Tests collected at the release candidate | **589** | `python -m pytest -q --collect-only` |
+| Tests collected at this revision | **598** | `python -m pytest -q --collect-only` |
 | Suite with PostgreSQL 17 at `57596f3` | 569 passed, 2 skipped → **3009/3108 = 96.81 %** | `docs/ops/ci.md` ("Coverage gate") |
 | Suite with no database | 2914/3108 = **93.76 %** | `docs/ops/ci.md` ("Coverage gate") |
 | Coverage floor (ratchet) | **95** | `.github/workflows/ci.yml`, `docs/ops/ci.md` |
+| Hosted CI (five gates) | green on the release tag `eb33d2c` (run `37846970280`, 2026-10-08T21:28:01Z) and on the tip `cb3f82f` (run `37863688964`); branch history 29 runs: 10 success / 1 failure / 17 `cancel-in-progress` cancellations, the failure being a test defect fixed in `cc3a14f` | `docs/evidence/ledger.md` row **P85**, `docs/ops/ci.md` |
 | Native dataset validation | `RESULT: PASS` (`errors=0 warnings=0`), dataset `7e916a11…`, sealed holdout 20 scenarios, ciphertext `c1a32fb8…` | `python scripts/bench_validate.py` |
 | Static checks | `ruff check` and strict `mypy` clean (19 source files) | `python -m ruff check scripts`, `python -m mypy` |
 
 The two skips need the untracked `.sentinel_reference` kit checkout, which a
 clean clone does not have; the floor of 95 is deliberately above the no-database
-ratio, so a silent skip of the database tests cannot pass.
+ratio, so a silent skip of the database tests cannot pass. The two coverage rows
+are the CI gate's own measurement **at `57596f3`** and are quoted with their
+commit, never as the current tip's ratio; the suite has grown since (598 tests
+collected here).
 
 ### 3.8 Container and software bill of materials
 
@@ -267,10 +271,11 @@ Full campaign configuration identity and the exact C1–C4 commands are in
   every campaign manifest.
 - **No result on the sealed holdout.** The 20-scenario holdout was not opened;
   no artifact in this release contains a holdout number.
-- **No cluster behaviour.** No Kubernetes cluster smoke test has run (`kind` is
-  not installed); the manifests are schema-validated and policy-asserted only.
-- **No GitHub-hosted CI run.** The workflow is reproducible locally; no run has
-  executed on GitHub, and no gate is claimed to have run there.
+- **No cluster behaviour and no in-image test run.** No Kubernetes cluster smoke
+  test has run (`kind` is not installed) — the manifests are schema-validated and
+  policy-asserted only — and the suite is still not executed inside the built
+  image (F9). The hosted workflow itself **is** verified running on GitHub: the
+  release tag and the branch tip both have green hosted runs (§3.7, ledger P85).
 - **No universal protection.** The gateway's verdicts are conditional on one
   fixed synthetic case series at one frozen commit. They are not a population
   estimate, a confidence interval, or proof that any injection is detected.
@@ -317,22 +322,38 @@ Full campaign configuration identity and the exact C1–C4 commands are in
   credential's scopes and ceiling are asserted in prose but recorded in no
   committed artifact; campaign latency is not comparable to the in-process run
   (durable PostgreSQL 17 receipts here). See `docs/evidence/m6-campaign.md` §1.
-- **Open and accepted findings.** The M3 telemetry/load review's ten findings
-  (H4-01…H4-10) and the campaign audit's remaining items are registered in the
-  ledger; dependency pins still carry no hashes (F8, `accepted`); the legacy
-  loopback refusal checks the configured bind variable, not the actual bind
-  (H3-06, `accepted`); the request body is buffered up to the 1 MiB cap before
-  the credential is resolved (H3-08, `accepted`). Statuses and residuals:
-  `docs/evidence/ledger.md`.
-- **Documentation freshness.** `README.md` §"Known limitations" predates M2–M4
-  and still describes receipts, authentication and telemetry as unimplemented;
-  the roadmap, the ledger and these notes supersede it for release purposes.
+  All three are now recorded rather than silent: the runner writes
+  `defense.build_identity` and `auth.scopes`/`trust_ceiling`/`claims_source`
+  (ledger rows **P69**, **P72**) and the latency difference is stated in
+  `docs/evidence/m6-campaign.md` §7.
+- **Review findings at this release.** All sixteen findings of the M6 campaign
+  audit and the M3 telemetry/load review (ledger rows **P69–P84**) are closed or
+  explicitly `accepted`. Five residual items stay `accepted` with their reasons
+  written down: dependency pins carry no hashes (F8), the legacy loopback refusal
+  checks the configured bind variable rather than the actual bind (H3-06), the
+  request body is buffered up to the 1 MiB cap before the credential is resolved
+  (H3-08), the `/metrics` control is port-level rather than credential-level
+  (P80), and a caller-controlled span attribute is unbounded in distinct values
+  (P84). Statuses and residuals: `docs/evidence/ledger.md`.
 - **Blocked cells** (from `docs/architecture/roadmap.md` §4, with the missing
   tool named): B1 Kubernetes cluster smoke test (`kind`); B2 host PostgreSQL
   (`psql`, containerized path intended); B3 real-model rerun (`ollama`); B4
-  paid-model benchmark (no API credentials); B5 GitHub-hosted CI execution (no
-  run has executed, `act` absent); B6 holdout result (seal may be opened only by
-  the custodian after the freeze checklist in `docs/benchmark/holdout.md` §4).
+  paid-model benchmark (no API credentials); B6 holdout result (seal may be
+  opened only by the custodian after the freeze checklist in
+  `docs/benchmark/holdout.md` §4). The former B5 (GitHub-hosted CI execution) is
+  **verified** — green runs `37846970280` on the tag and `37863688964` on the tip
+  — and the roadmap's blocked table records it as such (ledger **P85**).
+- **Corrections after publication.** The §5 bullet "No GitHub-hosted CI run" was
+  wrong when written and has been replaced by the verified position above: the
+  hosted workflow runs on every push, the release tag `v0.1.0-industrial` (cut at
+  `eb33d2c`) has a green run `37846970280` and the tip `cb3f82f` has run
+  `37863688964` (ledger P85). The stale `README.md`-freshness bullet, the
+  "blocked"/"unverified" labels on B5 and on the M3 and campaign review findings,
+  and the milestone-table wording were corrected in the same pass against ledger
+  rows P69–P85. No measured number and no release identity changed; the two
+  manifest entries for `docs/architecture/roadmap.md` and `docs/evidence/ledger.md`
+  were regenerated in the same commit, because those documents themselves changed
+  when the hosted-CI evidence landed (ledger P85).
 
 ## 7. Pointers
 
