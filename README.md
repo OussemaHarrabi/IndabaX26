@@ -1,5 +1,7 @@
 # AegisGraph
 
+[![ci](https://github.com/OussemaHarrabi/IndabaX26/actions/workflows/ci.yml/badge.svg)](https://github.com/OussemaHarrabi/IndabaX26/actions/workflows/ci.yml)
+
 AegisGraph is a **pre-execution decision gateway for agentic systems**. Given one
 proposed agent action and the inert facts around it — the conversation so far, the
 observation the agent is reacting to, the provenance of each item, the installed
