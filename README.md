@@ -304,9 +304,11 @@ manifests are validated but **not** cluster-smoke-tested here (no `kind`).
 5. **`/metrics` is network-controlled.** The exposition has no authentication
    dependency; it carries no content, credentials or principal identifiers, and
    the deployment restricts it at the network layer.
-6. **No cluster or GitHub-hosted CI evidence** until a cluster and a hosted run
-   exist; the workflows are reproduced locally step by step, which is not the
-   same thing.
+6. **No cluster evidence.** The Kubernetes manifests are validated by two schema
+   engines but no pod has ever been scheduled (no `kind` here). GitHub-hosted CI
+   *does* run: the release tag has a green workflow run
+   ([37846970280](https://github.com/OussemaHarrabi/IndabaX26/actions/runs/37846970280),
+   commit `eb33d2c`) and every push runs the same five gates on a hosted runner.
 7. **Deterministic rules, not calibrated risk.** `risk_score`/`confidence` are
    rule outputs, not probabilities of real-world harm. There is no learned
    detector and no fine-tuning.
