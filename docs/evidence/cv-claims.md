@@ -364,9 +364,12 @@ blocker that keeps it out.
   installed); only schema and policy validation exist (P17).
 - **A PostgreSQL client on the host.** Ledger **B2** `blocked` (`psql` is not
   installed); the containerized PostgreSQL path is the intended one.
-- **An independent review of the new surfaces as an M7 exit (P10).** `pending`:
-  the reviews themselves have landed (V), but M7's reproducibility audit of every
-  headline claim and its independent re-run of the gates is not closed.
+- **An independent review of the new surfaces as an M7 exit (P10).** `verified` at
+  the v0.1.1 cut: six review/audit vectors landed, and two fresh-clone independent
+  verifications re-ran the claimed gates against the release tree (`46cb37b`),
+  closing P10 with its two findings (P86, P87). The residual is stated in the row:
+  the verifier is of the same programme, not an external party, and the development
+  split, the campaign's timing and the aggregate digests were not re-run.
 - **Anchored ground truth for the legacy benign-utility gap.** The kit's self-test
   gate is not met (L6: 4/9 benign tasks), and no confidence interval or multi-seed
   estimate exists (L1–L3 limitations). No population-level statistical claim is

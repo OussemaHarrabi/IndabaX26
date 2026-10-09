@@ -219,6 +219,14 @@ independent rebuild, because Docker embeds a creation timestamp — the identity
 above now says so and names the reproducible identities instead. Both were found by
 the verifier, not by the author.
 
+**Corrections after publication.** One status lagged the cut and is corrected in
+the commit after the tag: `docs/evidence/cv-claims.md` still described ledger **P10**
+as pending, whereas P10 was verified in this release (and its two findings
+registered as P86 and P87). No measured number, digest or release identity changed;
+the tag is not moved, and the correction is recorded here rather than by rewriting
+the released tree — the same convention `v0.1.0-industrial` used for its own
+post-publication correction.
+
 ## 6. How to reproduce
 
 **Environment and commit.** The battery records its own environment block —
