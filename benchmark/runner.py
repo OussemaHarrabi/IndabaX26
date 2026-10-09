@@ -30,8 +30,8 @@ import platform
 import re
 import subprocess
 import sys
-from collections.abc import Sequence
-from dataclasses import dataclass, field
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -514,6 +514,23 @@ def _verdict_from(response: HttpResponse, step_id: int) -> StepVerdict:
     )
 
 
+def decision_verdict(response: HttpResponse, step_id: int) -> StepVerdict:
+    """A decision response as a verdict, **without** the fail-closed abort.
+
+    :func:`execute_run` deliberately keeps its own check
+    (:func:`_require_decision_status`) so the frozen scripted benchmark aborts on
+    a non-2xx and writes nothing. A campaign run needs the opposite: a non-2xx,
+    a timeout or a malformed body becomes an *errored* verdict that the driver
+    records per scenario and moves past, so one refused request cannot make a run
+    of silent "attacks stopped" look like a measurement.
+    """
+
+    verdict = _verdict_from(response, step_id)
+    if response.status != 200 and verdict.error is None:
+        return replace(verdict, error=f"non-200 decision response: HTTP {response.status}")
+    return verdict
+
+
 def _git_root() -> Path:
     """The repository root this module lives in."""
 
@@ -740,6 +757,149 @@ def _require_decision_status(
     )
 
 
+def build_run_manifest(
+    *,
+    run_name: str,
+    created: str,
+    code_commit: str,
+    code_commit_source: str,
+    code_branch: str,
+    code_dirty: bool | None,
+    defense_url: str,
+    health_status: int | None,
+    version_payload: dict[str, Any] | None,
+    version_error: str | None,
+    control_url: str,
+    control_kind: str,
+    auth: AuthConfig | None,
+    selected: Sequence[Scenario],
+    dataset: Dataset,
+    dataset_root: Path,
+    splits: Sequence[str],
+    model_identity: ModelIdentity,
+    seed: int,
+    temperature: float | None,
+    max_tokens: int | None,
+    hardware_note: str,
+    lock_path: Path | None,
+    artifacts: Mapping[str, str],
+    limitations: Sequence[str],
+    repo_root: Path,
+    extra: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """The run manifest: everything needed to reproduce and audit one run.
+
+    This is the single builder for both the scripted runner (:func:`execute_run`)
+    and the campaign driver, so the two cannot drift apart in the fields an
+    auditor reads. The policy identity is derived from ``selected`` alone, and
+    ``extra`` lets a caller add a block (the campaign adds ``campaign``) without
+    changing any field the committed run directories already record.
+    """
+
+    policy_sets_used: set[str] = set()
+    policy_digests: dict[str, str] = {}
+    policy_bodies: dict[str, dict[str, Any]] = {}
+    for scenario in selected:
+        identity = wire_policy_set_for(scenario)
+        key = f"{identity['id']}:{identity['version']}"
+        policy_sets_used.add(key)
+        policy_digests[key] = wire_policy_document_digest(wire_policy_document(scenario))
+        policy_bodies[key] = wire_policy_document(scenario)
+    policy_blob_sha256, policy_blob_reason = _policy_blob_sha256(policy_bodies)
+    policy_source_blobs = _policy_source_blobs(repo_root)
+
+    manifest: dict[str, Any] = {
+        "schema_version": MANIFEST_SCHEMA_VERSION,
+        "run": {
+            "name": run_name,
+            "created": created,
+            "immutable": True,
+            "created_with": "mkdir(exist_ok=False)",
+        },
+        "code": {
+            "commit": code_commit,
+            "commit_source": code_commit_source,
+            "branch": code_branch,
+            "dirty": code_dirty,
+        },
+        "defense": {
+            "url": defense_url,
+            "health": {"status": health_status},
+            "version": version_payload,
+            "version_error": version_error,
+            "endpoint": GENERIC_PATH,
+            "build_identity": _service_build_identity(version_payload),
+        },
+        "control": {"url": control_url, "kind": control_kind},
+        "auth": (
+            auth.metadata()
+            if auth is not None
+            else {
+                "mode": "none",
+                "header": None,
+                "scheme": None,
+                "principal": None,
+                "principal_source": "no credential supplied",
+            }
+        ),
+        "policy_set": (version_payload or {}).get("policy_set"),
+        "policy": {
+            "gate": "H5.2",
+            "blob_sha256": policy_blob_sha256,
+            "blob_sha256_reason": policy_blob_reason,
+            "blob_sha256_source": (
+                "the policy documents the requests pinned, hashed as one git blob over the "
+                "canonical {policy-set-id:version -> document} map, computed by the "
+                "benchmark before any gateway call"
+            ),
+            "hash_convention": HASH_CONVENTION,
+            "source_blobs": policy_source_blobs,
+            "source": "scenario-derived, published to the tenant and pinned per request",
+            "publish_command": (
+                "python scripts/bench_policies.py publish --defense-url <url> --token-file <path>"
+            ),
+            "policy_set_count": len(policy_sets_used),
+            "policy_sets": sorted(policy_sets_used),
+            "document_digests": {key: value for key, value in sorted(policy_digests.items())},
+            "server_default": (version_payload or {}).get("policy_set"),
+        },
+        "scenario_policy_sets": sorted(
+            {
+                f"{scenario.policy_context.policy_id}/{scenario.policy_context.policy_version}"
+                for scenario in selected
+            }
+        ),
+        "dataset": {
+            "root": str(dataset_root),
+            "sha256": dataset.dataset_hash(),
+            "scenario_count": len(dataset.entries),
+            "file_hashes": {entry.relative_path: entry.sha256 for entry in dataset.entries},
+        },
+        "scenario_set": {
+            "sha256": scenario_set_hash(selected),
+            "splits": list(splits),
+            "scenario_count": len(selected),
+            "scenario_ids": [scenario.id for scenario in selected],
+        },
+        "model": model_identity.to_json(),
+        "seed": seed,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "hardware": {
+            "note": hardware_note,
+            "platform": platform.platform(),
+            "python": sys.version.split()[0],
+            "machine": platform.machine(),
+        },
+        "dependency_lock": _file_sha256(lock_path, repo_root),
+        "artifacts": dict(sorted(artifacts.items())),
+        "limitations": list(limitations),
+    }
+    if extra:
+        manifest.update(extra)
+    return manifest
+
+
 def execute_run(config: RunConfig, dataset: Dataset | None = None) -> RunResult:
     """Run the dataset against the defence and the control, then write the run."""
 
@@ -771,18 +931,6 @@ def execute_run(config: RunConfig, dataset: Dataset | None = None) -> RunResult:
     # Every request pins the policy set its scenario needs, so the run records
     # exactly which stored policy documents it depends on. Publishing them is a
     # separate, auditable step (scripts/bench_policies.py).
-    policy_sets_used: set[str] = set()
-    policy_digests: dict[str, str] = {}
-    policy_bodies: dict[str, dict[str, Any]] = {}
-    for scenario in selected:
-        identity = wire_policy_set_for(scenario)
-        key = f"{identity['id']}:{identity['version']}"
-        policy_sets_used.add(key)
-        policy_digests[key] = wire_policy_document_digest(wire_policy_document(scenario))
-        policy_bodies[key] = wire_policy_document(scenario)
-    policy_blob_sha256, policy_blob_reason = _policy_blob_sha256(policy_bodies)
-    policy_source_blobs = _policy_source_blobs(Path(__file__).resolve().parents[1])
-
     defense = HttpClient(config.defense_url, config.timeout, config.auth)
     health = defense.get(HEALTH_PATH)
     if health.error is not None or health.status != 200:
@@ -858,101 +1006,42 @@ def execute_run(config: RunConfig, dataset: Dataset | None = None) -> RunResult:
     (run_dir / "control.jsonl").write_bytes(control_bytes)
 
     identity = config.model.identity()
-    manifest = {
-        "schema_version": MANIFEST_SCHEMA_VERSION,
-        "run": {
-            "name": run_dir.name,
-            "created": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "immutable": True,
-            "created_with": "mkdir(exist_ok=False)",
-        },
-        "code": {
-            "commit": code_commit,
-            "commit_source": code_commit_source,
-            "branch": _git_branch(),
-            "dirty": code_dirty,
-        },
-        "defense": {
-            "url": config.defense_url,
-            "health": {"status": health.status},
-            "version": version.payload,
-            "version_error": version.error,
-            "endpoint": GENERIC_PATH,
-            "build_identity": _service_build_identity(version.payload),
-        },
-        "control": {"url": control_url, "kind": control_kind},
-        "auth": (
-            config.auth.metadata()
-            if config.auth is not None
-            else {
-                "mode": "none",
-                "header": None,
-                "scheme": None,
-                "principal": None,
-                "principal_source": "no credential supplied",
-            }
-        ),
-        "policy_set": (version.payload or {}).get("policy_set"),
-        "policy": {
-            "gate": "H5.2",
-            "blob_sha256": policy_blob_sha256,
-            "blob_sha256_reason": policy_blob_reason,
-            "blob_sha256_source": (
-                "the policy documents the requests pinned, hashed as one git blob over the "
-                "canonical {policy-set-id:version -> document} map, computed by the "
-                "benchmark before any gateway call"
-            ),
-            "hash_convention": HASH_CONVENTION,
-            "source_blobs": policy_source_blobs,
-            "source": "scenario-derived, published to the tenant and pinned per request",
-            "publish_command": (
-                "python scripts/bench_policies.py publish --defense-url <url> --token-file <path>"
-            ),
-            "policy_set_count": len(policy_sets_used),
-            "policy_sets": sorted(policy_sets_used),
-            "document_digests": {key: value for key, value in sorted(policy_digests.items())},
-            "server_default": (version.payload or {}).get("policy_set"),
-        },
-        "scenario_policy_sets": sorted(
-            {
-                f"{scenario.policy_context.policy_id}/{scenario.policy_context.policy_version}"
-                for scenario in selected
-            }
-        ),
-        "dataset": {
-            "root": str(config.dataset_root),
-            "sha256": loaded.dataset_hash(),
-            "scenario_count": len(loaded.entries),
-            "file_hashes": {entry.relative_path: entry.sha256 for entry in loaded.entries},
-        },
-        "scenario_set": {
-            "sha256": scenario_set_hash(selected),
-            "splits": list(config.splits),
-            "scenario_count": len(selected),
-            "scenario_ids": [scenario.id for scenario in selected],
-        },
-        "model": identity.to_json(),
-        "seed": config.seed,
-        "temperature": config.temperature,
-        "max_tokens": config.max_tokens,
-        "hardware": {
-            "note": config.hardware_note,
-            "platform": platform.platform(),
-            "python": sys.version.split()[0],
-            "machine": platform.machine(),
-        },
-        "dependency_lock": _file_sha256(config.lock_path, _git_root()),
-        "artifacts": {
+    manifest = build_run_manifest(
+        run_name=run_dir.name,
+        created=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        code_commit=code_commit,
+        code_commit_source=code_commit_source,
+        code_branch=_git_branch(),
+        code_dirty=code_dirty,
+        defense_url=config.defense_url,
+        health_status=health.status,
+        version_payload=version.payload,
+        version_error=version.error,
+        control_url=control_url,
+        control_kind=control_kind,
+        auth=config.auth,
+        selected=selected,
+        dataset=loaded,
+        dataset_root=config.dataset_root,
+        splits=config.splits,
+        model_identity=identity,
+        seed=config.seed,
+        temperature=config.temperature,
+        max_tokens=config.max_tokens,
+        hardware_note=config.hardware_note,
+        lock_path=config.lock_path,
+        artifacts={
             "outcomes.jsonl": hashlib.sha256(outcome_bytes).hexdigest(),
             "control.jsonl": hashlib.sha256(control_bytes).hexdigest(),
         },
-        "limitations": [
+        limitations=(
             "no model is available in this environment; the result measures the gateway "
             "under a scripted plan, not model behaviour",
             "the reachability control is a harness-liveness check for scripted plans: it "
             "licenses a scenario, it does not show a model falls for the payload",
-        ],
-    }
+        ),
+        repo_root=_git_root(),
+    )
     manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
     (run_dir / "manifest.json").write_bytes(manifest_bytes)
 
@@ -997,6 +1086,8 @@ __all__ = [
     "RunResult",
     "ScriptedAdapter",
     "UnavailableModelAdapter",
+    "build_run_manifest",
+    "decision_verdict",
     "execute_run",
     "load_run",
     "model_adapter",
