@@ -3,7 +3,7 @@
   "generator": "scripts/release_manifest.py",
   "generator_version": "1.0.0",
   "generation": {
-    "generated_at": "2026-10-09T01:29:39.410443Z",
+    "generated_at": "2026-10-09T01:50:29.463736Z",
     "digest_bound": false,
     "note": "the generation time is not part of any digest and nothing here hashes it",
     "superseded": [
@@ -27,7 +27,7 @@
   "release": {
     "tag": "v0.1.1",
     "version": "v0.1.1",
-    "commit": "f36f1d9effde8629c02adc605af5c99d4e381764",
+    "commit": "29c9337795cd59b2b5094b57da236ebaacde46e8",
     "commit_input": "HEAD",
     "branch": "feature/aegisgraph-industrial-research",
     "self_reference": "the digests describe the tree of release.commit; this manifest is added in that commit's child, which the tag points at, and --verify re-hashes the listed artifacts only, because a manifest cannot hash itself"
@@ -347,10 +347,10 @@
       "path": "docs/evidence/ledger.md",
       "kind": "doc",
       "note": "claim-to-evidence map: artifact, digest, command and commit per claim",
-      "bytes": 108676,
-      "sha256_raw": "fbd565a084866b5822f620098dc2f908cc361fc14cdec378d32fe451ab1cdb11",
-      "sha256_lf": "88d6f5500231c5b12babb98d518f68a99e1cf3a3ebdb18c39544b14ee00eb1c6",
-      "sha256_blob": "88d6f5500231c5b12babb98d518f68a99e1cf3a3ebdb18c39544b14ee00eb1c6",
+      "bytes": 113734,
+      "sha256_raw": "98fd56c15d6ec4fdcd956299d9155dd788cab0217990c3850a0d51b99e3fed45",
+      "sha256_lf": "46c26ee0bfb108af22988681ba34069d2ec2899992a7d17a996d739e5557f0c0",
+      "sha256_blob": "46c26ee0bfb108af22988681ba34069d2ec2899992a7d17a996d739e5557f0c0",
       "blob_matches": "lf"
     },
     {
