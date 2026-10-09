@@ -185,7 +185,11 @@ def model_adapter(name: str) -> ModelAdapter:
             "install Ollama, serve the reference model, then re-run with "
             "--model ollama (see docs/benchmark/evaluation-card.md)",
         )
-    raise RunError(f"unknown model adapter {name!r}; available: scripted, ollama")
+    if name == "qwen":
+        from benchmark.qwen import QwenModelAdapter
+
+        return QwenModelAdapter()
+    raise RunError(f"unknown model adapter {name!r}; available: scripted, ollama, qwen")
 
 
 # --------------------------------------------------------------------------- #
