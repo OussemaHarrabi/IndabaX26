@@ -3,7 +3,7 @@
   "generator": "scripts/release_manifest.py",
   "generator_version": "1.0.0",
   "generation": {
-    "generated_at": "2026-10-08T21:26:43.404432Z",
+    "generated_at": "2026-10-09T00:22:58.498877Z",
     "digest_bound": false,
     "note": "the generation time is not part of any digest and nothing here hashes it",
     "superseded": [
@@ -11,14 +11,19 @@
         "commit": "e4a43164fb9ef14c781739d8d836137218440488",
         "mismatches": 8,
         "reason": "first generation, at the integration tip before the review-closure, corrected-figure and release merges; four listed documents changed afterwards, so --verify reported 8 digest mismatches (4 paths x 2 conventions) against it"
+      },
+      {
+        "commit": "7f4f661d645340d642bd7c94bfdbb6dd03b7fe01",
+        "mismatches": 4,
+        "reason": "second generation, the one carried by tag v0.1.0-industrial; the hosted-CI evidence landing changed docs/architecture/roadmap.md and docs/evidence/ledger.md afterwards, so --verify reported 4 digest mismatches (2 paths x 2 conventions) against it"
       }
     ]
   },
   "release": {
     "tag": "v0.1.0-industrial",
     "version": "v0.1.0-industrial",
-    "commit": "7f4f661d645340d642bd7c94bfdbb6dd03b7fe01",
-    "commit_input": "7f4f661",
+    "commit": "c6475887a7908f3f7448b1b89ebe71458dad8e29",
+    "commit_input": "c647588",
     "branch": "feat/m8-release",
     "self_reference": "the digests describe the tree of release.commit; this manifest is added in that commit's child, which the tag points at, and --verify re-hashes the listed artifacts only, because a manifest cannot hash itself"
   },
@@ -327,20 +332,20 @@
       "path": "docs/architecture/roadmap.md",
       "kind": "doc",
       "note": "authoritative M0-M8 milestone map and the blocked-by-tooling ledger",
-      "bytes": 32214,
-      "sha256_raw": "28039dc202570d110c98ca0054a3bf7b96cb2cc396fcdf5d19f56ec650ba5c65",
-      "sha256_lf": "26c4baed925d4fc51f82146a1c3de58dd3e23aab96552442d44fd91f50026bea",
-      "sha256_blob": "26c4baed925d4fc51f82146a1c3de58dd3e23aab96552442d44fd91f50026bea",
+      "bytes": 34629,
+      "sha256_raw": "4045e1a45e46322df335033c09051e2375c89b4d058883a4cb36e3c9119195e8",
+      "sha256_lf": "44dc7f56eba8c9e7e8ed7cb9135972a8251e7900f7721b940eb7526fa869622b",
+      "sha256_blob": "44dc7f56eba8c9e7e8ed7cb9135972a8251e7900f7721b940eb7526fa869622b",
       "blob_matches": "lf"
     },
     {
       "path": "docs/evidence/ledger.md",
       "kind": "doc",
       "note": "claim-to-evidence map: artifact, digest, command and commit per claim",
-      "bytes": 102951,
-      "sha256_raw": "c2d31fbaec05a01999e138efbba1ec4b90b534ad839928cbca73e93519c154a2",
-      "sha256_lf": "983c2519c3f9d6d5cc7f35c7add3d9387b14950f959ec60840634a23d429bfb6",
-      "sha256_blob": "983c2519c3f9d6d5cc7f35c7add3d9387b14950f959ec60840634a23d429bfb6",
+      "bytes": 108676,
+      "sha256_raw": "fbd565a084866b5822f620098dc2f908cc361fc14cdec378d32fe451ab1cdb11",
+      "sha256_lf": "88d6f5500231c5b12babb98d518f68a99e1cf3a3ebdb18c39544b14ee00eb1c6",
+      "sha256_blob": "88d6f5500231c5b12babb98d518f68a99e1cf3a3ebdb18c39544b14ee00eb1c6",
       "blob_matches": "lf"
     },
     {
