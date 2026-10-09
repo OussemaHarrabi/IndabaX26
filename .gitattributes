@@ -7,3 +7,8 @@ evaluation/real-qwen/*.zip binary
 # working copy. Existing blobs are intentionally not renormalised.
 *.json -text
 *.jsonl -text
+# The image SBOM and its requirements sidecar are hashed evidence too: keep
+# their bytes verbatim so a worktree hash equals the committed blob on every
+# platform (an independent verification found the .txt sidecar checking out
+# CRLF while the manifest recorded its LF bytes).
+deploy/sbom/* -text
