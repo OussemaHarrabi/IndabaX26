@@ -154,6 +154,8 @@ class VersionResponse(BaseModel):
     api_version: Literal["aegisgraph/v1"]
     policy_set: PolicyIdentity
     build: Mapping[str, JsonValue]
+    ablation: str | None = None
+    """The active research ablation, or absent when the defence is running."""
 
 
 router = APIRouter()
@@ -161,9 +163,16 @@ router = APIRouter()
 DecisionSubmitter = Annotated[Principal, Depends(require_scopes(SCOPE_DECISION_SUBMIT))]
 
 
-@router.get("/api/v1/version", response_model=VersionResponse)
-async def version() -> VersionResponse:
-    """Return the API version, the active policy identity and build metadata."""
+@router.get(
+    "/api/v1/version", response_model=VersionResponse, response_model_exclude_none=True
+)
+async def version(settings: SettingsDep) -> VersionResponse:
+    """Return the API version, the active policy identity and build metadata.
+
+    ``ablation`` names the one mechanism a research run disabled. It is absent
+    for the defence, so the default version shape is unchanged; when present it
+    makes an ablated service identifiable before any request is sent.
+    """
 
     return VersionResponse(
         api_version=API_VERSION,
@@ -173,6 +182,7 @@ async def version() -> VersionResponse:
             "version": _package_version(),
             "commit": os.environ.get(BUILD_COMMIT_ENV, "unknown"),
         },
+        ablation=settings.ablation.value if settings.ablation is not None else None,
     )
 
 
@@ -200,7 +210,7 @@ async def create_decision(
         telemetry.SPAN_DECISION, **{telemetry.ATTR_ROUTE: DECISION_ROUTE}
     ) as decision_span:
         with telemetry.span(telemetry.SPAN_NORMALISE) as normalise_span:
-            assert_trust_ceiling(principal, request)
+            assert_trust_ceiling(principal, request, ablation=settings.ablation)
             policy_set, policy_context = effective_policy(
                 principal,
                 policy_set=request.policy_set,
@@ -230,6 +240,7 @@ async def create_decision(
                     request,
                     confirmation_mode=ConfirmationMode.STRICT,
                     now_epoch=now_epoch,
+                    ablation=settings.ablation,
                 )
                 response = _to_generic_response(evaluated, identity)
             except Exception as error:
@@ -470,26 +481,29 @@ def _log_decision(
 ) -> None:
     """Emit exactly one structured decision record; never any request content."""
 
+    record: dict[str, object] = {
+        "event": "decision",
+        "request_id": response.request_id,
+        "receipt_id": response.receipt_id,
+        "policy_set": {
+            "id": response.policy_set.id,
+            "version": response.policy_set.version,
+        },
+        "verdict": response.decision,
+        "reason_codes": list(response.reason_codes),
+        "action_digest": response.action_digest,
+        "execution_digest": response.execution_digest,
+        "latency_ms": latency_ms,
+        "caller": caller,
+    }
+    # An ablated run must be identifiable from its artifacts: the decision record
+    # carries the ablation name, and only an ablated run grows this key, so the
+    # default record shape is unchanged (ablation visibility, docs/benchmark/ablations.md).
+    ablation = response.metadata.get("ablation")
+    if ablation is not None:
+        record["ablation"] = ablation
     _LOGGER.info(
-        json.dumps(
-            {
-                "event": "decision",
-                "request_id": response.request_id,
-                "receipt_id": response.receipt_id,
-                "policy_set": {
-                    "id": response.policy_set.id,
-                    "version": response.policy_set.version,
-                },
-                "verdict": response.decision,
-                "reason_codes": list(response.reason_codes),
-                "action_digest": response.action_digest,
-                "execution_digest": response.execution_digest,
-                "latency_ms": latency_ms,
-                "caller": caller,
-            },
-            separators=(",", ":"),
-            sort_keys=True,
-        )
+        json.dumps(record, separators=(",", ":"), sort_keys=True)
     )
 
 

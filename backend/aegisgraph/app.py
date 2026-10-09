@@ -392,11 +392,12 @@ async def decision_endpoint(request: SentinelRequest) -> Response:
     receipt-bearing: its measured behaviour must not change (D5).
     """
 
-    if not load_settings().legacy_unauthenticated:
+    settings = load_settings()
+    if not settings.legacy_unauthenticated:
         _LOGGER.warning("Legacy unauthenticated surface refused (%s is not enabled)", LEGACY_ENV)
         raise StarletteHTTPException(status_code=404, detail="Not Found")
     try:
-        result = decide(request)
+        result = decide(request, ablation=settings.ablation)
         response = _to_wire_response(result)
         encoded = response.model_dump_json().encode("utf-8")
         if len(encoded) > MAX_RESPONSE_BYTES:
