@@ -1,9 +1,11 @@
 # AegisGraph analysis plan (statistics)
 
-**Status:** preregistered · **Version:** 1.1 · **Date:** 2026-10-08
+**Status:** preregistered · **Version:** 1.2 · **Date:** 2026-10-09
 (amendment 1: the multiplicity families in §5, the reportability floor in §3 and
 §2.4, and the H5.2 gate input in §7 are now implemented and measured; the tables
-in §9 print raw and adjusted p)
+in §9 print raw and adjusted p. Addition 2: §11 maps every rule above to the
+function that implements it and the test that pins it; no rule, denominator or
+family was changed by it.)
 **Companion documents:** `research-plan.md` (hypotheses and denominators),
 `design.md` (units, pairing, exclusions). Labels as in `research-plan.md`.
 
@@ -303,3 +305,100 @@ its Holm–Bonferroni-adjusted value with the family size `m`**, the BTU pair, t
 control-liveness count (licensed / excluded), and the artifact hashes. A comparison
 missing any of these is not reportable. A p-value quoted without its corrected
 value, or a verdict read off the raw p, is not a confirmatory claim.
+
+## 11. Implemented — rule → function → test
+
+**Status:** implemented · **Date:** 2026-10-09. This addition maps the rules above
+to the code that implements them; it changes no rule, denominator, hypothesis or
+family size.
+
+The run-directory analysis is `benchmark/analysis.py`, driven by
+`scripts/bench_analyze.py`, tested by `tests/test_benchmark_analysis.py`. It is
+**read-only** over a run directory written by `benchmark.runner` and it **consumes**
+`benchmark/scoring.py` (intention-to-treat, the decision-level vs scenario-level
+false-block split, the falsifiable control licence, the digest); it never
+re-derives those differently. The exact small-sample estimators and the
+multiplicity adjustments are imported from the preregistered
+`docs/research/analysis.py` (§1.5, "one implementation"), so the legacy scorecard
+analysis and this run-directory analysis cannot drift apart.
+
+| Rule | Function | Test |
+| --- | --- | --- |
+| §2.1 matched 2×2 table on `R`, `a/b/c/d`, `b` and `c` always reported | `pair_binary`, `reached_set`, `analyse_pair` | `test_known_mcnemar_table_and_effect`; `test_committed_m6_run_reproduces_and_pairs` |
+| §2.1 two-sided exact McNemar on the discordant pairs | `mcnemar_exact` | `test_known_mcnemar_table_and_effect`; `test_h3_verdict_is_overturned_by_the_correction` |
+| §2.2 reduction, discordant-pair interval (primary), interval width | `discordant_rd_ci`, `_excludes_zero`, `analyse_pair` | `test_known_mcnemar_table_and_effect`; `test_intervals_and_exclusion_are_consistent` |
+| §2.2 MOVER interval (marginal Wilson); disagreement about excluding the null ⇒ inconclusive | `newcombe_mover`, `wilson`, `_excludes_zero` | `test_mover_uses_the_wilson_marginals`; `test_intervals_and_exclusion_are_consistent` |
+| §2.2 per-arm Clopper–Pearson interval | `clopper_pearson` | `tests/test_research_analysis.py::test_clopper_pearson_zero_of_22` (same imported function) |
+| §2.2 Cohen's *h* (point estimate) | `cohens_h` | `test_known_mcnemar_table_and_effect` |
+| §2.2 risk ratio, "not estimable" when `p_T = 0` (never `0.0`) | `_risk_ratio` | `test_risk_ratio_is_not_estimable_when_treatment_rate_is_zero` |
+| §2.3 utility (H1.2): benign pairing, per-arm BTU, McNemar; non-inferiority by the count rule | `benign_set`, `analyse_pair` (benign), `_hypothesis_verdicts` | `test_h1_count_rules` |
+| §2.4 decision-level cells taken verbatim from the scorecard `metrics` block, with the same floor the scorer applied | `decision_cells_from_bucket` | `test_committed_m6_run_reproduces_and_pairs`; `tests/test_benchmark_scoring.py` |
+| §3 pairs matched by `scenario_id`; duplicate ids raise; unmatched reported | `_read_outcomes`, `pair_binary` | `test_duplicate_scenario_id_is_refused`; `test_failed_run_is_reported_not_dropped` |
+| §3 `b + c < 5` ⇒ no p-value (see divergence note) | `analyse_pair` (`n_a_reason`) | `test_degenerate_ci_contains_zero`; `test_slice_without_a_p_does_not_enter_the_family` |
+| §3/§4.3.1 reportability floor `reached n ≥ 3`; low-power rows labelled | `analyse_slices`, `min_slice` | `test_slice_floor_marks_rows_not_reportable` |
+| §3 intention-to-treat: a reached attack that errored or is absent counts as a failure | `pair_binary`, `_itt_verdict` | `test_itt_counts_an_errored_reached_attack_as_failure` |
+| §3 "> 10 % exclusions/defence errors ⇒ inconclusive" | `_itt_verdict`; consumed `Bucket.inconclusive` | `test_itt_counts_an_errored_reached_attack_as_failure`; `test_exclusion_rule_is_not_inconclusive_below_ten_percent` |
+| §3 control stability (H1.3) | `_control_signature`, `control_stability` | `test_control_stability_is_flagged` |
+| §3 sensitivity for unreachable/errored rows; missing accounting | `analyse_pair` (`sensitivity`), `analyse_campaign` (`accounting`) | `test_unreachable_attacks_are_counted_and_excluded`; `test_failed_run_is_reported_not_dropped` |
+| §4 per-repeat / per-seed reporting | `_by_seed`, `by_seed_table` | `test_by_seed_table_lists_each_run` |
+| §5 Holm–Bonferroni in the declared families F1/F2/F3, with `m` stated | `holm_adjust`, `apply_families` | `test_holm_adjust_hand_values_and_monotonicity`; `test_holm_overturns_a_raw_verdict`; `test_primary_family_corrects_across_treatments` |
+| §5 RQ2 exploratory family under Benjamini–Hochberg at `q = 0.05` | `bh_adjust`, `apply_families(exploratory=True)` | `test_bh_adjust_hand_values`; `test_exploratory_family_uses_benjamini_hochberg` |
+| §5.1 a slice that produced no p is not a test and does not dilute the family | `apply_families` (F3) | `test_slice_without_a_p_does_not_enter_the_family` |
+| §5.2 H3 verdict gated on the adjusted p and the floor; the overturn is printed, never a bare "holds" | `_slice_verdict` (reuses the preregistered `_hypothesis_note`) | `test_h3_verdict_is_overturned_by_the_correction` |
+| H1.1 / H1.2 count rules (falsifiable) | `_hypothesis_verdicts` | `test_h1_count_rules`; `test_h1_1_is_falsified_when_reached_success_exceeds_one_half` |
+| §10 reportability: identity, counts before proportions, liveness count, artifact hashes | `paired_table`, `slices_table`, `accounting_table`, `scripts/bench_analyze.py` | `test_cli_runs_and_refuses_to_overwrite`; `test_committed_m6_run_reproduces_and_pairs` |
+| Reproducibility gate: every aggregate in the committed `score.json` recomputed from the raw outcomes, mismatch is an error | `reproduce_score` | `test_score_that_does_not_reproduce_fails_loudly`; `test_reproduce_score_accepts_a_faithful_run`; `test_committed_m6_run_reproduces_and_pairs` |
+| Run hash verification before analysis; a mismatch names the file and refuses the run | `verify_run_hashes`, `_expected_hashes` | `test_hash_mismatch_is_refused_naming_the_file`; `test_hashes_file_source_is_honoured` |
+| Paired bootstrap interval clustered by scenario (fixed seed) | `bootstrap_reduction_ci` | `test_degenerate_ci_contains_zero`; `test_statistics_json_is_byte_identical_across_runs` |
+| Deterministic output: same input ⇒ byte-identical `statistics.json` | `_payload_digest`, `write_analysis_outputs` | `test_statistics_json_is_byte_identical_across_runs` |
+| Plots only when a plotting library is importable; their absence never fails the command | `render_plots` | `test_plots_absence_never_fails` |
+| Output overwrite policy | `write_analysis_outputs` | `test_output_directory_is_not_overwritten_without_force`; `test_cli_runs_and_refuses_to_overwrite` |
+
+### 11.1 Divergence from the preregistered rule (recorded, not silently redefined)
+
+**Rule:** §3, "Sufficient discordant information — if `b + c < 5`, report counts
+and the point estimate only; **no p-value**."
+
+**Divergence.** The run-directory analysis applies that floor to the *primary*
+McNemar test as well as to slices: when `b + c < 5` it publishes counts, the point
+estimate and the intervals, and records `exact_p = null` with the reason. The
+legacy scorecard script `docs/research/analysis.py` computes the primary p
+unconditionally and applies the floor only to slices (§4.3.1). The §3 table is not
+scoped to slices, so the run-directory behaviour is the faithful reading and the
+legacy script is the outlier.
+
+**Reason.** A p-value from fewer than five discordant pairs carries no usable
+information (§1.1, "exact, not asymptotic"); printing one invites a confirmatory
+reading this design cannot support.
+
+**Residual risk.** The two implementations are not identical for a run with
+`b + c < 5`: the legacy script would print a primary p where the run-directory
+analysis prints `n/a`. No committed legacy table is affected — every measured
+legacy primary test has `b + c ≥ 22` — but a future primary test must be read off
+the run-directory output. The legacy script is a frozen, committed artifact and is
+left untouched.
+
+### 11.2 Notes (properties, not divergences)
+
+- **`c ≡ 0` on a reached set derived from the paired control.** `R` is the set of
+  attacks the *paired* control succeeded on, so within `R` a treatment success
+  where the control failed (`c > 0`) cannot occur; `c` is computed from the data
+  regardless and the H1.1 clause `c > 0` remains a guard against a control/`R`
+  mismatch, not a routine possibility. `[INFERENCE]`, verified by construction of
+  `reached_set` and `pair_binary`.
+- **Bootstrap interval.** The preregistration fixes the exact discordant-pair
+  interval as primary (§2.2, §1.1) and it stays primary here; the paired bootstrap
+  clustered by scenario is an additional resampling summary (secondary), recorded
+  with its replicate count and seed in `statistics.json` so it is reproducible.
+  It is not a normal approximation and it never replaces the exact interval.
+- **Hash source.** A run directory records its file hashes in
+  `manifest.json["artifacts"]` (written by the runner); a `hashes.sha256` file is
+  honoured when present and takes precedence. A run with neither is refused as
+  unverifiable.
+- **H1.1b** is reported only when a `--baseline` run is supplied (the same-suite
+  provenance baseline); otherwise the verdict says "not computable", never a
+  number.
+- **Family membership.** A comparison whose primary p is unavailable (empty
+  reached set) is not a test and does not enter F1; likewise a benign comparison
+  with no benign scenarios does not enter F2. The printed `m` is the number of
+  tests actually corrected.
