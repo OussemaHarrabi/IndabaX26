@@ -76,6 +76,15 @@ SUPERSEDED_GENERATIONS: tuple[dict[str, Any], ...] = (
             "digest mismatches (4 paths x 2 conventions) against it"
         ),
     },
+    {
+        "commit": "7f4f661d645340d642bd7c94bfdbb6dd03b7fe01",
+        "mismatches": 4,
+        "reason": (
+            "second generation, the one carried by tag v0.1.0-industrial; the hosted-CI evidence "
+            "landing changed docs/architecture/roadmap.md and docs/evidence/ledger.md afterwards, "
+            "so --verify reported 4 digest mismatches (2 paths x 2 conventions) against it"
+        ),
+    },
 )
 
 #: The declared release artifact list: ``(path, kind, note)``.  Order is the
