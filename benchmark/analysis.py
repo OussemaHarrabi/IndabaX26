@@ -166,24 +166,37 @@ def preregistered_limits() -> dict[str, float | int]:
 # --------------------------------------------------------------------------- #
 
 
-def _sha256_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def _digest_file(path: Path, *, normalise_lf: bool) -> str:
+    """SHA-256 of a file's bytes, with CRLF normalised to LF when the convention asks."""
+
+    data = path.read_bytes()
+    if normalise_lf:
+        data = data.replace(b"\r\n", b"\n")
+    return hashlib.sha256(data).hexdigest()
 
 
-def _expected_hashes(run_dir: Path) -> tuple[dict[str, str], str]:
-    """Return ``{filename: sha256}`` and its source for a run directory.
+def _expected_hashes(run_dir: Path) -> tuple[dict[str, str], str, bool]:
+    """Return ``{filename: sha256}``, its source, and whether to hash LF-normalised.
 
-    A ``hashes.sha256`` file (``sha256sum`` format) takes precedence; otherwise the
-    runner's own record, ``manifest.json["artifacts"]``, is used. A run that records
-    no hashes anywhere is not verifiable and is refused.
+    A ``hashes.sha256`` file takes precedence over the runner's own record in
+    ``manifest.json["artifacts"]``. The driver's file carries a
+    ``# convention:`` header; when that convention is ``content-sha256-lf``
+    (``benchmark/runner.py::HASH_CONVENTION``) the digests are taken over the bytes
+    with CRLF normalised to LF, so a CRLF ``score.json`` on Windows verifies. A run
+    that records no hashes anywhere is not verifiable and is refused.
     """
 
     hashes_path = run_dir / "hashes.sha256"
     if hashes_path.is_file():
         expected: dict[str, str] = {}
+        convention: str | None = None
         for line in hashes_path.read_text(encoding="utf-8").splitlines():
             entry = line.strip()
-            if not entry or entry.startswith("#"):
+            if not entry:
+                continue
+            if entry.startswith("#"):
+                if convention is None and ":" in entry:
+                    convention = entry.split(":", 1)[1].strip()
                 continue
             digest, _, name = entry.partition("  ")
             if not name:
@@ -193,7 +206,8 @@ def _expected_hashes(run_dir: Path) -> tuple[dict[str, str], str]:
             expected[name.strip().lstrip("*")] = digest.strip()
         if not expected:
             raise AnalysisError(f"{hashes_path}: no hashes recorded")
-        return expected, "hashes.sha256"
+        normalise_lf = bool(convention and "content-sha256-lf" in convention)
+        return expected, "hashes.sha256", normalise_lf
 
     manifest_path = run_dir / "manifest.json"
     if not manifest_path.is_file():
@@ -205,23 +219,29 @@ def _expected_hashes(run_dir: Path) -> tuple[dict[str, str], str]:
             f"{run_dir}: no hashes.sha256 and no manifest artifacts hashes — "
             "the run is not verifiable and is refused"
         )
-    return {str(name): str(digest) for name, digest in artifacts.items()}, "manifest.artifacts"
+    return (
+        {str(name): str(digest) for name, digest in artifacts.items()},
+        "manifest.artifacts",
+        False,
+    )
 
 
 def verify_run_hashes(run_dir: Path) -> tuple[dict[str, str], str]:
     """Verify every recorded hash of a run directory, naming the first failing file."""
 
     base = Path(run_dir)
-    expected, source = _expected_hashes(base)
+    expected, source, normalise_lf = _expected_hashes(base)
     verified: dict[str, str] = {}
     for name, digest in sorted(expected.items()):
         path = base / name
         if not path.is_file():
             raise AnalysisError(f"run file missing: {name} (recorded in {source} at {base})")
-        actual = _sha256_file(path)
+        actual = _digest_file(path, normalise_lf=normalise_lf)
         if actual != digest:
+            convention_note = " under content-sha256-lf" if normalise_lf else ""
             raise AnalysisError(
-                f"hash mismatch for {name}: recorded {digest}, actual {actual} ({source} at {base})"
+                f"hash mismatch for {name}: recorded {digest}, actual {actual} "
+                f"({source}{convention_note} at {base})"
             )
         verified[name] = actual
     return verified, source
