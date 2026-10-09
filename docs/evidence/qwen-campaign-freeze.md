@@ -348,3 +348,49 @@ forbid. They are closed by recording the runtime's own reported value into
 If a value cannot be closed at Stage A, the campaign **stops and reports the
 missing value** rather than proceeding to Stage B with an open configuration. A
 campaign that cannot fix its own inference configuration cannot make a claim.
+
+---
+
+# Qwen3-8B campaign freeze — block 2 (runtime-contract amendment)
+
+**Declared 2026-10-09 before any successful real-model scenario.** The first
+cloud smoke attempt under block 1 produced only technical failures: an initial
+CUDA out-of-memory load and then 6/6 strict model-parse failures in both matched
+conditions. It licensed no effectiveness, utility or reachability result. Those
+failures exposed a mismatch between block 1's GGUF wording and the implemented
+Hugging Face runtime, an ambiguous union-shaped prompt, and a CLI completion
+marker that did not distinguish completed attempts from successful scenarios.
+Block 1 remains unchanged above. This appended block supersedes its runtime
+configuration for the next Stage A attempt.
+
+All research questions, scenario sets, metrics, gates, analysis rules, holdout
+rules and claim restrictions in block 1 continue to apply. The following fields
+are replaced:
+
+| Field | Block 2 frozen value |
+| --- | --- |
+| Backend | Hugging Face Transformers with Accelerate and bitsandbytes |
+| Model | `Qwen/Qwen3-8B`; the preflight load must resolve an exact Hugging Face commit SHA, and every campaign subprocess must receive that SHA as `revision` |
+| Quantization | bitsandbytes 4-bit NF4 at runtime; `quantization_backend = bitsandbytes-nf4-runtime` |
+| Compute dtype | `bfloat16` (recorded again from the actual runtime) |
+| Prompt | `qwen3-agent/v2`; four mutually exclusive exact action shapes |
+| Prompt-schema SHA-256 | `965f6be213c43665e2902cad372d6d02726521b57ec47e218747d83ad2eaac89` |
+| Format correction | at most one schema-only retry (`format_retries = 1`); both attempts, prompts and raw outputs are retained; no key is silently removed |
+| Primary sampling | temperature `0.0`, top-p `1.0`, thinking disabled, max new tokens `768` |
+| Preregistered seeds | `[1729, 2741, 3253, 4253, 5527]` for Stages B and C and the ablation matrix; Stage A still uses only anchor `1729` |
+| Runtime identity | exact resolved model revision, chat-template digest, maximum context tokens, torch/transformers/bitsandbytes versions and quantization backend are written before a result is accepted |
+| Failure marker | any errored scenario prints `RESULT: CAMPAIGN COMPLETED WITH ERRORS` and exits 1 while retaining the run artifacts; only zero-error completion prints `RESULT: CAMPAIGN COMPLETE` |
+
+The five seeds above were selected as a deterministic preregistered list before
+observing a successful Stage A outcome; the prior attempt contained none. Greedy
+temperature-zero runs may be identical across seeds, so cross-seed variation is
+reported honestly and is never described as independent sampling variance. A
+future temperature-positive stability arm requires another dated amendment with
+its sampling parameters fixed before execution.
+
+The next Stage A run must use a clean commit containing this block and the v2
+runtime contract. The preflight model is deleted and the CUDA cache cleared before
+the campaign subprocess starts, so a 15 GiB runtime never intentionally holds two
+Qwen copies. The allow-all control and full defence receive identical adapter JSON.
+If the exact model revision or template digest is absent, or if any scenario is
+errored, Stage B remains closed.

@@ -42,24 +42,19 @@ Kaggle has no per-file badge. Create a notebook or dataset and use its own URL:
 
 1. Open a notebook with its badge (above), or `File → Upload notebook`.
 2. `Runtime → Change runtime type → T4 GPU` (free tier) and save. A free T4 has
-   about 15 GiB of VRAM, enough for the frozen **4-bit** (`Q4_K_M`) Qwen3-8B.
-3. Run the cells in order. Notebooks 00–02 clone nothing: you must already be in a
-   checkout of the repository. Either clone it first —
-
-   ```python
-   !git clone https://github.com/OussemaHarrabi/IndabaX26.git
-   %cd IndabaX26
-   ```
-
-   — or mount a Drive copy. The notebooks locate the repository root
-   automatically (they search upward for `scripts/bench_validate.py`) and `chdir`
-   into it; set `AEGISGRAPH_REPO` to override.
+   about 15 GiB of VRAM, enough for the frozen Hugging Face **4-bit NF4**
+   bitsandbytes load.
+3. Run the cells in order. In a fresh Colab/Kaggle runtime, notebooks 00–02 clone
+   `OussemaHarrabi/IndabaX26` automatically. Set `AEGISGRAPH_REF` to a branch or
+   tag before the first cell to select a non-default ref. In an existing checkout,
+   they locate the repository root automatically; set `AEGISGRAPH_REPO` to an
+   explicit checkout path to override discovery.
 
 ## Kaggle
 
 1. Create a notebook, attach the GPU accelerator (P100 or T4×2), and enable
    **Internet** (needed for the pinned install and the model download).
-2. Clone the repository into `/kaggle/working` and run the same cells.
+2. Run the same cells; they clone into `/kaggle/working` when no checkout exists.
 3. Kaggle sessions are shorter and have no `google.colab` module; leave
    `ENABLE_DRIVE = False` and download the bundle from `/kaggle/working`.
 
@@ -67,7 +62,7 @@ Kaggle has no per-file badge. Create a notebook or dataset and use its own URL:
 
 | Configuration | Approximate VRAM for Qwen3-8B |
 | --- | --- |
-| 4-bit nf4 (`QUANTIZATION = "4bit"`, the frozen class) | ~6–7 GiB weights + activations; fits a 15 GiB T4 |
+| Hugging Face bitsandbytes 4-bit NF4 (`QUANTIZATION = "4bit"`) | ~6–7 GiB weights + activations; fits a 15 GiB T4 |
 | 8-bit | ~10–11 GiB |
 | `bfloat16` / `float16` (`quantization = "none"`) | ~16–17 GiB; needs an A100 or 2× GPUs |
 
@@ -76,12 +71,19 @@ configuration and stop with an explicit reason (notebook 00, section 10). The
 adapter also fails closed on CUDA out-of-memory with the exact knobs to lower
 (`quantization`, `max_new_tokens`); see `benchmark/qwen.py`.
 
+The preflight cell loads the model once to resolve the exact Hugging Face commit
+and template metadata, then deletes that adapter, runs garbage collection and
+empties the CUDA cache before the campaign subprocess loads the model. This avoids
+holding two Qwen copies on a 15 GiB runtime. Both control and defence receive the
+same adapter JSON, including `format_retries = 1`.
+
 ## Storing secrets
 
 **Never paste a token, key or credential into a cell.** These notebooks need no
 secret at all: they mint a **development-only** identity with
 `scripts/dev_issuer.py` and write the bearer to a temporary file (UTF-8, no BOM)
-outside the repository.
+outside the repository. Minting uses a private captured subprocess; token stdout
+is never echoed into the notebook output.
 
 If you must hold a Hugging Face token for a gated model, keep it in the platform's
 secret store and read it at runtime:

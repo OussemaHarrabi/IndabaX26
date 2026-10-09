@@ -168,7 +168,9 @@ def test_plan_feeds_the_previous_decision_back_into_the_next_prompt() -> None:
 
 def test_plan_surfaces_a_parse_failure_instead_of_a_silent_success() -> None:
     scenario = _scenario()
-    adapter = QwenModelAdapter(QwenConfig(), generator=StubGenerator(["not json at all"]))
+    adapter = QwenModelAdapter(
+        QwenConfig(format_retries=0), generator=StubGenerator(["not json at all"])
+    )
 
     with pytest.raises(QwenParseError) as excinfo:
         adapter.plan(scenario)
@@ -198,6 +200,43 @@ def test_the_prompt_carries_the_goal_evidence_tools_and_revision() -> None:
     assert PROMPT_REVISION in text
 
 
+def test_the_prompt_gives_mutually_exclusive_exact_action_shapes() -> None:
+    text = render_prompt(build_messages(_scenario()))
+
+    assert '"type":"tool_call","tool":"<allowed tool>","arguments":{}' in text
+    assert 'tool_call: exactly type, tool, arguments' in text
+    assert 'Never add content, final, or confirmation_for to a tool_call' in text
+    assert 'request_confirmation: exactly type, content, confirmation_for' in text
+
+
+def test_plan_retries_one_format_error_and_records_both_attempts() -> None:
+    scenario = _scenario()
+    invalid = (
+        '{"type":"tool_call","tool":"email_read","arguments":{},'
+        '"content":"I will read it","final":false}'
+    )
+    valid = '{"type":"tool_call","tool":"email_read","arguments":{}}'
+    adapter = QwenModelAdapter(
+        QwenConfig(format_retries=1),
+        generator=StubGenerator([invalid, valid, *_authored_outputs(scenario)[1:]]),
+    )
+
+    plan = adapter.plan(scenario)
+
+    assert plan[0][1] == {
+        "type": "tool_call",
+        "tool": "email_read",
+        "arguments": {},
+        "content": None,
+        "final": False,
+        "confirmation_for": None,
+    }
+    assert [row["parsed"] for row in adapter.generation_attempts[:2]] == [False, True]
+    assert [row["format_attempt"] for row in adapter.generation_attempts[:2]] == [0, 1]
+    assert invalid in adapter.generation_attempts[1]["prompt"]
+    assert "schema validation failed" in adapter.generation_attempts[1]["prompt"]
+
+
 # --------------------------------------------------------------------------- #
 # Identity and the fail-closed path
 # --------------------------------------------------------------------------- #
@@ -215,6 +254,7 @@ def test_identity_records_every_configuration_field() -> None:
         max_new_tokens=256,
         thinking=True,
         device="cuda:1",
+        format_retries=1,
     )
     adapter = QwenModelAdapter(config, generator=StubGenerator(["{}"]))
 
@@ -226,6 +266,8 @@ def test_identity_records_every_configuration_field() -> None:
     for key, value in config.to_json().items():
         assert identity.parameters[key] == value
     assert identity.parameters["prompt_revision"] == PROMPT_REVISION
+    assert identity.parameters["quantization_backend"] == "bitsandbytes-nf4-runtime"
+    assert identity.parameters["prompt_schema_sha256"]
     assert "torch" in identity.parameters
     assert "transformers" in identity.parameters
     assert "quantization=4bit" in identity.note

@@ -43,9 +43,10 @@ from benchmark.campaign import (
 from benchmark.dataset import write_scenario
 from benchmark.fixtures import scenario_dict, write_dataset
 from benchmark.policies import collect_policy_sets, publish_plan
-from benchmark.qwen import QwenConfig, QwenModelAdapter
+from benchmark.qwen import PROMPT_REVISION, QwenConfig, QwenModelAdapter
 from benchmark.runner import AuthConfig, HttpClient, ScriptedAdapter
 from benchmark.schema import Scenario
+from scripts.bench_campaign import _print_summary
 from scripts.bench_campaign import main as campaign_main
 
 # --------------------------------------------------------------------------- #
@@ -283,7 +284,7 @@ def test_the_decision_is_fed_back_into_the_next_generation(tmp_path: Path) -> No
 
     configuration = json.loads((result.run_dir / "configuration.json").read_text(encoding="utf-8"))
     assert configuration["generation_loop"]["used"] is True
-    assert configuration["prompt_revision"] == "qwen3-agent/v1"
+    assert configuration["prompt_revision"] == PROMPT_REVISION
 
 
 def test_the_loop_stops_when_the_model_answers_finally(tmp_path: Path) -> None:
@@ -338,7 +339,8 @@ def test_a_parse_failure_becomes_an_errored_outcome_and_the_campaign_continues(
 ) -> None:
     root = _dataset(tmp_path / "data")
     adapter = QwenModelAdapter(
-        QwenConfig(), generator=StubGenerator(["not json at all", "still not json"])
+        QwenConfig(format_retries=0),
+        generator=StubGenerator(["not json at all", "still not json"]),
     )
 
     with running_gateway(root) as url:
@@ -372,6 +374,78 @@ def test_a_parse_failure_becomes_an_errored_outcome_and_the_campaign_continues(
 
     generations = _rows(result.run_dir, "raw_generations.jsonl")
     assert [row["parsed"] for row in generations] == [False, False]
+
+
+def test_a_repaired_generation_keeps_both_raw_attempts(tmp_path: Path) -> None:
+    root = _dataset(tmp_path / "data")
+    scenario = _scenario(root, "ent_case_0_attack")
+    valid = _authored_outputs(root, scenario.id)
+    invalid = '{"type":"tool_call","tool":"document_read","arguments":{},"content":"reading"}'
+    adapter = QwenModelAdapter(
+        QwenConfig(format_retries=1), generator=StubGenerator([invalid, *valid])
+    )
+
+    with running_gateway(root) as url:
+        result = run_campaign(
+            _config(
+                root,
+                tmp_path / "runs",
+                scenario_ids=(scenario.id,),
+                model_name="qwen",
+                adapter=adapter,
+                gateway_url=url,
+            )
+        )
+
+    generations = _rows(result.run_dir, "raw_generations.jsonl")
+    assert [row["parsed"] for row in generations[:2]] == [False, True]
+    assert [row["format_attempt"] for row in generations[:2]] == [0, 1]
+    assert generations[0]["output"] == invalid
+    assert result.errored == 0
+
+
+def test_campaign_qwen_adapter_uses_the_per_run_campaign_seed(tmp_path: Path) -> None:
+    config = CampaignConfig(
+        stage="A",
+        dataset_root=tmp_path,
+        runs_dir=tmp_path / "runs",
+        seed=2741,
+        model_name="qwen",
+        adapter_config={"seed": 0, "quantization": "4bit"},
+    )
+
+    adapter = config.resolve_model()
+
+    assert isinstance(adapter, QwenModelAdapter)
+    assert adapter.config.seed == 2741
+
+
+def test_cli_summary_marks_completed_attempts_with_errors_as_failed(capsys: Any) -> None:
+    result = type(
+        "Result",
+        (),
+        {"status": "complete", "errored": 2, "failures": 2, "bundle": None},
+    )()
+
+    succeeded = _print_summary([result])
+
+    assert succeeded is False
+    assert "RESULT: CAMPAIGN COMPLETED WITH ERRORS" in capsys.readouterr().out
+
+
+def test_cli_summary_allows_a_recovered_run_to_complete(capsys: Any) -> None:
+    result = type(
+        "Result",
+        (),
+        {"status": "complete", "errored": 0, "failures": 2, "bundle": None},
+    )()
+
+    succeeded = _print_summary([result])
+
+    assert succeeded is True
+    output = capsys.readouterr().out
+    assert "retained failure records: 2" in output
+    assert "RESULT: CAMPAIGN COMPLETE" in output
 
 
 def test_a_gateway_error_is_recorded_not_fatal(tmp_path: Path) -> None:
