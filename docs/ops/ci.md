@@ -175,20 +175,31 @@ action surface minimal; no registry push happens in M4.
 | PostgreSQL (CI service and Compose stack) | 17 |
 | Docker Engine / Compose | 29.6.2 / v5.3.1 |
 
-**Known gap:** `tests/test_benchmark_sentinel_adapter.py` imports PyYAML
-conditionally, but PyYAML is declared in neither `[project.optional-dependencies]
-dev` nor `requirements.lock`, so a developer following the README gets two skips
-and one failure. The `quality` job installs it explicitly to keep CI green.
-Adding `pyyaml` to the `[dev]` extra (or to the lock) is proposed in the M4
-handoff — `pyproject.toml` and `requirements.lock` are outside this change's
-write scope.
+**Resolved (2026-10-08):** `tests/test_benchmark_sentinel_adapter.py` imports
+PyYAML conditionally; it is now declared in the `[dev]` extra (`pyyaml>=6,<7`) and
+in `requirements.lock` (`PyYAML==6.0.3`) at `a2ac107`, so a developer following
+the README no longer gets two skips and a failure. The `quality` job still
+installs it explicitly.
 
 ## What is not verified here
 
-- **GitHub-hosted execution of the workflow.** No run was executed on GitHub.
-  Every step was reproduced locally on Windows and (for the test/quality jobs) in
-  `python:3.12-slim`. To verify: push the branch and read the `ci` run, or run
-  `act -j quality` with a Docker daemon (**unverified** — `act` is not installed).
+- **GitHub-hosted execution of the workflow.** **Verified 2026-10-08** — read from
+  `gh run list` on this repository, not reproduced locally: the release tag
+  `v0.1.0-industrial` (`eb33d2c`) has a green run **`37846970280`** (conclusion
+  `success`, 2026-10-08T21:28:01Z — all five gates) and the current tip `cb3f82f`
+  has a green run **`37863688964`**, so the workflow is green on the current code
+  and not only on the release commit. The branch
+  `feature/aegisgraph-industrial-research` has 29 runs: 10 success, 1 failure, 17
+  cancelled by the workflow's own `concurrency: cancel-in-progress` rule. The one
+  failure was **run `37862114701` on `22250de`**, and it was a *test* defect, not a
+  gate failure: `tests/test_readme_consistency.py` enumerated the served endpoints
+  from `app.routes`, which works on the FastAPI version on this machine (0.128) but
+  not on the runner's pinned **0.141**, where an included router no longer appears
+  in `app.routes` although the service answers those paths. It is fixed in
+  `cc3a14f` by taking the union of the route table and the published OpenAPI
+  operations. **Lesson:** a test that introspects a framework's internals can pass
+  locally and fail on the pinned version, and that failure is the test's, not the
+  service's. Local `act` execution remains unverified (`act` is not installed).
 - **`actions/upload-artifact` behaviour** (retention, compression) is unverified
   locally; the artifact contents are what `make sbom` and the digest steps emit.
 - **pip-audit's live advisory database** changes over time; a green run today does

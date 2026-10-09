@@ -18,7 +18,7 @@ omitted: each milestone gates on its exit criteria, not on a calendar.
 | **M1** | Contracts + enforcement | Native versioned contracts with a policy/code revision in every decision; legacy adapter isolated; enforcement binding and integration SDK | M0 | ADR-0006 | `implemented` — contract, enforcement SDK, bounded input and strict confirmation landed (`4013b59`, `7502df3`); legacy suite re-checked decision-identical |
 | **M2** | Auth + policy + audit store | Authentication and tenancy; versioned policy; durable append-only receipt/audit store | M1 | ADR-0001, ADR-0002 | `implemented` + **verified live by the orchestrator** (`7a87e8b`, merged at `4350af3`, corrective round `940ed13`): F1, F2 and F3's caller-authority half fixed (residual F3 accepted); with PostgreSQL 17 the suite is **569 passed / 2 skipped = 96.81 %** in a clean clone after the M3/SBOM rounds (497 passed / 96.85 % at `36a279a`), and **557 passed / 14 skipped = 93.76 %** without a database; the CI `quality` job now runs a PostgreSQL service and the floor is raised to **95** (`bf02ddc`), so a silent skip of the database tests cannot pass |
 | **M3** | Observability + reliability | OpenTelemetry, Prometheus, Grafana, SLOs, fail-closed guarantees under load | M1, M2 | ADR-0003 | `implemented` — telemetry, metrics, SLOs, the load harness and failure-injection tests landed (`3d0d748`, merged at `7147eb3`) and verified live by the orchestrator: 8 `aegisgraph_*` metric families with no tenant/principal/request/content label, an exporter outage counted rather than raised, and a load report with the corrected re-measured baseline (2986 requests, warm-up excluded, 148.938 req/s, in-process p95 5.227 ms, 0 errors; `m3-load-20261008T210436Z.json`, targets in `docs/ops/slo.md`). The shipped stack now scrapes the API and serves the dashboard (verified end to end, `docs/ops/compose.md`; ledger P7) — the only caveat is that it ships no credentials, so `aegisgraph_decisions_total` stays empty until a caller presents a token |
-| **M4** | CI/CD + containers + deployment | Pipelines and gates; hardened Compose stack; Kubernetes manifests validated and smoke-tested | M1, M2 | ADR-0005 | `implemented` with three named gaps: **no GitHub-hosted CI run has ever executed**, **no cluster smoke test** (`kind` absent), and **F9** — the suite must run *inside* the built image (CI now runs it with a PostgreSQL service, but not in the image) |
+| **M4** | CI/CD + containers + deployment | Pipelines and gates; hardened Compose stack; Kubernetes manifests validated and smoke-tested | M1, M2 | ADR-0005 | `implemented` with two named gaps: **no cluster smoke test** (`kind` absent) and **F9** — the suite must run *inside* the built image (CI runs it with a PostgreSQL service, but not in the image). The hosted workflow is **verified running**: the release tag `v0.1.0-industrial` (`eb33d2c`) has a green run `37846970280` (2026-10-08T21:28:01Z) and the current tip `cb3f82f` has a green run `37863688964`; the branch's history is 10 success / 1 failure (a test defect, fixed in `cc3a14f`) / 17 `cancel-in-progress` cancellations |
 | **M5** | Evaluation framework + benchmark data | Native evaluation schema authoritative; versioned legacy adapter; benchmark data + reachability gate | M1 | ADR-0004 | `implemented` — schema, 60-scenario dataset, deterministic scoring, sealed holdout; **scripted adapter only**, no holdout run |
 | **M6** | Empirical campaign | Real-model runs, multi-seed variance, component ablations, generalization | M2, M5 | ADR-0004 | `partial` — **freeze block 1 declared and its scripted results recorded** (`4481e26`/`f3129d0`, gateway `818cf1f`): C1 digest `b6951afb…`, 60 scenarios, 0 errors, ASR 0.5000 intention-to-treat, benign 0.9667, FBR 0.0556; C3 legacy recheck `8669aadb…`; delta vs the previous reference a **null result** on 60/60 verdicts, proven by the independent campaign audit (Agent I3), which reproduced every number (ledger P68). **Three provenance gaps recorded:** the gateway identity is runner-attested, the credential's scopes/ceiling are not in the artifact, and campaign latency is not comparable to the in-process run. The real-model cells stay **blocked** (no `ollama`, GPU or paid API) |
 | **M7** | Independent review | Adversarial and security review of the new surfaces; reproducibility audit | M3, M4, M6 | all | `partial` — three adversarial reviews (M0 `L15`, M1–M5 `P25–P29`, M2 surface `P54–P62`), an independent research/reproducibility audit (`P30–P52`), an independent campaign audit (I3, `P68`) and the M3 telemetry/load review (H4, `P75–P84`) have landed — six vectors in all; what remains is the reproducibility audit of every headline claim and an independent re-run of the gates |
@@ -250,14 +250,25 @@ milestone owns each finding.
   `git`, so a container-based campaign runner needs `git` installed (14 tests fail
   in a `python:3.12-slim` image without it; CI's `ubuntu-latest` has it). Numbers
   and caveats are in the ledger, section C.
-- **Gaps:** **no GitHub-hosted CI run has ever executed** (blocked: the workflow
-  is only reproducible locally until the branch is pushed), **no cluster
-  smoke test** — `kind` is absent, and **F9 is still open**: the `quality` job
-  now runs the suite against a PostgreSQL 17 service with a floor of 95
-  (`bf02ddc`; 96.42 % (2612/2709) with the service, 92.80 % (2514/2709) without,
-  so a silent skip cannot pass), but running the suite **inside the built image**
-  remains the acceptance criterion. None of the three is papered over by a local
-  run.
+- **Gaps:** **no cluster smoke test** — `kind` is absent, and **F9 is still
+  open**: the `quality` job runs the suite against a PostgreSQL 17 service with a
+  floor of 95 (`bf02ddc`; 96.42 % (2612/2709) with the service, 92.80 % (2514/2709)
+  without, so a silent skip cannot pass), but running the suite **inside the built
+  image** remains the acceptance criterion. **Hosted execution is no longer a
+  gap**: the workflow runs on every push — the tag `v0.1.0-industrial` (`eb33d2c`)
+  has a green run **`37846970280`** (conclusion `success`, 2026-10-08T21:28:01Z, all
+  five gates) and the **current tip `cb3f82f` has a green run `37863688964`**, so
+  the workflow is green on the current code, not only on the release commit; the
+  branch's 29 runs are 10 success / 1 failure / 17 `cancel-in-progress`
+  cancellations. The single failure (run `37862114701` on
+  `22250de`) was a **test** defect: `tests/test_readme_consistency.py` enumerated
+  the served endpoints from `app.routes`, which worked on this machine's FastAPI
+  0.128 but not on the runner's pinned **0.141**, where an included router no
+  longer appears there although the service answers those paths — fixed in
+  `cc3a14f` by taking the union of the route table and the published OpenAPI
+  operations. A test that introspects a framework's internals can pass locally and
+  fail on the pinned version, and that failure is the test's, not the service's.
+  Neither remaining gap is papered over by a local run.
 - **Work:** CI pipelines running tests, Ruff, mypy and the reachability gate;
   hardened Compose stack (service + PostgreSQL + Prometheus + Grafana); container
   image build and live run verification; Kubernetes manifests validated by schema
@@ -388,7 +399,7 @@ milestone owns each finding.
 | PostgreSQL on the host | M2 | blocked | `psql` | containerized PostgreSQL (Docker) is the intended path |
 | Real-model evaluation reruns | M6 | blocked | `ollama` | install `ollama` + `qwen3:8b`, or authorize an API |
 | Paid-model benchmarking | M6 | blocked | API credentials | explicit owner authorization |
-| GitHub-hosted CI execution | M4 | blocked | no run has executed on GitHub; `act` not installed | push the branch and read the `ci` run, or `act -j quality` |
+| GitHub-hosted CI execution | M4 | **verified** | — | closed 2026-10-08: green runs on the tag `v0.1.0-industrial` (`eb33d2c`, run `37846970280`) and on the current tip `cb3f82f` (run `37863688964`); branch history 10 success / 1 fixed test failure / 17 `cancel-in-progress` cancellations (ledger P85) |
 | Holdout result | M5/M6 | blocked | the seal may be opened only by the custodian after the policy freeze | follow `docs/benchmark/holdout.md` §4, then open once with the recorded command |
 | Docker-engine live run | M4 | verified | — | done: `docker build` + `docker run --read-only` (ledger P16) |
 
