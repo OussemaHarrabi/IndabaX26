@@ -3,7 +3,7 @@
 import re
 import time
 from dataclasses import dataclass, field, replace
-from enum import IntEnum
+from enum import IntEnum, StrEnum
 from typing import Final
 
 from aegisgraph.adapter import AdaptedRequest, adapt_request, canonical_action
@@ -96,6 +96,8 @@ _INCOMPLETE_SUBJECT_FRAGMENT = re.compile(
 _MAX_ADJACENT_COMPOSITION_OBSERVATIONS = 3
 _MAX_ADJACENT_COMPOSITION_CHARS = 512
 _UNTRUSTED_THRESHOLD = TrustLevel.UNTRUSTED_INTERNAL
+_PROVENANCE_NEUTRAL_TRUST = TrustLevel.AUTHENTICATED_USER
+"""Trust a provenance-neutralised observation carries under the provenance ablation."""
 _MEMORY_PERSISTENCE_DIRECTIVE = re.compile(
     r"\b(?:always|never|from\s+now\s+on|in\s+the\s+future|standing\s+instruction|"
     r"permanent(?:ly)?|remember\s+to)\b",
@@ -433,6 +435,30 @@ def _build_source_profile(source: str, user_goal: str) -> _SourceProfile:
     )
 
 
+class Ablation(StrEnum):
+    """The single defence mechanism a research run may disable (never a product path).
+
+    Each member names exactly one separable mechanism of the pipeline. A run may
+    activate at most one: the campaign measures one component's contribution at a
+    time, so a configuration that changed two gates would confound the measurement
+    (see ``docs/benchmark/ablations.md``). The value is what the environment
+    variable, the decision metadata, the receipt and the version surface carry, so
+    an ablated run is identifiable from its artifacts alone.
+    """
+
+    PROVENANCE_ENFORCEMENT = "provenance_enforcement"
+    # Stop consulting provenance labels when judging an action.
+
+    TRUST_CEILING = "trust_ceiling"
+    # Stop bounding the trust labels a caller may induce.
+
+    STRICT_CONFIRMATION = "strict_confirmation"
+    # Treat a consequential action as policy-valid without a bound grant.
+
+    REWRITE_REVALIDATION = "rewrite_revalidation"
+    # Accept a rewrite without re-evaluating the exact replacement.
+
+
 @dataclass(frozen=True)
 class EvaluationOptions:
     """Per-call evaluation context that must not change policy semantics."""
@@ -440,6 +466,8 @@ class EvaluationOptions:
     confirmation_mode: ConfirmationMode = ConfirmationMode.LEGACY
     now_epoch: int = 0
     narrative: _NarrativeScanState = field(default_factory=_NarrativeScanState)
+    ablation: Ablation | None = None
+    """The one mechanism this research run disables, or ``None`` for the defence."""
 
 
 @dataclass(frozen=True)
@@ -451,11 +479,29 @@ class EvaluatedDecision:
     execution_digest: str
 
 
+def _mark_ablation(decision: GuardDecision, ablation: Ablation | None) -> GuardDecision:
+    """Record the active ablation in a decision's metadata (ablation visibility).
+
+    Returns ``decision`` unchanged when no ablation is active, so the default
+    path is byte-identical with or without this plumbing. A marked decision
+    carries ``metadata["ablation"]`` into the response, the durable receipt body
+    and the structured decision log, so nobody can mistake an ablated run for the
+    defence.
+    """
+
+    if ablation is None:
+        return decision
+    payload = decision.model_dump(mode="json")
+    payload["metadata"] = {**payload["metadata"], "ablation": ablation.value}
+    return GuardDecision.model_validate(payload)
+
+
 def evaluate(
     request: SentinelRequest,
     *,
     confirmation_mode: ConfirmationMode = ConfirmationMode.LEGACY,
     now_epoch: int | None = None,
+    ablation: Ablation | None = None,
 ) -> EvaluatedDecision:
     """Evaluate one request and return the decision with its action identity.
 
@@ -463,15 +509,21 @@ def evaluate(
     default keeps the frozen legacy SENTINEL behaviour (a bare canonical digest
     from a trusted caller); ``STRICT`` requires a grant bound to the run, step,
     exact execution digest and an expiry, and rejects everything else.
+
+    ``ablation`` names the one mechanism a research run disables; it defaults to
+    ``None``, which is byte-identical to the defence. When set, the resulting
+    decision carries the ablation name in its metadata so the run is identifiable
+    from its artifacts (docs/benchmark/ablations.md).
     """
 
     options = EvaluationOptions(
         confirmation_mode=confirmation_mode,
         now_epoch=int(time.time()) if now_epoch is None else now_epoch,
+        ablation=ablation,
     )
     canonical = _canonical_action_or_empty(request)
     return EvaluatedDecision(
-        decision=_decide(request, options),
+        decision=_mark_ablation(_decide(request, options), ablation),
         action_digest=action_digest(canonical),
         execution_digest=exact_action_digest(canonical),
     )
@@ -482,11 +534,12 @@ def decide(
     *,
     confirmation_mode: ConfirmationMode = ConfirmationMode.LEGACY,
     now_epoch: int | None = None,
+    ablation: Ablation | None = None,
 ) -> GuardDecision:
     """Evaluate one SENTINEL request without side effects or external calls."""
 
     return evaluate(
-        request, confirmation_mode=confirmation_mode, now_epoch=now_epoch
+        request, confirmation_mode=confirmation_mode, now_epoch=now_epoch, ablation=ablation
     ).decision
 
 
@@ -528,12 +581,14 @@ def validate_rewrite(
     *,
     confirmation_mode: ConfirmationMode = ConfirmationMode.LEGACY,
     now_epoch: int | None = None,
+    ablation: Ablation | None = None,
 ) -> GuardDecision:
     """Close the organizer rewrite trap by revalidating the exact replacement."""
 
     options = EvaluationOptions(
         confirmation_mode=confirmation_mode,
         now_epoch=int(time.time()) if now_epoch is None else now_epoch,
+        ablation=ablation,
     )
     try:
         adapted = adapt_request(request)
@@ -550,12 +605,13 @@ def validate_rewrite(
             "The policy context could not be safely validated.",
         )
     try:
-        return _validate_rewrite(adapted, facts, rewritten_action, options=options)
+        decision = _validate_rewrite(adapted, facts, rewritten_action, options=options)
     except Exception:
         return _failure_decision(
             "INTERNAL_EVALUATION_FAILED",
             "The rewrite could not be safely evaluated.",
         )
+    return _mark_ablation(decision, ablation)
 
 
 def _validate_rewrite(
@@ -592,6 +648,30 @@ def _validate_rewrite(
             )[:16],
             explanation="A rewrite cannot reduce the original action's enforcement level.",
             metadata=original_decision.metadata,
+        )
+
+    # --- Ablation switch site: rewrite revalidation (docs/benchmark/ablations.md).
+    # This is the only place that re-evaluates the exact replacement action.
+    # Disabling it accepts a rewrite without revalidation, so UNSAFE_REWRITE (and the
+    # replacement's own effect-escalation check) can no longer fire. Campaign
+    # consequence: measures the contribution of mandatory rewrite revalidation; the
+    # structural traps above and the original-action downgrade check still run, so
+    # exactly this one mechanism changes.
+    if options.ablation is Ablation.REWRITE_REVALIDATION:
+        return GuardDecision(
+            verdict=Verdict.REWRITE,
+            risk_score=0.2,
+            confidence=0.99,
+            reason_codes=("SAFE_REWRITE",),
+            explanation=(
+                "Ablated rewrite revalidation: the replacement action was accepted "
+                "without re-evaluation."
+            ),
+            rewritten_action=rewritten_action,
+            metadata={
+                "least_trust": adapted.least_trust.value,
+                "max_sensitivity": adapted.max_sensitivity.value,
+            },
         )
 
     rewritten_request = adapted.request.model_copy(update={"candidate_action": rewritten_action})
@@ -636,6 +716,18 @@ def _evaluate(
 ) -> GuardDecision:
     if not facts.valid:
         return _block("POLICY_CONTEXT_INVALID", 0.98, adapted)
+
+    # --- Ablation switch site: provenance enforcement (docs/benchmark/ablations.md).
+    # This is the only place the pipeline decides whether to consult provenance
+    # labels. Disabling it removes the labels the provenance gates read, so
+    # PROVENANCE_INCOMPLETE, UNTRUSTED_INSTRUCTION, UNTRUSTED_MEMORY_INHERITED and
+    # the UNTRUSTED_AUTHORITY_* redaction can no longer fire. Only those gates read
+    # these labels: sensitivity, the action and every other gate are untouched, so
+    # exactly this one mechanism changes. Campaign consequence: measures how much
+    # provenance enforcement contributes to security versus false blocks.
+    if options.ablation is Ablation.PROVENANCE_ENFORCEMENT:
+        adapted = _unlabelled_provenance(adapted)
+
     if not adapted.provenance_complete:
         return _block("PROVENANCE_INCOMPLETE", 0.97, adapted)
 
@@ -686,7 +778,20 @@ def _evaluate(
         return authority_redacted
 
     if action.type is ActionKind.TOOL_CALL and requires_confirmation(action, facts):
-        if not skip_confirmation and not _confirmation_is_granted(action, adapted, options):
+        # --- Ablation switch site: strict confirmation channel
+        # (docs/benchmark/ablations.md). This is the only gate that turns a
+        # consequential action with no bound grant into CONFIRMATION_REQUIRED.
+        # Disabling it treats such an action as policy-valid without a grant, exactly
+        # as the confirmation-target path already does, so CONFIRMATION_REQUIRED is
+        # suppressed (and CONFIRMATION_VERIFIED is never claimed). ``requires_confirmation``
+        # still selects which tools are consequential (that is policy, not the channel),
+        # and no other gate reads the grant. Campaign consequence: measures the channel's
+        # contribution to security versus escalations.
+        enforced = options.ablation is not Ablation.STRICT_CONFIRMATION
+        granted = (
+            _confirmation_is_granted(action, adapted, options) if not skip_confirmation else False
+        )
+        if not skip_confirmation and enforced and not granted:
             return _decision(
                 Verdict.ESCALATE,
                 0.72,
@@ -694,7 +799,7 @@ def _evaluate(
                 adapted,
                 "A matching confirmation digest is required before execution.",
             )
-        reason = "CONFIRMATION_VERIFIED" if not skip_confirmation else "POLICY_CHECKS_PASSED"
+        reason = "CONFIRMATION_VERIFIED" if granted else "POLICY_CHECKS_PASSED"
         return _decision(
             Verdict.ALLOW,
             0.16,
@@ -1030,6 +1135,27 @@ def _memory_write_is_directive(action: CandidateAction) -> bool:
         tool in lowered or tool.replace("_", " ") in lowered
         for tool in _TOOL_SEMANTICS
     )
+
+
+def _unlabelled_provenance(adapted: AdaptedRequest) -> AdaptedRequest:
+    """Return the request with the labels the provenance gates consult neutralised.
+
+    Ablation helper (docs/benchmark/ablations.md). Provenance enforcement is the
+    only mechanism that reads an observation's ``trust_level`` and the request's
+    completeness, so re-labelling every observation as trusted and asserting
+    completeness removes exactly those signals: ``_coupled_instruction``,
+    ``_has_untrusted_evidence`` and ``_redact_untrusted_authority`` all become
+    inert, and the ``PROVENANCE_INCOMPLETE`` gate cannot fire. ``least_trust``
+    (metadata), sensitivity and the action are preserved, so no unrelated gate or
+    metadata field changes.
+    """
+
+    observations = tuple(
+        observation.model_copy(update={"trust_level": _PROVENANCE_NEUTRAL_TRUST})
+        for observation in adapted.request.observations
+    )
+    request = adapted.request.model_copy(update={"observations": observations})
+    return replace(adapted, request=request, provenance_complete=True)
 
 
 def _coupled_instruction(action: CandidateAction, adapted: AdaptedRequest) -> bool:
