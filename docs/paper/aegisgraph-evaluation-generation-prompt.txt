@@ -1,0 +1,15 @@
+Create a publication-quality landscape technical diagram for an AI security research paper titled "AegisGraph Evaluation and Reproducibility Pipeline." Use a clean arXiv/NeurIPS paper aesthetic: white background, restrained navy, cobalt, teal, and amber accents, crisp vector-like shapes, thin arrows, compact sans-serif labels, high contrast, no decorative illustration, no logos, and no watermark. The diagram must read left to right and show five numbered stages.
+
+Stage 1 -- FROZEN INPUTS: boxes for "60 authored scenarios," "42 development," "18 validation," "20 sealed holdout," "versioned policy set," "fixed seeds," and "manifest + SHA-256 hashes."
+
+Stage 2 -- GPU AGENT RUNTIME: a central card labeled "Qwen3-8B" with "BF16 / FP16," "pinned model revision," "structured tool proposals," and a small retry loop labeled "parse recovery."
+
+Stage 3 -- AEGISGRAPH GATEWAY: show "context + provenance normalization," "policy decision: ALLOW / BLOCK / ESCALATE / REWRITE," "action-bound receipt," and "deterministic executor check." Make it visually clear that tool execution occurs only after authorization.
+
+Stage 4 -- EXPERIMENT MATRIX: two branches. Top branch "Public campaign -- 612 episodes." Bottom branch "Mechanism ablations -- 840 episodes" with four chips: "full system," "no provenance," "no policy enforcement," and "no receipt binding."
+
+Stage 5 -- EVIDENCE ARTIFACTS: boxes for "JSONL traces," "run summaries," "review packets," "PostgreSQL audit records," "OpenTelemetry metrics," "Prometheus / Grafana," and "reproducibility report."
+
+Add a bottom evidence band containing exactly: "1,452 GPU episodes," "42 runs," "3,792 requests," "0 episode errors," "116 recovered parse attempts," "2,985 action-execution digest correspondences," "745 tests," and "96.83% backend coverage."
+
+Add subtle visual encodings: solid arrows for runtime data flow, dotted arrows for observability, lock icons for frozen inputs and sealed holdout, and a shield/check icon at the authorization boundary. Ensure every label is spelled exactly, large enough to read in a two-column paper when the figure spans both columns, and avoid invented benchmark scores or claims beyond the supplied values. Use a 16:9 aspect ratio at approximately 2200x1238 pixels.
