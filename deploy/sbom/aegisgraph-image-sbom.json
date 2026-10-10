@@ -231,7 +231,8 @@
   },
   "schema": "aegisgraph/sbom/v1",
   "source": {
-    "commit": "9d2cfd1e06665da154d90da72d3fd9ece0fc9c25",
+    "commit": "9b80cacd9fa345ff7789ce07547b786bd8808f60",
+    "original_commit": "9d2cfd1e06665da154d90da72d3fd9ece0fc9c25",
     "dirty": false,
     "requirements_lock_sha256": "d0bf0f5504aa8c5da890c6913b2b4faa36f5e0476daced5ee7359eefd15730d3"
   },
