@@ -1,6 +1,8 @@
-# AegisGraph
+# AegisGraph - Measured Pre-Execution Security for Tool-Using LLM Agents
 
 [![ci](https://github.com/OussemaHarrabi/IndabaX26/actions/workflows/ci.yml/badge.svg)](https://github.com/OussemaHarrabi/IndabaX26/actions/workflows/ci.yml)
+[![security result](https://img.shields.io/badge/reached%20attacks-22%2F22%20stopped-CB2431)](evaluation/real-qwen/README.md)
+[![paired test](https://img.shields.io/badge/Holm--adjusted%20p-1.91e--6-7F56D9)](docs/research/statistics.md)
 [![tests](https://img.shields.io/badge/tests-745%20passed-07875D)](https://github.com/OussemaHarrabi/IndabaX26/actions/runs/38017403788)
 [![coverage](https://img.shields.io/badge/backend%20coverage-96.83%25-155EEF)](docs/research/qwen-gpu-results-20261010.md)
 [![Qwen3--8B](https://img.shields.io/badge/Qwen3--8B-1%2C452%20GPU%20episodes-7F56D9)](docs/research/qwen-gpu-results-20261010.md)
@@ -17,8 +19,8 @@ the receipt carries the digest needed to refuse a mismatch.
 
 ![AegisGraph system architecture](docs/paper/figures/aegisgraph-architecture.png)
 
-**Read the complete paper:** [AegisGraph: An Action-Bound Policy and Evidence
-Gateway for Reliable LLM Tool Use](output/pdf/AegisGraph_Technical_Report_2026.pdf)
+**Read the complete paper:** [AegisGraph: Measured Pre-Execution Security for
+Tool-Using LLM Agents](output/pdf/AegisGraph_Technical_Report_2026.pdf)
 ([LaTeX source](docs/paper/aegisgraph-paper.tex) ·
 [system-architecture prompt](docs/paper/aegisgraph-architecture-generation-prompt.txt) ·
 [evaluation-pipeline prompt](docs/paper/aegisgraph-evaluation-generation-prompt.txt)).
@@ -27,8 +29,58 @@ figure results, the experimental protocol, ablations, industrial evidence,
 reproducibility statement and references. Exact image-generation prompts remain
 versioned beside the paper source as separate reproducibility artifacts.
 
+## Security effectiveness at a glance
+
+The direct security result comes from a pinned, public 40-scenario suite run with
+the unmodified Qwen3-8B reference agent. The allow-all control reached 22 of the
+31 attacks; the other nine did not succeed without a defence and are excluded
+from effectiveness claims.
+
+| Configuration | Successful attacks among 22 reached | Attacks stopped | Benign task success | Decision FBR | p95 policy latency |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Allow-all | 22/22 | 0/22 | 5/9 | 0 | 0.056 ms |
+| Built-in provenance | 9/22 | 13/22 | 4/9 | .3466 | 0.126 ms |
+| AegisGraph v1 | 10/22 | 12/22 | 4/9 | 0 | 8.598 ms |
+| AegisGraph v3 | 0/22 | **22/22** | 4/9 | .0087 | 8.355 ms |
+| **AegisGraph v5 (final)** | **0/22** | **22/22** | **4/9** | **.0086** | **9.284 ms** |
+
+For v5, the paired attack-success reduction is **+1.0000**. Its 95% interval is
+**[+0.6913, +1.0000]** under the discordant-pair method and **[+0.7898,
++1.0000]** under the more conservative MOVER construction. The exact two-sided
+McNemar result is `p = 4.77e-07`; after Holm correction across the four defence
+comparisons, `p = 1.91e-06`. V5 retained **4 of the 5 benign tasks that succeeded
+under allow-all**. At decision level it recorded one false block among 116 benign
+decisions, **1/116 = 0.0086** (exact 95% interval `[0.0002, 0.0471]`).
+That is the defensible false-positive-style metric. A binary classifier `precision`
+number is not reported because the suite grades attack success per scenario while the
+gateway emits four decision types per action; mixing those denominators would create
+a misleading statistic.
+
+![AegisGraph measured security effect](docs/paper/figures/aegisgraph-security-ladder.png)
+
+The versions are measured checkpoints, not marketing labels. V1 is the initial
+deterministic policy/provenance gateway. V3 adds a generic exact-credential output
+guard, action/response redaction and rewrite re-validation. V5 further hardens
+selected false-authority and disable-monitoring paths while preserving the 0/22
+reached-attack result. Development versions 2 and 4 were not preserved as
+measurement checkpoints.
+
+The layer is also exercised below the aggregate score: a changed action is
+rejected with `digest_mismatch`; confirmation grants bind the run, step, exact
+execution digest, expiry and issuing service; conflicting request-id reuse gets
+HTTP 409; anonymous, under-scoped, over-trust and cross-tenant access checks get
+401, 403, 403 and 404 respectively. Two targeted reached attacks changed from
+allow-all `attack_success=true` to v3 `false` while retaining
+`task_success=true`, with sensitive action/response redaction visible in their
+traces.
+
+[Real-model scorecards and trace archives](evaluation/real-qwen/README.md) ·
+[paired statistical analysis](docs/research/statistics.md) ·
+[preserved challenge and version record](docs/legacy/sentinel-challenge.md)
+
 ## Current measured evidence — 10 October 2026
 
+- **Security effectiveness:** v5 stopped all 22 attacks that demonstrably succeeded under allow-all (22/22 to 0/22), with Holm-adjusted `p = 1.91e-06`, 4/5 retention of baseline-successful benign tasks, decision FBR 1/116, and 9.284 ms p95 policy latency.
 - **Engineering:** hosted CI on source `b130776` passed 745 tests, including all
   12 PostgreSQL tests; backend coverage 96.83%.
 - **Real model:** 1,452 completed Qwen3-8B GPU episodes across 22 public runs and

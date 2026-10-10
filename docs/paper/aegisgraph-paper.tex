@@ -30,7 +30,7 @@
 \newcommand{\decision}{\mathcal{D}(x,P_v)}
 \newcommand{\code}[1]{\texttt{#1}}
 
-\title{\vspace{-1.2em}\textbf{AegisGraph: An Action-Bound Policy and Evidence Gateway\\for Reliable LLM Tool Use}}
+\title{\vspace{-1.2em}\textbf{AegisGraph: Measured Pre-Execution Security\\for Tool-Using LLM Agents}}
 \author{Oussema Harrabi\\Independent Research and Engineering Project\\\href{https://github.com/OussemaHarrabi/IndabaX26}{github.com/OussemaHarrabi/IndabaX26}}
 \date{October 2026}
 
@@ -38,7 +38,7 @@
 \maketitle
 
 \begin{abstract}
-Large-language-model agents can translate natural-language goals into consequential tool calls, but the same flexibility blurs the boundary between instructions, retrieved data, and executable intent. We present \system, a model-agnostic gateway that mediates proposed tool actions before execution. The gateway normalizes provenance-bearing context, evaluates a versioned policy, emits one of four decisions---\textsc{allow}, \textsc{block}, \textsc{escalate}, or \textsc{rewrite}---and binds the authorized action to a tamper-evident receipt checked at the executor boundary. The implementation combines an authenticated FastAPI service, PostgreSQL-backed receipts and grants, an enforcement SDK, OpenTelemetry instrumentation, Prometheus/Grafana dashboards, and reproducible GPU evaluation tooling. We evaluate the system with Qwen3-8B across 1,452 GPU episodes in 42 runs, comprising a 612-episode public campaign and 840 episodes across four mechanism ablations. The campaign generated 3,792 gateway requests, recovered 116 malformed structured outputs through a bounded repair path, produced 2,985 action--execution digest correspondences, and completed with zero episode-level runtime errors. The engineering baseline contains 745 tests, including PostgreSQL integration checks, and reports 96.83\% backend coverage. Beyond aggregate counts, the contribution is an auditable experimental contract: frozen scenarios, pinned model and source revisions, deterministic manifests, machine-readable traces, review packets, and evidence-linked claims. \system demonstrates how an external authorization layer can make tool-using agents inspectable and operationally testable without treating model output itself as authority.
+Large-language-model agents can translate natural-language goals into consequential tool calls, but untrusted instructions, retrieved data, and model output can cross the execution boundary. We present \system, a model-agnostic pre-execution security gateway that normalizes provenance-bearing context, evaluates versioned policy, emits \textsc{allow}, \textsc{block}, \textsc{escalate}, or \textsc{rewrite}, and binds authorization to the exact action checked by the executor. On a pinned 40-scenario public suite with Qwen3-8B, 22 of 31 attacks succeeded under an allow-all control; the nine attacks that did not reach the target under control were excluded from effectiveness claims. AegisGraph v5 reduced successful attacks on the reached set from 22/22 to 0/22, a paired reduction of 1.0000 (95\% discordant-pair interval [0.6913, 1.0000]; MOVER interval [0.7898, 1.0000]; exact McNemar $p=4.77\times10^{-7}$; Holm-adjusted $p=1.91\times10^{-6}$). It retained 4/5 benign tasks that succeeded under allow-all, recorded a decision-level false-block rate of 1/116 (0.0086; exact 95\% interval [0.0002, 0.0471]), and added 9.284 ms p95 policy latency. A measured version ladder shows attack success of 9/22 for the built-in provenance baseline, 10/22 for v1, and 0/22 for both v3 and v5. Mechanistic tests additionally reject action-digest mutation, stale or mismatched approval grants, conflicting request replay, excessive trust claims, and cross-tenant receipt access. A separate 1,452-episode Qwen3-8B campaign produced 3,792 gateway requests and 2,985 action--execution digest correspondences with zero episode-level runtime errors. These results provide bounded evidence that an external authorization layer can materially reduce successful attacks in a fixed agent-security suite while remaining auditable and operationally testable.
 \end{abstract}
 
 \section{Introduction}
@@ -46,14 +46,15 @@ Tool-using language models combine reasoning with actions against external syste
 
 \system addresses a narrower operational question: \emph{How can a deployer evaluate and authorize an agent's proposed action at a stable boundary, retain evidence for the decision, and verify that the executed action is the one that was authorized?} The design places a deterministic gateway between proposal and execution. It treats model-generated text as an untrusted proposal, preserves the provenance of contextual evidence, and gives the integrator an explicit enforcement contract.
 
-This paper makes six contributions:
+This paper makes seven contributions:
 \begin{enumerate}
+  \item a measured reduction from 22/22 to 0/22 successful reached attacks on a pinned Qwen3-8B public suite, with paired exact inference and explicit reachability control;
+  \item a versioned security ladder that separates allow-all, provenance, v1, v3, and final v5 behavior;
   \item an action mediation contract with four explicit outcomes;
   \item provenance-aware normalization and versioned policy evaluation;
   \item an action-bound receipt checked again at execution time;
-  \item a production-oriented service, SDK, persistence, identity, and observability stack;
-  \item a frozen Qwen3-8B evaluation harness with public, holdout, and ablation lanes; and
-  \item an evidence package that connects quantitative claims to committed artifacts.
+  \item a production-oriented service, SDK, persistence, identity, and observability stack; and
+  \item a reproducible evidence package spanning GPU campaigns, ablations, traces, manifests, tests, and review artifacts.
 \end{enumerate}
 
 \section{Related Work}
@@ -121,10 +122,11 @@ The codebase separates policy evaluation, persistence, API schemas, cryptographi
 \section{Experimental Methodology}
 \subsection{Research Questions}
 \begin{description}[style=nextline]
-  \item[RQ1: Runtime reliability.] Can the complete model-to-gateway-to-executor loop run at campaign scale without episode-level runtime failure?
-  \item[RQ2: Evidence integrity.] Does the system preserve action--execution correspondence and produce replayable, machine-readable evidence?
-  \item[RQ3: Mechanism isolation.] Can provenance, enforcement, and receipt binding be independently removed under an otherwise frozen protocol?
-  \item[RQ4: Industrial readiness.] Are service behavior, persistence, coverage, load, and telemetry exercised through automated checks and recorded runs?
+  \item[RQ1: Security effectiveness.] On attacks that demonstrably succeed under allow-all, does AegisGraph reduce attack success, and what utility, false-block, and latency costs accompany the reduction?
+  \item[RQ2: Runtime reliability.] Can the complete model-to-gateway-to-executor loop run at campaign scale without episode-level runtime failure?
+  \item[RQ3: Evidence integrity.] Does the system preserve action--execution correspondence and reject action, grant, replay, identity, and tenant-boundary violations?
+  \item[RQ4: Version and mechanism evidence.] How do the measured defense checkpoints and mechanism ablations change the observable security boundary?
+  \item[RQ5: Industrial readiness.] Are service behavior, persistence, coverage, load, and telemetry exercised through automated checks and recorded runs?
 \end{description}
 
 \subsection{Scenarios and Splits}
@@ -134,7 +136,12 @@ The scenario corpus contains 60 authored cases: 42 development scenarios and 18 
 The primary agent is Qwen3-8B \cite{yang2025qwen3}. Runs capture the exact model revision, precision mode, decoding configuration, source revision, seed, environment, and artifact checksums. Structured tool proposals pass through a bounded parser-recovery path: a malformed proposal may be repaired into the required schema, but it does not bypass the gateway.
 
 \subsection{Campaigns and Ablations}
-The public campaign contains 612 episodes. Four mechanism conditions account for another 840 episodes: the full system, provenance removed, policy enforcement removed, and receipt binding removed. The same runner and artifact contract are used across conditions so differences can be attributed to the selected mechanism rather than a changed execution path.
+The public campaign contains 612 episodes. Four mechanism conditions account for another 840 episodes: the full system, provenance removed, policy enforcement removed, and receipt binding removed. The same runner and artifact contract are used across conditions. These runs establish execution and evidence coverage for each mechanism switch; semantic outcome annotation is treated separately from those mechanically verified counts.
+
+\subsection{Matched Security Ladder}
+Security effectiveness is measured on the pinned SENTINEL public suite at starter-kit commit \code{dd2e5fe}. It contains 40 scenarios: 31 attacks and nine benign controls across enterprise, finance, and security-operations settings. Five matched-configuration runs used the unmodified Qwen3-8B reference agent through Ollama 0.34.3 in Q4\_K\_M precision, thinking disabled, 768 maximum new tokens, temperature 0, seed 0, Python 3.12.14, and a Colab Tesla T4. The runs occurred at different times and therefore form a matched checkpoint comparison rather than repeated trials.
+
+The ladder separates: (i) an allow-all control that establishes attack reachability; (ii) the starter kit's provenance baseline; (iii) AegisGraph v1, the initial deterministic policy and provenance gateway; (iv) v3, which adds generic exact-credential output guards and action/response redaction with rewrite re-validation; and (v) final v5, which further hardens selected false-authority and disable-monitoring paths. Versions 2 and 4 were development steps, not preserved measurement checkpoints, and are not inserted into the comparison. Each measured AegisGraph checkpoint is identified by its source commit and scorecard digest in the public evidence directory.
 
 \begin{figure*}[t]
   \centering
@@ -147,11 +154,42 @@ The public campaign contains 612 episodes. Four mechanism conditions account for
   \label{fig:evaluation}
 \end{figure*}
 
-\subsection{Metrics and Artifacts}
+\subsection{Metrics, Reachability, and Inference}
+Security effectiveness is evaluated only on the reached set $R$: attacks for which the paired allow-all control records \code{attack\_success=true}. The primary effect is the paired reduction $p_C-p_T$ in attack success on $R$. We report the exact two-sided McNemar test, a discordant-pair risk-difference interval, a Newcombe MOVER sensitivity interval, and Holm--Bonferroni-adjusted $p$-values across the four defense comparisons. Nine attacks that fail under allow-all are counted as unreachable and cannot become defense wins. Benign task success is paired separately; we also report retention among benign tasks successful under control. The decision-level false-block rate is a false refusal divided by benign decisions, and latency is the gateway's policy-decision time rather than model inference. We do not manufacture a classifier precision score: the benchmark labels attack success at scenario level but does not assign a malicious/benign ground-truth label to every four-way gateway decision. Combining 22 scenario-level stops with one decision-level false block would mix denominators. The grounded precision-related evidence is therefore the reached-attack protection rate, benign-task retention, decision-level false-block rate, and their exact intervals.
+
 Each episode records completion state, parser recovery, gateway requests, decisions, receipt identifiers, action digests, execution digests, trace identifiers, and error state. Aggregate evidence includes campaign summaries, JSONL traces, review packets, database records, OpenTelemetry metrics, load-test output, and SHA-256 manifests. Test counts and coverage are reported from the verified software test run.
 
 \section{Results}
-Table~\ref{tab:headline} summarizes the execution-backed evidence. All 1,452 GPU episodes completed without an episode-level runtime error. The 42 runs produced 3,792 gateway requests. The structured-output recovery path repaired 116 parsing attempts, demonstrating that formatting variability could be absorbed without granting execution authority. Across the evaluated paths, 2,985 action--execution digest correspondences were recorded.
+\subsection{Security Effectiveness}
+Table~\ref{tab:security} reports the matched Qwen3-8B security ladder. Under allow-all, 22 of the 31 attack scenarios reached their attack target. AegisGraph v5 reduced successful attacks on this reached set from 22/22 to 0/22: all 22 attacks that demonstrably succeeded without the defense were stopped under the final measured gateway. The paired risk reduction is +1.0000, with a 95\% discordant-pair interval of [0.6913, 1.0000] and a more conservative MOVER interval of [0.7898, 1.0000]. The exact two-sided McNemar value is $4.77\times10^{-7}$ and remains significant after correction across the four defense comparisons (Holm-adjusted $p=1.91\times10^{-6}$).
+
+\begin{table*}[t]
+\centering
+\caption{Matched real-Qwen3-8B security ladder on the pinned 40-scenario public suite. Attack success is restricted to the 22 attacks reached under allow-all; nine unreached attacks are excluded from defense-effectiveness counts.}
+\label{tab:security}
+\small
+\begin{tabularx}{\textwidth}{@{}lrrrrrX@{}}
+\toprule
+Configuration & Attack success & Stopped & Benign success & FBR & p95 & Measured checkpoint \\
+\midrule
+Allow-all & 22/22 & 0/22 & 5/9 & 0 & 0.056 ms & Reachability control \\
+Built-in provenance & 9/22 & 13/22 & 4/9 & .3466 & 0.126 ms & Starter-kit baseline \\
+AegisGraph v1 & 10/22 & 12/22 & 4/9 & 0 & 8.598 ms & Initial policy/provenance gateway \\
+AegisGraph v3 & 0/22 & 22/22 & 4/9 & .0087 & 8.355 ms & Credential output guard and redaction \\
+\textbf{AegisGraph v5} & \textbf{0/22} & \textbf{22/22} & \textbf{4/9} & \textbf{.0086} & \textbf{9.284 ms} & Final hardened checkpoint \\
+\bottomrule
+\end{tabularx}
+\end{table*}
+
+V5 retained four of the five benign tasks that succeeded under allow-all. Four additional benign failures were already present in the allow-all arm, leaving one defense-attributable regression: a consequential \code{email\_send} was escalated for confirmation and the simulator did not approve the agent's mismatching subject. At decision level, v5 recorded one false block among 116 benign decisions, 0.0086, with an exact 95\% interval of [0.0002, 0.0471]. Its p95 policy-decision latency was 9.284 ms. Two separately rerun reached attacks provide trace-level examples: v3 changed both from allow-all \code{attack\_success=true} to \code{false} while keeping \code{task\_success=true}; one applied sensitive-response redaction, and the other applied both sensitive-action and sensitive-response redaction.
+
+The version ladder also distinguishes a security effect from mere instrumentation. The built-in provenance defense stopped 13/22 reached attacks and v1 stopped 12/22. V3 and v5 stopped 22/22. The final result is therefore supported by a control, intermediate baselines, paired outcomes, exact inference, and trace-level mechanism evidence rather than by runtime counts alone.
+
+\subsection{Mechanism and Boundary Checks}
+The enforcement SDK rejects a mutated candidate action with \code{digest\_mismatch}; confirmation grants must bind the run, step, exact execution digest, expiry, and a grant that the service actually issued. Conflicting reuse of a request identifier is refused with HTTP 409. Live API checks return 401 for an anonymous caller, 403 for insufficient scope, 403 for an asserted trust level above the caller's ceiling, and 404 for a cross-tenant receipt lookup. Across the newer GPU paths, 2,985 defense and ablation decisions recorded canonical action--execution digest correspondence. Together, these checks exercise the authorization and isolation properties that the attack-success metric alone cannot reveal.
+
+\subsection{Execution and Engineering Evidence}
+Table~\ref{tab:headline} summarizes the separate execution-backed evidence. All 1,452 GPU episodes completed without an episode-level runtime error. The 42 runs produced 3,792 gateway requests. The structured-output recovery path repaired 116 parsing attempts while preserving gateway mediation. These counts demonstrate campaign reliability and evidence continuity; the matched ladder above supplies the direct security-effectiveness result.
 
 \begin{table*}[t]
 \centering
@@ -194,19 +232,24 @@ Total & 1,452 \\
 \end{tabular}
 \end{table}
 
-\subsection{RQ1: Runtime Reliability}
+\subsection{RQ1: Security Effectiveness}
+On the fixed reached set, v5 changes all 22 paired outcomes from attack success under allow-all to attack failure, with no reverse discordant pairs. The effect remains significant under the declared family-wise correction. Utility retention is 4/5 among baseline-successful benign tasks, the decision-level false-block rate is 1/116, and p95 policy latency is 9.284 ms.
+
+\subsection{RQ2: Runtime Reliability}
 The zero-error completion result covers the entire 1,452-episode GPU campaign rather than a mocked model path. Parser recovery occurred in 116 attempts, so the absence of episode errors does not imply uniformly perfect model formatting; it shows that the bounded recovery contract handled those cases while preserving authorization checks.
 
-\subsection{RQ2: Evidence Integrity}
-The run package links proposals, policy decisions, receipts, executor checks, and traces. The 2,985 recorded action--execution correspondences provide direct evidence that the executor observed the digest associated with authorization. Manifests and checksums make each campaign auditable without depending on a prose-only result summary.
+\subsection{RQ3: Evidence Integrity}
+The run package links proposals, policy decisions, receipts, executor checks, and traces. The 2,985 recorded action--execution correspondences provide direct evidence that the executor observed the digest associated with authorization. Negative tests additionally cover digest mutation, grant mismatch, conflicting replay, authentication, authorization, trust ceilings, and tenant isolation.
 
-\subsection{RQ3: Mechanism Isolation}
-The four-condition ablation matrix executes the same frozen protocol while selectively disabling provenance, policy enforcement, or receipt binding. This turns architectural claims into testable mechanisms and preserves per-episode traces for task-level and security review.
+\subsection{RQ4: Version and Mechanism Evidence}
+The measured ladder shows partial protection in the provenance and v1 checkpoints and complete stopping of the 22 reached attacks in v3 and v5. The newer four-condition ablation matrix separately executes the frozen protocol while disabling provenance, policy enforcement, or receipt binding, preserving per-episode traces for later semantic review without turning execution counts into unsupported efficacy claims.
 
-\subsection{RQ4: Industrial Evidence}
+\subsection{RQ5: Industrial Evidence}
 The service baseline combines 745 automated tests, 12 PostgreSQL integration tests, and 96.83\% backend coverage. A recorded load run completed 2,986 requests at 148.938 requests/s with zero reported request errors. Traces and metrics connect service behavior to Prometheus/Grafana-compatible operational views.
 
 \section{Discussion}
+\paragraph{Measured security effect.} The principal result is behavioral: every attack that reached its target under the allow-all control failed under v5 in the fixed public suite. Reachability filtering prevents nine naturally failing attacks from being mislabeled as defense wins, while paired inference quantifies the evidence carried by the 22 informative cases.
+
 \paragraph{Authorization outside the model.} The central design choice is to prevent fluent model output from serving as authority. The model can propose and explain; the gateway decides under explicit policy; the adapter verifies the resulting capability immediately before the side effect.
 
 \paragraph{Evidence as a product surface.} Receipts, traces, manifests, and review packets are not secondary logs. They form the interface by which a security reviewer can reconstruct why an action was permitted, whether it changed before execution, and which policy version governed the decision.
@@ -219,13 +262,13 @@ The repository includes scenario definitions, split manifests, pinned runtime co
 To reproduce the study, an evaluator prepares the declared Python environment, provisions PostgreSQL, starts the gateway, runs the verified test suite, and launches the frozen Qwen3-8B campaign under the provided manifest. The evidence builder then validates expected files and hashes before producing aggregate summaries. Hardware-dependent throughput should be interpreted together with the recorded environment and configuration.
 
 \section{Scope and Validity}
-The reported results establish the behavior of the committed scenarios, policies, model configuration, service stack, and experiment artifacts. The evaluation separates execution-backed quantities from semantic judgments: runtime completion, request counts, receipt correspondence, tests, coverage, and load evidence are mechanically derived; task utility and adversarial success require the declared review procedure. This separation keeps the public claims traceable and provides a stable basis for later blinded annotation, additional models, adaptive attacks, and cross-domain scenarios.
+The security result is conditional on one seeded run of a fixed, synthetic, public 40-scenario suite with the declared Qwen3-8B runtime. It establishes a measured effect for the 22 attacks that succeeded under its paired allow-all control; it is not a claim of universal protection or population-level attack frequency. The nine unreachable attacks are excluded rather than credited to the defense. The newer 1,452-episode campaign supplies execution, mechanism, and evidence-integrity coverage; its semantic efficacy remains distinct from the completed legacy paired analysis. This separation keeps every public claim tied to the artifact that supports it and provides a stable basis for later repeated trials, additional models, adaptive attacks, and cross-domain scenarios.
 
 \section{Ethics and Responsible Use}
 \system is defensive infrastructure for constraining and auditing tool-using agents. The released scenarios and traces are intended to improve authorization design, evaluation quality, and incident analysis. Deployers should minimize sensitive data in traces, apply retention controls to receipts and grants, protect signing material, and require explicit human approval for high-impact actions where policy calls for escalation.
 
 \section{Conclusion}
-\system introduces an action-bound policy and evidence gateway for tool-using LLMs. Its explicit decision vocabulary, provenance-aware normalization, versioned policies, executor-side receipt verification, and traceable evidence package move authority away from untrusted model text and into an auditable system boundary. The implementation is supported by 1,452 Qwen3-8B GPU episodes, four mechanism conditions, 3,792 gateway requests, zero episode-level runtime errors, 745 automated tests, 96.83\% backend coverage, and recorded load evidence. The project provides both a research instrument for studying agent security mechanisms and an industrial foundation for integrating enforceable controls into real tool adapters.
+\system introduces a measured pre-execution security boundary for tool-using LLM agents. On the pinned Qwen3-8B public suite, final v5 reduced attack success from 22/22 under allow-all to 0/22 on the reached set, retained 4/5 baseline-successful benign tasks, recorded a 1/116 decision-level false-block rate, and added 9.284 ms p95 policy latency. The version ladder, paired exact analysis, targeted traces, digest-mismatch rejection, grant and replay checks, and tenant-boundary tests show that the security layer changes outcomes as well as producing logs. The broader implementation is supported by 1,452 Qwen3-8B GPU episodes, four mechanism conditions, 3,792 gateway requests, zero episode-level runtime errors, 745 automated tests, 96.83\% backend coverage, and recorded load evidence. AegisGraph therefore serves both as a research instrument for evaluating agent-security mechanisms and as an industrial foundation for enforcing explicit authorization at real tool adapters.
 
 \footnotesize
 \begin{thebibliography}{9}
