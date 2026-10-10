@@ -24,7 +24,8 @@ Gateway for Reliable LLM Tool Use](output/pdf/AegisGraph_Technical_Report_2026.p
 [evaluation-pipeline prompt](docs/paper/aegisgraph-evaluation-generation-prompt.txt)).
 The paper follows a two-column AI research-paper structure and embeds both generated
 figure results, the experimental protocol, ablations, industrial evidence,
-reproducibility statement, references, and the exact image-generation prompts.
+reproducibility statement and references. Exact image-generation prompts remain
+versioned beside the paper source as separate reproducibility artifacts.
 
 ## Current measured evidence — 10 October 2026
 
