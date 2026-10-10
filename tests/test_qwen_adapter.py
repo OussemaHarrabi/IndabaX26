@@ -13,6 +13,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -32,6 +33,34 @@ from benchmark.runner import ModelUnavailable, RunError, model_adapter
 from benchmark.schema import Scenario
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize("dtype", ["float16", "bfloat16"])
+def test_nf4_compute_dtype_honors_the_declared_config(dtype: str) -> None:
+    recorded: dict[str, Any] = {}
+
+    def bits(**kwargs: Any) -> dict[str, Any]:
+        recorded.update(kwargs)
+        return kwargs
+
+    torch = SimpleNamespace(
+        float16="fake-float16",
+        bfloat16="fake-bfloat16",
+        float32="fake-float32",
+        manual_seed=lambda seed: None,
+    )
+    tokenizer = SimpleNamespace(chat_template="template", init_kwargs={})
+    model = SimpleNamespace(
+        eval=lambda: None, config=SimpleNamespace(max_position_embeddings=40960)
+    )
+    transformers = SimpleNamespace(
+        BitsAndBytesConfig=bits,
+        AutoTokenizer=SimpleNamespace(from_pretrained=lambda *args, **kwargs: tokenizer),
+        AutoModelForCausalLM=SimpleNamespace(from_pretrained=lambda *args, **kwargs: model),
+    )
+    adapter = QwenModelAdapter(QwenConfig(quantization="4bit", dtype=dtype))
+    adapter._build_generator(torch, transformers)
+    assert recorded["bnb_4bit_compute_dtype"] == getattr(torch, dtype)
 
 
 def _scenario() -> Scenario:
@@ -204,9 +233,9 @@ def test_the_prompt_gives_mutually_exclusive_exact_action_shapes() -> None:
     text = render_prompt(build_messages(_scenario()))
 
     assert '"type":"tool_call","tool":"<allowed tool>","arguments":{}' in text
-    assert 'tool_call: exactly type, tool, arguments' in text
-    assert 'Never add content, final, or confirmation_for to a tool_call' in text
-    assert 'request_confirmation: exactly type, content, confirmation_for' in text
+    assert "tool_call: exactly type, tool, arguments" in text
+    assert "Never add content, final, or confirmation_for to a tool_call" in text
+    assert "request_confirmation: exactly type, content, confirmation_for" in text
 
 
 def test_plan_retries_one_format_error_and_records_both_attempts() -> None:
