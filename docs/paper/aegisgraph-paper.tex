@@ -13,21 +13,18 @@
 \usepackage{xcolor}
 \usepackage{enumitem}
 \usepackage{caption}
-\usepackage{listings}
 \usepackage{xspace}
 \usepackage[hidelinks]{hyperref}
 
 \definecolor{aegisblue}{HTML}{123B66}
 \definecolor{aegisteal}{HTML}{008C8C}
 \definecolor{aegisamber}{HTML}{C47A00}
-\definecolor{codebg}{HTML}{F5F7FA}
 \hypersetup{colorlinks=true,linkcolor=aegisblue,citecolor=aegisteal,urlcolor=aegisblue}
 \captionsetup{font=small,labelfont=bf}
 \setlist{leftmargin=*,nosep}
 \setlength{\parindent}{1em}
 \setlength{\parskip}{0pt}
 \graphicspath{{figures/}}
-\lstset{basicstyle=\ttfamily\scriptsize,breaklines=true,breakatwhitespace=true,backgroundcolor=\color{codebg},frame=single,rulecolor=\color{black!15},columns=fullflexible,showstringspaces=false}
 
 \newcommand{\system}{\textsc{AegisGraph}\xspace}
 \newcommand{\decision}{\mathcal{D}(x,P_v)}
@@ -100,7 +97,7 @@ Figure~\ref{fig:architecture} shows the end-to-end architecture. The agent runti
 \begin{figure*}[t]
   \centering
   \includegraphics[width=\textwidth]{aegisgraph-architecture.png}
-  \caption{Generated architecture of \system. Runtime flow is separated from observability, persistence, and evidence inspection. The exact generation prompt is reproduced in Appendix~\ref{app:prompts}; the PNG is retained with the paper source.}
+  \caption{Generated architecture of \system. Runtime flow is separated from observability, persistence, and evidence inspection. The PNG and its exact generation prompt are versioned with the paper source.}
   \label{fig:architecture}
 \end{figure*}
 
@@ -267,30 +264,5 @@ A. Yang, A. Li, B. Yang, et al.
 \newblock Qwen3 Technical Report.
 \newblock arXiv:2505.09388, 2025.
 \end{thebibliography}
-
-\appendix
-\onecolumn
-\section{Generated Figure Prompts}\label{app:prompts}
-The architecture and evaluation figures are generated raster images. Their prompts are versioned verbatim so the visual design is reproducible and reviewable. The generated PNG files are the figure results embedded in this paper; neither figure was produced with Archify or a diagram renderer.
-
-\subsection{System Architecture Prompt}
-\lstinputlisting{aegisgraph-architecture-generation-prompt.txt}
-
-\subsection{Evaluation Pipeline Prompt}
-\lstinputlisting{aegisgraph-evaluation-generation-prompt.txt}
-
-\section{Evidence Map}
-\begin{tabularx}{\textwidth}{@{}p{0.25\textwidth}X@{}}
-\toprule
-Claim family & Evidence retained in the repository \\
-\midrule
-GPU evaluation & Run manifests, per-episode JSONL traces, summaries, environment capture, model/source revisions, and checksums \\
-Mechanism ablations & Frozen experiment matrix, condition-specific summaries, traces, and review packets \\
-Receipt correspondence & Authorization records, canonical action digests, executor observations, and verification outcomes \\
-Software quality & Test output, coverage report, PostgreSQL integration checks, and CI configuration \\
-Industrial operation & Container configuration, authenticated API, SDK contract, PostgreSQL schema, OpenTelemetry traces, Prometheus/Grafana assets, and load evidence \\
-Paper figures & Generated PNG results and the exact prompts reproduced above \\
-\bottomrule
-\end{tabularx}
 
 \end{document}
