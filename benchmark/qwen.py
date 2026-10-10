@@ -516,7 +516,7 @@ class QwenModelAdapter:
                 quantization_config = bits(
                     load_in_4bit=True,
                     bnb_4bit_quant_type="nf4",
-                    bnb_4bit_compute_dtype=torch.bfloat16,
+                    bnb_4bit_compute_dtype=getattr(torch, config.dtype),
                 )
             else:
                 quantization_config = bits(load_in_8bit=True)

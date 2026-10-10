@@ -232,6 +232,30 @@ def test_gpu_notebooks_use_the_closed_runtime_contract(name: str) -> None:
 
 
 @pytest.mark.parametrize("name", EXPECTED_NOTEBOOKS[:3])
+def test_gpu_notebooks_install_declared_gateway_dependencies(name: str) -> None:
+    """A fresh cloud image must be able to start the AegisGraph gateway."""
+    sources = [_source(cell) for cell in _code_cells(_load(name))]
+    install_cells = [source for source in sources if "INSTALL_COMMAND" in source]
+
+    assert len(install_cells) == 1
+    install = install_cells[0]
+    assert "tomllib" in install
+    assert 'REPO / "pyproject.toml"' in install
+    assert '["project"]["dependencies"]' in install
+    assert "runtime_dependencies" in install
+
+
+def test_smoke_notebook_scores_the_resumed_run_before_bundling() -> None:
+    sources = [_source(cell) for cell in _code_cells(_load("00_environment_and_smoke.ipynb"))]
+    score_cells = [
+        source for source in sources if "score_run(" in source and "def score_run" not in source
+    ]
+
+    assert len(score_cells) == 1
+    assert "RESUMED_RUNS" in score_cells[0]
+
+
+@pytest.mark.parametrize("name", EXPECTED_NOTEBOOKS[:3])
 def test_gpu_notebooks_bootstrap_the_repository_in_a_fresh_cloud_runtime(name: str) -> None:
     sources = "\n".join(_source(cell) for cell in _code_cells(_load(name)))
 

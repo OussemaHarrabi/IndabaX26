@@ -103,7 +103,7 @@ ENVIRONMENT_SCHEMA_VERSION = "aegisgraph-campaign-environment/v1"
 CONFIGURATION_SCHEMA_VERSION = "aegisgraph-campaign-configuration/v1"
 FAILURE_SCHEMA_VERSION = "aegisgraph-campaign-failure/v1"
 
-FREEZE_BLOCK = "docs/evidence/qwen-campaign-freeze.md (block 1)"
+FREEZE_BLOCK = "docs/evidence/qwen-campaign-freeze.md (block 4)"
 PROTOCOL = "docs/research/qwen3-8b-campaign.md"
 
 STAGES: tuple[str, ...] = ("A", "B", "C", "D")
