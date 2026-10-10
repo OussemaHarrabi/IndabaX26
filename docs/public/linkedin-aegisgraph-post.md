@@ -1,8 +1,8 @@
-# From a missed hackathon deadline to AegisGraph
+# What should stand between an AI agent's proposal and a real tool action?
 
-I learned about the IndabaX Tunisia agent-security challenge in class, roughly five hours before submissions closed. I decided to try it solo, but I did not submit: the idea was promising, yet the project was not complete enough.
+That question captured the theme of this edition of the IndabaX Tunisia challenge: securing AI agents before they act. I learned about it in class roughly five hours before submissions closed. I decided to try it solo, but I did not submit: the idea was promising, yet the project was not complete enough.
 
-After the deadline, one of the organizers told me the approach was very cool and unique. That feedback stayed with me. Instead of leaving the prototype behind, I used it to explore a question I wanted to understand properly: what should stand between an AI agent's proposal and a real tool action?
+After the deadline, one of the organizers told me the approach was very cool and unique. That feedback stayed with me. Instead of leaving the prototype behind, I decided to study the problem properly and turn the idea into a complete project.
 
 That became **AegisGraph**, a pre-execution security gateway for tool-using LLM agents. It checks provenance, authorization, confirmation requirements, sensitive-data flow and the exact action digest, then returns `allow`, `block`, `escalate` or `rewrite`. The executor verifies that the action being executed is the one that was authorized.
 
