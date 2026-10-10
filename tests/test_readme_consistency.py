@@ -101,6 +101,6 @@ def test_the_three_evidence_classes_stay_separated() -> None:
     for heading in (
         "### 1. Native benchmark, scripted replay",
         "### 2. Historical legacy SENTINEL evidence",
-        "### 3. Native real-model campaign — **not yet run**",
+        "### 3. Native real-model campaign — completed exploratory measurements",
     ):
         assert heading in text, f"README lost the evidence-class heading: {heading!r}"

@@ -103,7 +103,7 @@ ENVIRONMENT_SCHEMA_VERSION = "aegisgraph-campaign-environment/v1"
 CONFIGURATION_SCHEMA_VERSION = "aegisgraph-campaign-configuration/v1"
 FAILURE_SCHEMA_VERSION = "aegisgraph-campaign-failure/v1"
 
-FREEZE_BLOCK = "docs/evidence/qwen-campaign-freeze.md (block 1)"
+FREEZE_BLOCK = "docs/evidence/qwen-campaign-freeze.md (block 4)"
 PROTOCOL = "docs/research/qwen3-8b-campaign.md"
 
 STAGES: tuple[str, ...] = ("A", "B", "C", "D")
@@ -351,7 +351,12 @@ class CampaignConfig:
         if self.adapter is not None:
             return self.adapter
         if self.model_name == "qwen":
-            return QwenModelAdapter(_qwen_config(self.adapter_config))
+            payload = dict(self.adapter_config)
+            # The campaign seed is the experimental unit.  A stale seed in a
+            # reusable adapter JSON must never collapse a multi-seed campaign
+            # into repeated copies of the same model stream.
+            payload["seed"] = self.seed
+            return QwenModelAdapter(_qwen_config(payload))
         return model_adapter(self.model_name)
 
 
@@ -966,7 +971,13 @@ def frozen_signature(identity: ModelIdentity) -> dict[str, Any]:
         "max_new_tokens",
         "thinking",
         "device",
+        "format_retries",
         "prompt_revision",
+        "prompt_schema_sha256",
+        "quantization_backend",
+        "resolved_revision",
+        "chat_template_sha256",
+        "max_context_tokens",
     )
     return {key: parameters.get(key) for key in keys if key in parameters}
 
@@ -985,6 +996,12 @@ def configuration_record(
     adapter_config = dict(config.adapter_config)
     if isinstance(config.adapter, QwenModelAdapter):
         adapter_config = {**config.adapter.config.to_json(), **adapter_config}
+    elif identity.kind == "qwen3-8b":
+        adapter_config = {
+            key: identity.parameters.get(key)
+            for key in QwenConfig.__dataclass_fields__
+            if key in identity.parameters
+        }
     seed_rule = validate_seed_count(plan.stage, config.seeds) if _seed_floor_met(
         plan.stage, config.seeds
     ) else _lenient_seed_rule(plan.stage, config.seeds)
@@ -1079,6 +1096,11 @@ def _supports_decide(model: ModelAdapter) -> bool:
 def _raw_outputs(model: ModelAdapter) -> list[str] | None:
     outputs = getattr(model, "raw_outputs", None)
     return outputs if isinstance(outputs, list) else None
+
+
+def _generation_attempts(model: ModelAdapter) -> list[dict[str, Any]] | None:
+    attempts = getattr(model, "generation_attempts", None)
+    return attempts if isinstance(attempts, list) else None
 
 
 def _failure_row(
@@ -1295,7 +1317,9 @@ class _ScenarioRunner:
             )
         return self.control_verdicts
 
-    def _generation_records(self, scenario: Scenario, raw_before: int) -> None:
+    def _generation_records(
+        self, scenario: Scenario, raw_before: int, attempts_before: int
+    ) -> None:
         """One row per generation attempted, reconstructed from the adapter's outputs.
 
         The prompt for step *i* is rebuilt from the traces the adapter itself
@@ -1304,6 +1328,37 @@ class _ScenarioRunner:
         the raw text that failed is in the artifact rather than only in the error.
         """
 
+        attempts = _generation_attempts(self._model)
+        sampling = _sampling(self._model)
+        if attempts is not None:
+            new_attempts = attempts[attempts_before:]
+            for order, attempt in enumerate(new_attempts):
+                prompt = str(attempt["prompt"])
+                raw = str(attempt["output"])
+                parsed = bool(attempt["parsed"])
+                self.generations.append(
+                    {
+                        "scenario_id": scenario.id,
+                        "step_id": int(attempt["step_id"]),
+                        "order": order,
+                        "format_attempt": int(attempt["format_attempt"]),
+                        "prompt_sha256": content_sha256(prompt.encode("utf-8")),
+                        "prompt_chars": len(prompt),
+                        "output": raw,
+                        "output_sha256": content_sha256(raw.encode("utf-8")),
+                        "parsed": parsed,
+                        "prompt_tokens": None,
+                        "completion_tokens": None,
+                        "total_tokens": None,
+                        "stop_reason": "parsed" if parsed else "unparsed",
+                        "seed": self._config.seed,
+                        "temperature": sampling.get("temperature"),
+                        "recorded_at": _utc_now(),
+                    }
+                )
+            if new_attempts:
+                return
+
         raws = _raw_outputs(self._model)
         if raws is None or not isinstance(self._model, QwenModelAdapter):
             return
@@ -1311,7 +1366,6 @@ class _ScenarioRunner:
         if not new_raws:
             return
         decisions_by_step = {int(item["step_id"]): item["payload"] for item in self.decisions}
-        sampling = _sampling(self._model)
         traces: list[StepTrace] = []
         for index, raw in enumerate(new_raws):
             parsed = index < len(self.proposals)
@@ -1353,6 +1407,7 @@ class _ScenarioRunner:
         run_id = run_id_for(index)
         started = time.perf_counter()
         raw_before = len(_raw_outputs(self._model) or [])
+        attempts_before = len(_generation_attempts(self._model) or [])
         plan: tuple[tuple[int, dict[str, Any]], ...] = ()
         status = "ok"
         try:
@@ -1387,7 +1442,7 @@ class _ScenarioRunner:
                 detail=f"{type(error).__name__}: {error}",
                 phase="generation",
             )
-        self._generation_records(scenario, raw_before)
+        self._generation_records(scenario, raw_before, attempts_before)
         if status == "errored" and not any(
             verdict.errored for verdict in self.treatment_verdicts
         ):
@@ -2061,6 +2116,10 @@ def run_campaign(config: CampaignConfig) -> CampaignResult:
         )
 
     model = config.resolve_model()
+    if isinstance(model, QwenModelAdapter):
+        # Resolve the exact model revision, template digest and runtime before
+        # freezing configuration.json or comparing a resume signature.
+        model.load()
     identity = model.identity()
     hook_used = _supports_decide(model)
     code = {

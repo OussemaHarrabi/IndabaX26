@@ -1,0 +1,37 @@
+{
+  "worker_statuses_complete": true,
+  "all_run_bundle_hashes_match": true,
+  "workers": [
+    {
+      "file": "worker-A-0.json",
+      "status": "complete",
+      "runs": 2,
+      "sha256": "8d1949fcc5958289f4ba7c234418ae2e0ae9b5d11f37fbe8e544b654e24d964f"
+    },
+    {
+      "file": "worker-B-0.json",
+      "status": "complete",
+      "runs": 6,
+      "sha256": "9cab7155f8167759073de9ae07e102791600713b83d934644b507c8faf3cfdd8"
+    },
+    {
+      "file": "worker-B-1.json",
+      "status": "complete",
+      "runs": 4,
+      "sha256": "a198a4e7dc6137ade2b33936b048cc5970fda238fa6a72d2d6cd5303dfc22eaa"
+    },
+    {
+      "file": "worker-C-0.json",
+      "status": "complete",
+      "runs": 6,
+      "sha256": "31c32a4c0f98d00211380e8078f421f18f4fcf7d6d571e60c54bef405bef2952"
+    },
+    {
+      "file": "worker-C-1.json",
+      "status": "complete",
+      "runs": 4,
+      "sha256": "10ed399ac63fc65ed9c076d343450bdac517e885d52d84a91ccd81cec15639c1"
+    }
+  ],
+  "runs": 22
+}

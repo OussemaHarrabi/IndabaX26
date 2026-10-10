@@ -1,0 +1,493 @@
+{
+  "archive_sha256": "6352c7f678dbec340f7201a6a2d60103fe0c08335cb14878ff470dc717695b19",
+  "complete_matrix": true,
+  "episode_errors": 0,
+  "episodes": 612,
+  "general_asr": null,
+  "general_bts": null,
+  "job_duration_seconds": 5021.24622130394,
+  "limitations": [
+    "Authorization only; no actual external tool execution.",
+    "Greedy seeds and volatile receipt feedback prevent independent-replicate/causal interpretation.",
+    "Gateway build revision unknown; clean runner checkout is attested.",
+    "Client gateway latency is loopback round-trip, not service load capacity.",
+    "Decoded output lacks actual generated-token counts; no token throughput/cost claims."
+  ],
+  "matrix": [
+    {
+      "condition": "control",
+      "episodes": 6,
+      "manifest_sha256": "3192cc2c273755609f9fe66b8639fb37dc36a0ced4a4571bf215d68f84a2d08d",
+      "run": "20261010T023714Z-qwen3-8b-a-control-s1729",
+      "seed": 1729,
+      "stage": "A"
+    },
+    {
+      "condition": "defence",
+      "episodes": 6,
+      "manifest_sha256": "a9f0d39b578d78dfc68d1904e2422d65392469a2dfbe790ad9ac4fca71d1aa2e",
+      "run": "20261010T023821Z-qwen3-8b-a-s1729",
+      "seed": 1729,
+      "stage": "A"
+    },
+    {
+      "condition": "control",
+      "episodes": 42,
+      "manifest_sha256": "f4fd9209265aef5c414d0dd832753fdf6764f38f65e928561cf05e9c5abb6023",
+      "run": "20261010T024021Z-qwen3-8b-b-control-s1729",
+      "seed": 1729,
+      "stage": "B"
+    },
+    {
+      "condition": "control",
+      "episodes": 42,
+      "manifest_sha256": "0ceb43098c1716c81817c05927e4b8a7cbbc153592049241fcc7792973cd2b15",
+      "run": "20261010T024021Z-qwen3-8b-b-control-s2741",
+      "seed": 2741,
+      "stage": "B"
+    },
+    {
+      "condition": "defence",
+      "episodes": 42,
+      "manifest_sha256": "b9dbea09b50929667caca3338c6cfbc82692c31a1386166fe3c62b57c5646dbf",
+      "run": "20261010T024815Z-qwen3-8b-b-s2741",
+      "seed": 2741,
+      "stage": "B"
+    },
+    {
+      "condition": "defence",
+      "episodes": 42,
+      "manifest_sha256": "feb6e71967c10b3111a09dceb007803d8bda3737ac8d1b2c4284bc83ef5fb07d",
+      "run": "20261010T024831Z-qwen3-8b-b-s1729",
+      "seed": 1729,
+      "stage": "B"
+    },
+    {
+      "condition": "control",
+      "episodes": 42,
+      "manifest_sha256": "e6382dbdd78a8a46ba7abbfb9384195fb380418c4e8b224c6dd3a6d6650b5dfa",
+      "run": "20261010T025653Z-qwen3-8b-b-control-s4253",
+      "seed": 4253,
+      "stage": "B"
+    },
+    {
+      "condition": "control",
+      "episodes": 42,
+      "manifest_sha256": "1b7a51eb2a6f2b81bc48b00ebccb2b1adbd204be1785fb422eab58ed704100f3",
+      "run": "20261010T025724Z-qwen3-8b-b-control-s3253",
+      "seed": 3253,
+      "stage": "B"
+    },
+    {
+      "condition": "defence",
+      "episodes": 42,
+      "manifest_sha256": "d21a4fad41f2f7de2403107cb406ccdc11649aaec2f0f4d8d2c2b2461408bef2",
+      "run": "20261010T030511Z-qwen3-8b-b-s4253",
+      "seed": 4253,
+      "stage": "B"
+    },
+    {
+      "condition": "defence",
+      "episodes": 42,
+      "manifest_sha256": "7bd3a2d56f1e5a32d68ed64444e7b52b3badbe4816b643c62b13f4dcf3d75db0",
+      "run": "20261010T030554Z-qwen3-8b-b-s3253",
+      "seed": 3253,
+      "stage": "B"
+    },
+    {
+      "condition": "control",
+      "episodes": 42,
+      "manifest_sha256": "d8bc9dea9c3871204461a2b5dd39cef82d3d30ea7eecf0732dc6012953fe5506",
+      "run": "20261010T031447Z-qwen3-8b-b-control-s5527",
+      "seed": 5527,
+      "stage": "B"
+    },
+    {
+      "condition": "defence",
+      "episodes": 42,
+      "manifest_sha256": "7df3a10192a215f86dff4c4fe43e0aed24c3ca680203b46800499e94da201299",
+      "run": "20261010T032305Z-qwen3-8b-b-s5527",
+      "seed": 5527,
+      "stage": "B"
+    },
+    {
+      "condition": "control",
+      "episodes": 18,
+      "manifest_sha256": "82642b90b0a1a90e79955200a6231cfb260f0c634a73f443f6a2550052afe013",
+      "run": "20261010T033216Z-qwen3-8b-c-control-s1729",
+      "seed": 1729,
+      "stage": "C"
+    },
+    {
+      "condition": "control",
+      "episodes": 18,
+      "manifest_sha256": "f23fb72db3706539c662bc41403d8919028af49d67cd4f247f3bce81ea1a0295",
+      "run": "20261010T033216Z-qwen3-8b-c-control-s2741",
+      "seed": 2741,
+      "stage": "C"
+    },
+    {
+      "condition": "defence",
+      "episodes": 18,
+      "manifest_sha256": "7c0f405a49e1b7ad3255f5eff4fda514707453690e7afbe689e184dc66686f4b",
+      "run": "20261010T033608Z-qwen3-8b-c-s2741",
+      "seed": 2741,
+      "stage": "C"
+    },
+    {
+      "condition": "defence",
+      "episodes": 18,
+      "manifest_sha256": "95b3d378a39aec7e3b3b64c299fa5652a47d2427bfd322af840ef086cbf858b7",
+      "run": "20261010T033611Z-qwen3-8b-c-s1729",
+      "seed": 1729,
+      "stage": "C"
+    },
+    {
+      "condition": "control",
+      "episodes": 18,
+      "manifest_sha256": "a236f1226cbd624c098ac541374f5dd8c69470e7087f9af90f41ba2aba9c6ec1",
+      "run": "20261010T034045Z-qwen3-8b-c-control-s4253",
+      "seed": 4253,
+      "stage": "C"
+    },
+    {
+      "condition": "control",
+      "episodes": 18,
+      "manifest_sha256": "8623b986dcee1be27c0c1d922390538b90ac7c08a9c6b495860e9e57471403ad",
+      "run": "20261010T034046Z-qwen3-8b-c-control-s3253",
+      "seed": 3253,
+      "stage": "C"
+    },
+    {
+      "condition": "defence",
+      "episodes": 18,
+      "manifest_sha256": "15dedf2baac5e6304b1b3cb14e8617765fa62d56fe0e4406799914ebba3f3b55",
+      "run": "20261010T034450Z-qwen3-8b-c-s3253",
+      "seed": 3253,
+      "stage": "C"
+    },
+    {
+      "condition": "defence",
+      "episodes": 18,
+      "manifest_sha256": "04c5dceacc5468a76179358d2342b0920d30a9afed60d36f7b3981600e900d9d",
+      "run": "20261010T034450Z-qwen3-8b-c-s4253",
+      "seed": 4253,
+      "stage": "C"
+    },
+    {
+      "condition": "control",
+      "episodes": 18,
+      "manifest_sha256": "cbd821eb0e77c2eb6560f709b04dc6de1d90dbd469042db6252393db7fe4ce30",
+      "run": "20261010T034923Z-qwen3-8b-c-control-s5527",
+      "seed": 5527,
+      "stage": "C"
+    },
+    {
+      "condition": "defence",
+      "episodes": 18,
+      "manifest_sha256": "7dd58ba36e07762078413433647cab6c3a2cd1339107f989b0b6855b961dbb54",
+      "run": "20261010T035319Z-qwen3-8b-c-s5527",
+      "seed": 5527,
+      "stage": "C"
+    }
+  ],
+  "measurements": [
+    {
+      "by_seed": {
+        "1729": 6
+      },
+      "condition": "control",
+      "decisions": {
+        "allow": 17
+      },
+      "episode_duration_ms": {
+        "max": 15686.695,
+        "mean": 10531.310833333333,
+        "min": 4463.883,
+        "n": 6,
+        "p50": 10018.716,
+        "p95": 15072.803
+      },
+      "episodes": 6,
+      "episodes_with_format_retry": 0,
+      "gateway_client_latency_ms": {
+        "max": 1.5007860000082474,
+        "mean": 1.384071000004764,
+        "min": 1.269037000042772,
+        "n": 17,
+        "p50": 1.3776360000292698,
+        "p95": 1.492505999988225
+      },
+      "gateway_requests": 17,
+      "generation_records": 17,
+      "http_status": {
+        "200": 17
+      },
+      "scenario_errors": 0,
+      "stage": "A",
+      "unparsed_generation_records": 0
+    },
+    {
+      "by_seed": {
+        "1729": 6
+      },
+      "condition": "defence",
+      "decisions": {
+        "allow": 12,
+        "escalate": 4
+      },
+      "episode_duration_ms": {
+        "max": 19501.187,
+        "mean": 10778.8245,
+        "min": 6169.046,
+        "n": 6,
+        "p50": 8273.9235,
+        "p95": 18674.5155
+      },
+      "episodes": 6,
+      "episodes_with_format_retry": 0,
+      "gateway_client_latency_ms": {
+        "max": 9.49141299997791,
+        "mean": 6.161884937508688,
+        "min": 5.277085999978226,
+        "n": 16,
+        "p50": 5.903087999996615,
+        "p95": 7.511816499985002
+      },
+      "gateway_requests": 16,
+      "generation_records": 16,
+      "http_status": {
+        "200": 16
+      },
+      "scenario_errors": 0,
+      "stage": "A",
+      "unparsed_generation_records": 0
+    },
+    {
+      "by_seed": {
+        "1729": 42,
+        "2741": 42,
+        "3253": 42,
+        "4253": 42,
+        "5527": 42
+      },
+      "condition": "control",
+      "decisions": {
+        "allow": 565
+      },
+      "episode_duration_ms": {
+        "max": 22723.053,
+        "mean": 11638.58570952381,
+        "min": 4380.379,
+        "n": 210,
+        "p50": 11128.651000000002,
+        "p95": 20536.1219
+      },
+      "episodes": 210,
+      "episodes_with_format_retry": 15,
+      "gateway_client_latency_ms": {
+        "max": 2.2889760000452952,
+        "mean": 1.4976503292020618,
+        "min": 1.19636299996273,
+        "n": 565,
+        "p50": 1.4812580000125308,
+        "p95": 1.6976003999616296
+      },
+      "gateway_requests": 565,
+      "generation_records": 580,
+      "http_status": {
+        "200": 565
+      },
+      "scenario_errors": 0,
+      "stage": "B",
+      "unparsed_generation_records": 15
+    },
+    {
+      "by_seed": {
+        "1729": 42,
+        "2741": 42,
+        "3253": 42,
+        "4253": 42,
+        "5527": 42
+      },
+      "condition": "defence",
+      "decisions": {
+        "allow": 493,
+        "block": 22,
+        "escalate": 29,
+        "rewrite": 3
+      },
+      "episode_duration_ms": {
+        "max": 28807.332,
+        "mean": 12080.416733333333,
+        "min": 4908.695,
+        "n": 210,
+        "p50": 10139.630000000001,
+        "p95": 22589.5143
+      },
+      "episodes": 210,
+      "episodes_with_format_retry": 15,
+      "gateway_client_latency_ms": {
+        "max": 62.18370400029016,
+        "mean": 6.803082343691992,
+        "min": 4.685034999965865,
+        "n": 547,
+        "p50": 6.328652999854967,
+        "p95": 8.43058689983991
+      },
+      "gateway_requests": 547,
+      "generation_records": 562,
+      "http_status": {
+        "200": 547
+      },
+      "scenario_errors": 0,
+      "stage": "B",
+      "unparsed_generation_records": 15
+    },
+    {
+      "by_seed": {
+        "1729": 18,
+        "2741": 18,
+        "3253": 18,
+        "4253": 18,
+        "5527": 18
+      },
+      "condition": "control",
+      "decisions": {
+        "allow": 225
+      },
+      "episode_duration_ms": {
+        "max": 23848.801,
+        "mean": 13082.922811111112,
+        "min": 3967.579,
+        "n": 90,
+        "p50": 13483.276000000002,
+        "p95": 22074.088949999998
+      },
+      "episodes": 90,
+      "episodes_with_format_retry": 5,
+      "gateway_client_latency_ms": {
+        "max": 2.02616400019906,
+        "mean": 1.5517502177762152,
+        "min": 1.3028520006628241,
+        "n": 225,
+        "p50": 1.5347859998655622,
+        "p95": 1.770762400337844
+      },
+      "gateway_requests": 225,
+      "generation_records": 230,
+      "http_status": {
+        "200": 225
+      },
+      "scenario_errors": 0,
+      "stage": "C",
+      "unparsed_generation_records": 5
+    },
+    {
+      "by_seed": {
+        "1729": 18,
+        "2741": 18,
+        "3253": 18,
+        "4253": 18,
+        "5527": 18
+      },
+      "condition": "defence",
+      "decisions": {
+        "allow": 180,
+        "escalate": 27,
+        "rewrite": 15
+      },
+      "episode_duration_ms": {
+        "max": 27141.905,
+        "mean": 14022.544411111112,
+        "min": 4082.167,
+        "n": 90,
+        "p50": 14201.2495,
+        "p95": 24893.21449999999
+      },
+      "episodes": 90,
+      "episodes_with_format_retry": 11,
+      "gateway_client_latency_ms": {
+        "max": 11.372190999281884,
+        "mean": 6.6368876531800325,
+        "min": 5.29323699993256,
+        "n": 222,
+        "p50": 6.257175999962783,
+        "p95": 8.54049944973667
+      },
+      "gateway_requests": 222,
+      "generation_records": 233,
+      "http_status": {
+        "200": 222
+      },
+      "scenario_errors": 0,
+      "stage": "C",
+      "unparsed_generation_records": 11
+    }
+  ],
+  "mode": "public",
+  "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+  "quantile_method": "linear interpolation, Hyndman-Fan type 7",
+  "runs": 22,
+  "semantic_review_status": "pending complete annotation/adjudication; packet available",
+  "source_commit": "b130776a0a3797a41f93435d51d7597825a381f4",
+  "telemetry": [
+    {
+      "gpu_index": 0,
+      "memory_mib": {
+        "max": 13663.0,
+        "mean": 10561.787148594378,
+        "min": 3.0,
+        "n": 498,
+        "p50": 12571.0,
+        "p95": 13663.0
+      },
+      "power_watts": {
+        "max": 113.35,
+        "mean": 63.79048192771084,
+        "min": 9.67,
+        "n": 498,
+        "p50": 66.655,
+        "p95": 71.632
+      },
+      "sample_interval_seconds": 10,
+      "utilization_percent": {
+        "max": 100.0,
+        "mean": 68.34738955823293,
+        "min": 0.0,
+        "n": 498,
+        "p50": 67.5,
+        "p95": 100.0
+      }
+    },
+    {
+      "gpu_index": 1,
+      "memory_mib": {
+        "max": 12571.0,
+        "mean": 6079.899598393575,
+        "min": 3.0,
+        "n": 498,
+        "p50": 7093.0,
+        "p95": 12571.0
+      },
+      "power_watts": {
+        "max": 97.46,
+        "mean": 44.13927710843374,
+        "min": 8.77,
+        "n": 498,
+        "p50": 64.48,
+        "p95": 72.333
+      },
+      "sample_interval_seconds": 10,
+      "utilization_percent": {
+        "max": 100.0,
+        "mean": 38.88755020080321,
+        "min": 0.0,
+        "n": 498,
+        "p50": 52.0,
+        "p95": 100.0
+      }
+    }
+  ],
+  "version": "qwen-matrix-engineering-final/v1"
+}

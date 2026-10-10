@@ -1,0 +1,249 @@
+"""Offline blinded review packets; prepares evidence, never judges outcomes.
+
+Only public scenario JSON and checkpoints/manifests are read. No scorecards,
+outcomes, credentials, network resources or sealed holdout are accessed.
+"""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+PINNED_SOURCE = 'b130776a0a3797a41f93435d51d7597825a381f4'
+VERSION = 'qwen-semantic-review-packet/v1'
+VERBS = {'allow', 'block', 'escalate', 'rewrite'}
+
+
+def load_contracts(repo):
+    """Load offline canonical contracts from the explicitly selected checkout."""
+    sys.path.insert(0, str(Path(repo) / 'backend'))
+    sys.path.insert(0, str(Path(repo)))
+    global ActionSpec, CandidateAction, action_digest, exact_action_digest
+    from benchmark.schema import ActionSpec
+    from aegisgraph.contracts import CandidateAction, action_digest, exact_action_digest
+
+
+def canonical(value):
+    return ActionSpec.model_validate(value).model_dump(mode='json')
+
+
+def encoded(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+
+
+def sha_bytes(value):
+    return hashlib.sha256(value).hexdigest()
+
+
+def rows(episode, field, issues):
+    value = episode.get(field, [])
+    if not isinstance(value, list):
+        issues.append('malformed_' + field + '_collection')
+        return []
+    valid = []
+    for row in value:
+        if isinstance(row, dict):
+            valid.append(row)
+        else:
+            issues.append('malformed_' + field + '_row')
+    return valid
+
+
+def semantic_trace(episode):
+    """Project evidence into neutral semantics without timestamps or arm labels."""
+    issues, proposals, decisions, generations = [], [], [], []
+    if episode.get('status') != 'ok':
+        issues.append('episode_not_complete_ok')
+    seen = set()
+    for row in rows(episode, 'proposals', issues):
+        try:
+            step = row['step_id']
+            if not isinstance(step, int) or step in seen:
+                raise ValueError('invalid or duplicate step')
+            seen.add(step)
+            proposals.append({'step': step, 'action': canonical(row['action'])})
+        except (KeyError, ValueError, TypeError):
+            issues.append('malformed_proposal')
+    decision_steps = set()
+    for row in rows(episode, 'decisions', issues):
+        if row.get('arm') != 'treatment':
+            continue
+        step, verb, payload = row.get('step_id'), row.get('decision'), row.get('payload')
+        if not isinstance(step, int):
+            issues.append('malformed_decision_step')
+            step = None
+        if not isinstance(verb, str):
+            issues.append('malformed_decision_verb')
+            verb = None
+        if not isinstance(payload, dict):
+            payload = {}
+            issues.append('malformed_decision_payload')
+        if step not in seen or step in decision_steps:
+            issues.append('unmatched_or_duplicate_decision')
+        decision_steps.add(step)
+        if verb not in VERBS or row.get('http_status') != 200:
+            issues.append('unknown_decision_or_failed_http')
+        if payload.get('decision') != verb:
+            issues.append('decision_payload_disagreement')
+        rewritten = None
+        if verb == 'rewrite':
+            try:
+                rewritten = canonical(payload['rewritten_action'])
+            except (KeyError, ValueError, TypeError):
+                issues.append('missing_or_malformed_rewrite')
+        decisions.append({'step': step, 'verb': verb, 'rewritten_action': rewritten})
+    if seen != decision_steps:
+        issues.append('proposal_decision_correspondence_incomplete')
+    if not proposals:
+        issues.append('no_valid_proposals')
+    for row in rows(episode, 'generations', issues):
+        output = row.get('output')
+        if not isinstance(output, str):
+            issues.append('missing_generation_output')
+            output = None
+        if output is not None and row.get('output_sha256') is not None:
+            if sha_bytes(output.encode('utf-8')) != row['output_sha256']:
+                issues.append('generation_output_hash_mismatch')
+        generations.append({'step': row.get('step_id'), 'order': row.get('order'),
+                            'format_attempt': row.get('format_attempt'),
+                            'parsed': row.get('parsed'), 'output': output})
+    if not generations:
+        issues.append('no_generation_outputs')
+    return {'proposals': proposals, 'decisions': decisions, 'generations': generations,
+            'evidence_status': 'unknown' if issues else 'complete',
+            'evidence_issues': sorted(set(issues))}
+
+
+def validate_bindings(episode):
+    """Check defence correspondence; never claim synthetic receipts validated."""
+    issues = []
+    proposals = {row.get('step_id'): row.get('action') for row in rows(episode, 'proposals', issues)
+                 if isinstance(row.get('step_id'), int)}
+    checks = []
+    for row in rows(episode, 'decisions', issues):
+        if row.get('arm') != 'treatment':
+            continue
+        step = row.get('step_id')
+        if not isinstance(step, int) or not isinstance(row.get('decision'), str):
+            checks.append({'step': None, 'status': 'unknown', 'reason': 'invalid_step_or_verb'})
+            continue
+        payload = row.get('payload') or {}
+        if not isinstance(payload, dict):
+            checks.append({'step': step, 'status': 'unknown', 'reason': 'invalid_payload'})
+            continue
+        policy = payload.get('policy_set') or {}
+        if isinstance(policy, dict) and policy.get('id') == 'control-allow-all':
+            checks.append({'step': step, 'status': 'unsupported_unknown',
+                           'reason': 'synthetic_control_uses_request_bytes_not_action_contract'})
+            continue
+        try:
+            action = CandidateAction.model_validate(proposals[step])
+            matches = payload.get('action_digest') == action_digest(action)
+            matches &= payload.get('execution_digest') == exact_action_digest(action)
+            matches &= row.get('http_status') == 200 and row.get('decision') in VERBS
+            matches &= payload.get('decision') == row.get('decision')
+        except (KeyError, ValueError, TypeError):
+            matches = False
+        checks.append({'step': step, 'status': 'verified_correspondence' if matches else 'unknown',
+                       'reason': 'canonical_digests_match' if matches else 'missing_invalid_or_mismatched_binding'})
+    if issues:
+        checks.append({'step': None, 'status': 'unknown', 'reason': 'malformed_evidence_rows'})
+    return checks
+
+
+def write_json(path, value):
+    path.write_text(json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + '\n', encoding='utf-8')
+
+
+def prepare_packet(runs_root, repo_root, output_root):
+    repo_root, runs_root, output_root = map(Path, (repo_root, runs_root, output_root))
+    load_contracts(repo_root)
+    rubric = repo_root / 'docs/research/generated-semantic-review.md'
+    dataset = {}
+    for domain in ('enterprise', 'finance', 'soc'):
+        for path in sorted((repo_root / 'benchmark/data/scenarios' / domain).glob('*.json')):
+            scenario = json.loads(path.read_text(encoding='utf-8'))
+            if scenario.get('split') in ('development', 'validation'):
+                dataset[scenario['id']] = (scenario, sha_bytes(path.read_bytes()))
+    records = []
+    for path in sorted(runs_root.glob('*/checkpoints/*.json')):
+        raw = path.read_bytes()
+        try:
+            episode = json.loads(raw)
+            if not isinstance(episode, dict):
+                raise ValueError('checkpoint is not an object')
+        except (ValueError, UnicodeDecodeError):
+            episode = {'status': 'invalid_checkpoint', 'scenario_id': None}
+        manifest_path = path.parent.parent / 'manifest.json'
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            manifest = {}
+        trace = semantic_trace(episode)
+        entry = dataset.get(episode.get('scenario_id'))
+        if entry is None:
+            context, scenario_sha = None, None
+            trace['evidence_status'] = 'unknown'
+            trace['evidence_issues'].append('scenario_unavailable_in_public_dataset')
+        else:
+            scenario, scenario_sha = entry
+            context = {key: scenario.get(key) for key in ('user_goal', 'observations', 'provenance',
+                       'policy_context', 'history', 'confirmations', 'expected_safety_property')}
+            # Statements establish intended task, without positional scoring criteria.
+            context['utility_statement'] = scenario['utility_criterion']['statement']
+        bindings = validate_bindings(episode)
+        if any(check['status'] == 'unknown' for check in bindings):
+            trace['evidence_status'] = 'unknown'
+            trace['evidence_issues'].append('receipt_binding_unknown')
+        trace['evidence_issues'] = sorted(set(trace['evidence_issues']))
+        payload = {'scenario_context': context, 'trace': trace}
+        digest = sha_bytes(encoded(payload))
+        campaign = manifest.get('campaign') or {}
+        condition = campaign.get('condition') or {}
+        records.append((digest, payload, {'scenario_id': episode.get('scenario_id'),
+                       'stage': campaign.get('stage'), 'seed': campaign.get('seed'),
+                       'condition': condition, 'run_directory': str(path.parent.parent.resolve()),
+                       'checkpoint_path': str(path.resolve()), 'checkpoint_sha256': sha_bytes(raw),
+                       'scenario_sha256': scenario_sha, 'original_source_commit': (manifest.get('code') or {}).get('commit'),
+                       'binding_checks': bindings}))
+    if not records:
+        raise ValueError('No checkpoint evidence found; refusing an empty packet')
+    output_root.mkdir(parents=True, exist_ok=False)
+    reviewer = output_root / 'reviewer'
+    reviewer.mkdir()
+    originals, packets = [], {}
+    for digest, payload, origin in records:
+        alias = 'case-' + digest[:20]
+        packets[alias] = payload
+        originals.append({'alias': alias, 'semantic_trace_sha256': digest, **origin})
+    for alias, payload in sorted(packets.items()):
+        write_json(reviewer / (alias + '.json'), {'alias': alias, **payload})
+    (reviewer / 'rubric.md').write_bytes(rubric.read_bytes())
+    write_json(output_root / 'private-mapping.json', {'version': VERSION, 'originals': originals})
+    report = {'version': VERSION, 'analysis_source_commit': PINNED_SOURCE,
+              'rubric_sha256': sha_bytes(rubric.read_bytes()), 'rubric': 'reviewer/rubric.md',
+              'helper_sha256': sha_bytes(Path(__file__).read_bytes()),
+              'loaded_contracts_sha256': sha_bytes((repo_root / 'backend/aegisgraph/contracts.py').read_bytes()),
+              'original_checkpoints': len(originals), 'unique_review_packets': len(packets),
+              'unknown_review_packets': sum(p['trace']['evidence_status'] == 'unknown' for p in packets.values()),
+              'verified_defence_decision_correspondences': sum(c['status'] == 'verified_correspondence' for o in originals for c in o['binding_checks']),
+              'unsupported_synthetic_control_correspondences': sum(c['status'] == 'unsupported_unknown' for o in originals for c in o['binding_checks']),
+              'limitation': 'No automated safety/utility judgement. Authorization is inert. Synthetic-control binding unsupported; correspondence is not signature verification. Deduplication changes reviewer workload, never statistical sample size. Decisions/actions may indirectly reveal treatment.'}
+    write_json(output_root / 'metadata.json', report)
+    hashes = {str(p.relative_to(output_root)).replace('\\', '/'): sha_bytes(p.read_bytes())
+              for p in sorted(output_root.rglob('*')) if p.is_file()}
+    write_json(output_root / 'packet-hashes.json', hashes)
+    return report
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--runs', type=Path, required=True)
+    parser.add_argument('--repo', type=Path, required=True)
+    parser.add_argument('--out', type=Path, required=True)
+    args = parser.parse_args()
+    print(json.dumps(prepare_packet(args.runs, args.repo, args.out), indent=2))
+
+
+if __name__ == '__main__':
+    main()

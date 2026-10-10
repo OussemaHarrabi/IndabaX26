@@ -219,6 +219,66 @@ def test_campaign_cli_dry_run_and_holdout_refusal() -> None:
     assert "RESULT: DRY-RUN FAILED" in (refused.stdout + refused.stderr)
 
 
+@pytest.mark.parametrize("name", EXPECTED_NOTEBOOKS[:3])
+def test_gpu_notebooks_use_the_closed_runtime_contract(name: str) -> None:
+    sources = "\n".join(_source(cell) for cell in _code_cells(_load(name)))
+
+    assert "FORMAT_RETRIES = 1" in sources
+    assert "MODEL_REVISION = resolved_identity" in sources
+    assert "del adapter" in sources
+    assert "torch.cuda.empty_cache()" in sources
+    assert "minted = sh(" not in sources
+    assert "adapter_json=ADAPTER_JSON" in sources
+
+
+@pytest.mark.parametrize("name", EXPECTED_NOTEBOOKS[:3])
+def test_gpu_notebooks_install_declared_gateway_dependencies(name: str) -> None:
+    """A fresh cloud image must be able to start the AegisGraph gateway."""
+    sources = [_source(cell) for cell in _code_cells(_load(name))]
+    install_cells = [source for source in sources if "INSTALL_COMMAND" in source]
+
+    assert len(install_cells) == 1
+    install = install_cells[0]
+    assert "tomllib" in install
+    assert 'REPO / "pyproject.toml"' in install
+    assert '["project"]["dependencies"]' in install
+    assert "runtime_dependencies" in install
+
+
+def test_smoke_notebook_scores_the_resumed_run_before_bundling() -> None:
+    sources = [_source(cell) for cell in _code_cells(_load("00_environment_and_smoke.ipynb"))]
+    score_cells = [
+        source for source in sources if "score_run(" in source and "def score_run" not in source
+    ]
+
+    assert len(score_cells) == 1
+    assert "RESUMED_RUNS" in score_cells[0]
+
+
+@pytest.mark.parametrize("name", EXPECTED_NOTEBOOKS[:3])
+def test_gpu_notebooks_bootstrap_the_repository_in_a_fresh_cloud_runtime(name: str) -> None:
+    sources = "\n".join(_source(cell) for cell in _code_cells(_load(name)))
+
+    assert "https://github.com/OussemaHarrabi/IndabaX26.git" in sources
+    assert '"git", "clone"' in sources
+    assert "AEGISGRAPH_REF" in sources
+
+
+@pytest.mark.parametrize(
+    ("name", "seed_assignment"),
+    [
+        ("01_qwen3_8b_public_campaign.ipynb", "SEEDS_B = [1729, 2741, 3253, 4253, 5527]"),
+        ("02_qwen3_8b_ablations.ipynb", "SEEDS = [1729, 2741, 3253, 4253, 5527]"),
+    ],
+)
+def test_full_gpu_notebooks_carry_the_preregistered_seed_list(
+    name: str, seed_assignment: str
+) -> None:
+    sources = "\n".join(_source(cell) for cell in _code_cells(_load(name)))
+
+    assert seed_assignment in sources
+
+
 def test_notebook_03_executes_against_the_committed_scripted_run(tmp_path: Path) -> None:
     assert COMMITTED_RUN.is_dir(), f"committed run missing: {COMMITTED_RUN}"
     notebook = _load("03_qwen_results_analysis.ipynb")

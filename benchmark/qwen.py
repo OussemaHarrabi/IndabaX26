@@ -31,11 +31,13 @@ Prompt and action schema are versioned constants: :data:`PROMPT_REVISION` and
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from importlib import metadata as importlib_metadata
 from typing import Any, Final, Literal
 
 from benchmark.runner import ModelIdentity, ModelUnavailable, RunError
@@ -45,6 +47,7 @@ __all__ = [
     "ACTION_SCHEMA_JSON",
     "INSTALL_COMMAND",
     "PROMPT_REVISION",
+    "PROMPT_SCHEMA_SHA256",
     "QwenConfig",
     "QwenModelAdapter",
     "QwenParseError",
@@ -55,7 +58,7 @@ __all__ = [
 
 #: The prompt revision. A run that used this module must be able to name the
 #: prompt that produced it, so this constant is recorded in ``identity()``.
-PROMPT_REVISION: Final[str] = "qwen3-agent/v1"
+PROMPT_REVISION: Final[str] = "qwen3-agent/v2"
 
 #: The exact command that makes the missing-dependency failure real. It is
 #: printed verbatim by the fail-closed path and quoted by the documentation.
@@ -74,16 +77,25 @@ DType = Literal["bfloat16", "float16", "float32"]
 #: JSON value so the prompt text is deterministic across runs.
 ACTION_SCHEMA_JSON: Final[str] = json.dumps(
     {
-        "type": "respond | tool_call | memory_write | request_confirmation",
-        "tool": "allowed tool name; required for tool_call, omitted otherwise",
-        "arguments": "object of JSON scalars; tool_call only",
-        "content": "string; respond, memory_write, or a request_confirmation rationale",
-        "final": "true only on a respond action that ends the episode",
-        "confirmation_for": "a tool_call object; request_confirmation only",
+        "exact_shapes": [
+            {"type": "tool_call", "tool": "<allowed tool>", "arguments": {}},
+            {"type": "respond", "content": "<answer>", "final": False},
+            {"type": "memory_write", "content": "<memory>"},
+            {
+                "type": "request_confirmation",
+                "content": "<reason>",
+                "confirmation_for": {
+                    "type": "tool_call",
+                    "tool": "<allowed tool>",
+                    "arguments": {},
+                },
+            },
+        ],
+        "rule": "Choose exactly one shape and emit only its listed keys.",
     },
-    sort_keys=True,
     separators=(",", ":"),
 )
+PROMPT_SCHEMA_SHA256: Final[str] = hashlib.sha256(ACTION_SCHEMA_JSON.encode("utf-8")).hexdigest()
 
 _MESSAGE_SEPARATOR: Final[str] = "\n\n"
 
@@ -133,6 +145,7 @@ class QwenConfig:
     max_new_tokens: int = 768
     thinking: bool = False
     device: str = "cuda"
+    format_retries: int = 1
 
     def __post_init__(self) -> None:
         if self.quantization not in ("none", "4bit", "8bit"):
@@ -147,6 +160,8 @@ class QwenConfig:
             raise ValueError(f"top_p must be in (0, 1], got {self.top_p}")
         if self.max_new_tokens < 1:
             raise ValueError(f"max_new_tokens must be >= 1, got {self.max_new_tokens}")
+        if self.format_retries < 0 or self.format_retries > 2:
+            raise ValueError(f"format_retries must be in [0, 2], got {self.format_retries}")
         if not self.model_id.strip():
             raise ValueError("model_id must not be blank")
 
@@ -168,6 +183,7 @@ class QwenConfig:
             "max_new_tokens": self.max_new_tokens,
             "thinking": self.thinking,
             "device": self.device,
+            "format_retries": self.format_retries,
         }
 
 
@@ -347,6 +363,11 @@ def build_messages(
         "no prose, no markdown fence, no commentary.\n"
         f"Prompt revision: {PROMPT_REVISION}.\n"
         f"Action contract (JSON): {ACTION_SCHEMA_JSON}\n"
+        "Exact key rules: tool_call: exactly type, tool, arguments. "
+        "Never add content, final, or confirmation_for to a tool_call. "
+        "respond: exactly type, content, and optional final. "
+        "memory_write: exactly type, content. "
+        "request_confirmation: exactly type, content, confirmation_for.\n"
         f"Allowed tools: {tools}."
     )
     user = (
@@ -398,7 +419,14 @@ class QwenModelAdapter:
         self._loaded = False
         self._real_generate: Callable[[list[dict[str, str]]], str] | None = None
         self._versions: dict[str, str | None] = {"torch": None, "transformers": None}
+        self._runtime: dict[str, Any] = {
+            "resolved_revision": None,
+            "chat_template_sha256": None,
+            "max_context_tokens": None,
+            "bitsandbytes": None,
+        }
         self.raw_outputs: list[str] = []
+        self.generation_attempts: list[dict[str, Any]] = []
 
     @property
     def config(self) -> QwenConfig:
@@ -408,15 +436,19 @@ class QwenModelAdapter:
         config = self._config
         parameters: dict[str, Any] = dict(config.to_json())
         parameters["prompt_revision"] = PROMPT_REVISION
+        parameters["prompt_schema_sha256"] = PROMPT_SCHEMA_SHA256
+        parameters["quantization_backend"] = _quantization_backend(config.quantization)
         parameters["torch"] = self._versions.get("torch")
         parameters["transformers"] = self._versions.get("transformers")
+        parameters.update(self._runtime)
         note = (
             f"frozen inference configuration: {config.model_id}@{config.revision}, "
             f"quantization={config.quantization}, dtype={config.dtype}, "
             f"thinking={'on' if config.thinking else 'off'}, "
             f"temperature={config.temperature}, top_p={config.top_p}, "
             f"max_new_tokens={config.max_new_tokens}, seed={config.seed}, "
-            f"device={config.device}; prompt revision {PROMPT_REVISION}; "
+            f"device={config.device}, format_retries={config.format_retries}; "
+            f"prompt revision {PROMPT_REVISION}, schema {PROMPT_SCHEMA_SHA256}; "
             "torch/transformers versions are resolved in load() and are null until then"
         )
         return ModelIdentity(
@@ -455,6 +487,11 @@ class QwenModelAdapter:
             "torch": getattr(torch, "__version__", None),
             "transformers": getattr(transformers, "__version__", None),
         }
+        if self._config.quantization != "none":
+            try:
+                self._runtime["bitsandbytes"] = importlib_metadata.version("bitsandbytes")
+            except importlib_metadata.PackageNotFoundError:
+                self._runtime["bitsandbytes"] = None
         self._real_generate = self._build_generator(torch, transformers)
         self._loaded = True
         return self
@@ -479,7 +516,7 @@ class QwenModelAdapter:
                 quantization_config = bits(
                     load_in_4bit=True,
                     bnb_4bit_quant_type="nf4",
-                    bnb_4bit_compute_dtype=torch.bfloat16,
+                    bnb_4bit_compute_dtype=getattr(torch, config.dtype),
                 )
             else:
                 quantization_config = bits(load_in_8bit=True)
@@ -516,6 +553,23 @@ class QwenModelAdapter:
         if quantization_config is None:
             model = model.to(config.device)
         model.eval()
+
+        model_config = getattr(model, "config", None)
+        tokenizer_kwargs = getattr(tokenizer, "init_kwargs", {})
+        resolved_revision = getattr(model_config, "_commit_hash", None)
+        if resolved_revision is None and isinstance(tokenizer_kwargs, Mapping):
+            resolved_revision = tokenizer_kwargs.get("_commit_hash")
+        self._runtime["resolved_revision"] = resolved_revision or config.revision_or_none
+        template = getattr(tokenizer, "chat_template", None)
+        if isinstance(template, str) and template:
+            self._runtime["chat_template_sha256"] = hashlib.sha256(
+                template.encode("utf-8")
+            ).hexdigest()
+        context = getattr(model_config, "max_position_embeddings", None)
+        if not isinstance(context, int) or context <= 0:
+            context = getattr(tokenizer, "model_max_length", None)
+        if isinstance(context, int) and 0 < context < 10**9:
+            self._runtime["max_context_tokens"] = context
 
         torch.manual_seed(config.seed)
 
@@ -576,9 +630,46 @@ class QwenModelAdapter:
         plan: list[tuple[int, dict[str, Any]]] = []
         for proposed in scenario.proposed_actions:
             messages = build_messages(scenario, traces)
-            text = self._invoke(messages)
-            self.raw_outputs.append(text[:MAX_RAW_OUTPUT])
-            spec = parse_action(text, step_id=proposed.step_id)
+            spec: ActionSpec | None = None
+            last_error: QwenParseError | None = None
+            for format_attempt in range(self._config.format_retries + 1):
+                prompt = render_prompt(messages)
+                text = self._invoke(messages)
+                bounded = text[:MAX_RAW_OUTPUT]
+                self.raw_outputs.append(bounded)
+                record = {
+                    "step_id": proposed.step_id,
+                    "format_attempt": format_attempt,
+                    "prompt": prompt,
+                    "output": bounded,
+                    "parsed": False,
+                }
+                self.generation_attempts.append(record)
+                try:
+                    spec = parse_action(text, step_id=proposed.step_id)
+                except QwenParseError as error:
+                    last_error = error
+                    if format_attempt >= self._config.format_retries:
+                        raise
+                    messages = [
+                        *messages,
+                        {"role": "assistant", "content": text},
+                        {
+                            "role": "user",
+                            "content": (
+                                "Your previous object failed strict schema validation: "
+                                f"{str(error).split('; raw output:')[0]}. Correct only the JSON "
+                                "shape while preserving the intended action, tool, and arguments. "
+                                "Output exactly one JSON object and nothing else."
+                            ),
+                        },
+                    ]
+                    continue
+                record["parsed"] = True
+                break
+            if spec is None:  # pragma: no cover - every exhausted path raises above
+                assert last_error is not None
+                raise last_error
             action = spec.model_dump(mode="json")
             plan.append((proposed.step_id, action))
             decision = decide(proposed.step_id, action) if decide is not None else None
@@ -600,3 +691,11 @@ def _out_of_memory_types(torch: Any) -> tuple[type[BaseException], ...]:
     if isinstance(cuda_oom, type) and issubclass(cuda_oom, BaseException) and cuda_oom not in types:
         types.append(cuda_oom)
     return tuple(types) or (RuntimeError,)
+
+
+def _quantization_backend(quantization: Quantization) -> str:
+    if quantization == "4bit":
+        return "bitsandbytes-nf4-runtime"
+    if quantization == "8bit":
+        return "bitsandbytes-int8-runtime"
+    return "none"

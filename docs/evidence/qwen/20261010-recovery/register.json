@@ -1,0 +1,30 @@
+{
+  "kind": "derived-evidence-register",
+  "raw_source_commit": "b130776a0a3797a41f93435d51d7597825a381f4",
+  "raw_archives": {
+    "public": "6352c7f678dbec340f7201a6a2d60103fe0c08335cb14878ff470dc717695b19",
+    "ablations": "ac53341a7740cfc72fee580ff426aa3d5a3d5cdfa0b3b2ea9496d3c08957ae6c"
+  },
+  "derived_files": {
+    "ablations-download-verification.json": "eda2e4e4fe602ea93a0f263635b79cb784f3d63ced2d4e9a4f3b1aa5ec3f25c2",
+    "ablations-final-engineering-analysis.json": "0c1ca499b1de08dff7e331a21edfca578ba5f14c8983bfc9af451693cf8a55ba",
+    "ablations-review-packet-metadata.json": "7d968525856c1535eda4969b2b15ce984a23c85e43669c927fc85dcbb60daf21",
+    "ablations-worker-verification.json": "5365cf1c3e2b79518cc016fec58e813fbe78bc2e2f42dc26fc2b5924edecd302",
+    "analyze_qwen_final_engineering.py.txt": "c2c7bff0e1b046a4cc13f9d18f81fdd8b4cd29656459a0747667cb14e1aa7efe",
+    "frozen-kaggle-ablations-runner.py.txt": "4513149d3f143ac3bdf32778116b5dad25bbdc9f64ec57ce4204eed5a0fdc574",
+    "frozen-kaggle-public-runner.py.txt": "31c570b9f206cb208e20941b08b5b6588735f8ed3babbd2c3d27a386331d7551",
+    "prepare_qwen_review_packet.py.txt": "6f6e69668c0e059c60124f09f6d3dbf8870c33b97cda22005df520f5d4121df9",
+    "public-download-verification.json": "093943f172489c86b48cdb3d9879183cde50053f1517f50e46bfa984903ab92b",
+    "public-final-engineering-analysis.json": "8700a7aca64d54ea2518097f8d4f4c1a6845854a2cf5a8ea6280e34c74f835ad",
+    "public-review-packet-metadata.json": "a209651b68bb5dc9b468472457feb4486e4a60eab34422cb510a41f9077c4899",
+    "public-worker-verification.json": "99d854bd013d84ce3d9b5268db2b709d0fc076e5ba0cc8130a8e1d341d6cfce5",
+    "summarize_qwen_evidence.py.txt": "cfe0db0d704ef77df08c37ac6b37f2a0471bba4467048ff7bcfb73c810938047",
+    "verify_qwen_download.py.txt": "0c6579e7e929b4727304185f22e9f9788a693d50f12847b42a76ac594e13b032"
+  },
+  "limitation": "Raw private Kaggle archives retained locally; derived summaries do not substitute for raw artifacts or complete semantic annotation.",
+  "digest_convention": "SHA256 of normalized LF UTF-8 derived evidence files; raw archive digests use original bytes",
+  "original_submitted_runner_byte_sha256": {
+    "public": "1923040f15e6abef1dee06c338124ce9ad795462ecb362f0acc59b1dd49f7442",
+    "ablations": "29bd2ba5e5e445be67c1c927732704b38b977830e3ea9c4c9e739bcfc53732b3"
+  }
+}
