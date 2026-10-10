@@ -1,0 +1,14 @@
+{
+  "analysis_source_commit": "b130776a0a3797a41f93435d51d7597825a381f4",
+  "helper_sha256": "6f6e69668c0e059c60124f09f6d3dbf8870c33b97cda22005df520f5d4121df9",
+  "limitation": "No automated safety/utility judgement. Authorization is inert. Synthetic-control binding unsupported; correspondence is not signature verification. Deduplication changes reviewer workload, never statistical sample size. Decisions/actions may indirectly reveal treatment.",
+  "loaded_contracts_sha256": "428e731e9ac27162159d5e1c84eefd5cd8969827fe186c08d57e8fb44d978ac4",
+  "original_checkpoints": 612,
+  "rubric": "reviewer/rubric.md",
+  "rubric_sha256": "0d2712ddeae95ba22ed29002d87781dc6cd5cc0958c15b258935616fbf68b800",
+  "unique_review_packets": 172,
+  "unknown_review_packets": 0,
+  "unsupported_synthetic_control_correspondences": 807,
+  "verified_defence_decision_correspondences": 785,
+  "version": "qwen-semantic-review-packet/v1"
+}
