@@ -1,0 +1,156 @@
+WORKER_SOURCE = '"""Private Kaggle runner: pinned source, isolated GPU workers, persistent evidence."""\nimport os, sys, json, pathlib, subprocess, time, traceback, gc, hashlib, zipfile\n\nSOURCE_COMMIT = "b130776a0a3797a41f93435d51d7597825a381f4"\nREVISION = "b968826d9c46dd6066d109eabc6255188de91218"\nSEEDS = [1729, 2741, 3253, 4253, 5527]\nROOT = pathlib.Path(\'/tmp/IndabaX26\')\nOUT = pathlib.Path(\'/kaggle/working\')\nMODE = \'public\'\n\n\ndef helpers():\n    os.environ.update(AEGISGRAPH_REPO=str(ROOT), AEGISGRAPH_SCRATCH=\'/tmp/aegisgraph-private\',\n                      AEGISGRAPH_RUNS_DIR=str(OUT/\'runs\'), AEGISGRAPH_MODEL_REVISION=REVISION,\n                      HF_HOME=\'/tmp/huggingface\', TOKENIZERS_PARALLELISM=\'false\')\n    nb = json.loads((ROOT/\'notebooks/00_environment_and_smoke.ipynb\').read_text())\n    cell = next(c for c in nb[\'cells\'] if c[\'cell_type\']==\'code\')\n    namespace = {}\n    exec(compile(\'\'.join(cell[\'source\']), \'pinned-notebook-helpers\', \'exec\'), namespace)\n    namespace[\'MODEL\'] = \'qwen\'\n    namespace[\'RUNS_DIR\'] = OUT/\'runs\'\n    return namespace\n\n\ndef write_status(path, payload):\n    tmp = path.with_suffix(\'.tmp\')\n    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True)+\'\\n\')\n    tmp.replace(path)\n\n\ndef worker(stage, assigned):\n    h = helpers()\n    from benchmark.campaign import CampaignConfig, run_campaign, bundle_run\n    from benchmark.qwen import QwenConfig, QwenModelAdapter\n    from benchmark.runner import AuthConfig\n    import torch\n    gpu = os.environ.get(\'CUDA_VISIBLE_DEVICES\',\'0\')\n    results = []\n    for seed in assigned:\n        adapter = QwenModelAdapter(QwenConfig(revision=REVISION, quantization=\'4bit\',\n            dtype=\'float16\', seed=seed, temperature=0, top_p=1, max_new_tokens=768,\n            thinking=False, device=\'cuda\', format_retries=1))\n        adapter.load()\n        identity = adapter.identity().to_json()\n        assert identity[\'parameters\'][\'resolved_revision\'] == REVISION\n        assert identity[\'parameters\'][\'chat_template_sha256\'] == \'a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8\'\n        print(\'WORKER_IDENTITY\', stage, seed, json.dumps(identity), flush=True)\n        for condition in [\'control\',\'defence\']:\n            config = CampaignConfig(stage=stage, dataset_root=ROOT/\'benchmark/data\',\n                runs_dir=OUT/\'runs\', seed=seed, declared_seeds=tuple([1729] if stage==\'A\' else SEEDS),\n                condition=condition, model_name=\'qwen\', adapter=adapter,\n                gateway_url=\'http://127.0.0.1:8091\',\n                auth=AuthConfig(h[\'DECISION_TOKEN\'].read_text().strip()),\n                hardware_note=f\'Kaggle Tesla T4; physical GPU {gpu}; isolated worker; FP16 NF4; shared loopback gateway\')\n            result = run_campaign(config)\n            h[\'score_run\'](result.run_dir)\n            bundle = bundle_run(result.run_dir)\n            item = result.to_json() | {\'bundle_sha256\':hashlib.sha256(bundle.read_bytes()).hexdigest()}\n            results.append(item)\n            write_status(OUT/f\'worker-{stage}-{gpu}.json\', {\'results\':results, \'status\':\'running\'})\n            print(\'RUN_RESULT\', json.dumps(item), flush=True)\n        del adapter\n        gc.collect()\n        torch.cuda.empty_cache()\n    write_status(OUT/f\'worker-{stage}-{gpu}.json\', {\'results\':results, \'status\':\'complete\'})\n    if any(x[\'scenarios_errored\'] or x[\'status\']!=\'complete\' for x in results):\n        raise RuntimeError(\'Recorded scenario errors; artifacts retained; later stages gated\')\n\n\nif __name__ == \'__main__\':\n    try:\n        worker(sys.argv[1], list(map(int,sys.argv[2:])))\n    except BaseException:\n        traceback.print_exc()\n        sys.exit(1)\n'
+"""Private Kaggle runner: pinned source, isolated GPU workers, persistent evidence."""
+import os, sys, json, pathlib, subprocess, time, traceback, gc, hashlib, zipfile
+
+SOURCE_COMMIT = "b130776a0a3797a41f93435d51d7597825a381f4"
+REVISION = "b968826d9c46dd6066d109eabc6255188de91218"
+SEEDS = [1729, 2741, 3253, 4253, 5527]
+ROOT = pathlib.Path('/tmp/IndabaX26')
+OUT = pathlib.Path('/kaggle/working')
+MODE = 'public'
+
+
+def helpers():
+    os.environ.update(AEGISGRAPH_REPO=str(ROOT), AEGISGRAPH_SCRATCH='/tmp/aegisgraph-private',
+                      AEGISGRAPH_RUNS_DIR=str(OUT/'runs'), AEGISGRAPH_MODEL_REVISION=REVISION,
+                      HF_HOME='/tmp/huggingface', TOKENIZERS_PARALLELISM='false')
+    nb = json.loads((ROOT/'notebooks/00_environment_and_smoke.ipynb').read_text())
+    cell = next(c for c in nb['cells'] if c['cell_type']=='code')
+    namespace = {}
+    exec(compile(''.join(cell['source']), 'pinned-notebook-helpers', 'exec'), namespace)
+    namespace['MODEL'] = 'qwen'
+    namespace['RUNS_DIR'] = OUT/'runs'
+    return namespace
+
+
+def write_status(path, payload):
+    tmp = path.with_suffix('.tmp')
+    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True)+'\n')
+    tmp.replace(path)
+
+
+def worker(stage, assigned):
+    h = helpers()
+    from benchmark.campaign import CampaignConfig, run_campaign, bundle_run
+    from benchmark.qwen import QwenConfig, QwenModelAdapter
+    from benchmark.runner import AuthConfig
+    import torch
+    gpu = os.environ.get('CUDA_VISIBLE_DEVICES','0')
+    results = []
+    for seed in assigned:
+        adapter = QwenModelAdapter(QwenConfig(revision=REVISION, quantization='4bit',
+            dtype='float16', seed=seed, temperature=0, top_p=1, max_new_tokens=768,
+            thinking=False, device='cuda', format_retries=1))
+        adapter.load()
+        identity = adapter.identity().to_json()
+        assert identity['parameters']['resolved_revision'] == REVISION
+        assert identity['parameters']['chat_template_sha256'] == 'a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8'
+        print('WORKER_IDENTITY', stage, seed, json.dumps(identity), flush=True)
+        for condition in ['control','defence']:
+            config = CampaignConfig(stage=stage, dataset_root=ROOT/'benchmark/data',
+                runs_dir=OUT/'runs', seed=seed, declared_seeds=tuple([1729] if stage=='A' else SEEDS),
+                condition=condition, model_name='qwen', adapter=adapter,
+                gateway_url='http://127.0.0.1:8091',
+                auth=AuthConfig(h['DECISION_TOKEN'].read_text().strip()),
+                hardware_note=f'Kaggle Tesla T4; physical GPU {gpu}; isolated worker; FP16 NF4; shared loopback gateway')
+            result = run_campaign(config)
+            h['score_run'](result.run_dir)
+            bundle = bundle_run(result.run_dir)
+            item = result.to_json() | {'bundle_sha256':hashlib.sha256(bundle.read_bytes()).hexdigest()}
+            results.append(item)
+            write_status(OUT/f'worker-{stage}-{gpu}.json', {'results':results, 'status':'running'})
+            print('RUN_RESULT', json.dumps(item), flush=True)
+        del adapter
+        gc.collect()
+        torch.cuda.empty_cache()
+    write_status(OUT/f'worker-{stage}-{gpu}.json', {'results':results, 'status':'complete'})
+    if any(x['scenarios_errored'] or x['status']!='complete' for x in results):
+        raise RuntimeError('Recorded scenario errors; artifacts retained; later stages gated')
+
+
+def run_stage(stage, n_gpus):
+    assigned = [[1729]] if stage=='A' else [SEEDS[i::n_gpus] for i in range(n_gpus)]
+    processes = []
+    for gpu, seeds in enumerate(assigned):
+        log = open(OUT/f'worker-{stage}-{gpu}.log','w',buffering=1)
+        env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu), PYTHONUNBUFFERED='1')
+        process = subprocess.Popen([sys.executable, '/tmp/aegisgraph-worker.py', stage, *map(str,seeds)],
+                                   env=env, stdout=log, stderr=subprocess.STDOUT)
+        processes.append((process,log))
+    previous = None
+    while any(p.poll() is None for p,_ in processes):
+        count = len(list((OUT/'runs').glob('*/checkpoints/*.json')))
+        if count != previous:
+            progress = {'stage':stage,'completed_episode_checkpoints':count,'elapsed_seconds':round(time.time()-START)}
+            write_status(OUT/'progress.json',progress)
+            print('PROGRESS',json.dumps(progress),flush=True)
+            previous = count
+        time.sleep(10)
+    for p, log in processes:
+        log.close()
+    if any(p.returncode != 0 for p,_ in processes):
+        raise RuntimeError(f'Stage {stage} worker failed; inspect worker logs and retained evidence')
+
+
+def prepare():
+    OUT.mkdir(exist_ok=True)
+    subprocess.run(['git','clone','--branch','fix/qwen-runtime-contract','--depth','1',
+                    'https://github.com/OussemaHarrabi/IndabaX26.git',str(ROOT)],check=True)
+    subprocess.run(['git','fetch','--depth','1','origin',SOURCE_COMMIT],cwd=ROOT,check=True)
+    subprocess.run(['git','checkout','--detach',SOURCE_COMMIT],cwd=ROOT,check=True)
+    import tomllib
+    dependencies = tomllib.loads((ROOT/'pyproject.toml').read_text())['project']['dependencies']
+    subprocess.run([sys.executable,'-m','pip','install','transformers>=4.51,<5','accelerate>=1',
+                    'bitsandbytes>=0.43',*dependencies],check=True)
+    h = helpers()
+    h['sh']([sys.executable,'scripts/bench_validate.py'],capture=True)
+    seal = h['sh']([sys.executable,'scripts/bench_seal.py','verify'],capture=True).stdout
+    assert '"ciphertext_matches": true' in seal
+    h['init_issuer']()
+    url = h['start_gateway']()
+    h['publish_policies'](url)
+    pathlib.Path('/tmp/aegisgraph-worker.py').write_text(WORKER_SOURCE)
+    return h
+
+
+if __name__ == '__main__':
+    if len(sys.argv)>1 and sys.argv[1]=='worker':
+        try:
+            worker(sys.argv[2],list(map(int,sys.argv[3:])))
+        except BaseException:
+            traceback.print_exc()
+            sys.exit(1)
+    else:
+        START = time.time()
+        h = None
+        telemetry = None
+        status = 'failed'
+        try:
+            h = prepare()
+            import torch
+            count = min(2,torch.cuda.device_count())
+            assert count >= 1, 'No GPU allocated'
+            print('GPU_ENVIRONMENT',torch.__version__,torch.version.cuda,
+                  [torch.cuda.get_device_name(i) for i in range(count)],flush=True)
+            telemetry = subprocess.Popen(['nvidia-smi','--query-gpu=timestamp,index,utilization.gpu,memory.used,power.draw',
+                '--format=csv','--loop=10'],stdout=open(OUT/'gpu-telemetry.csv','w'),stderr=subprocess.STDOUT)
+            run_stage('A',count)
+            run_stage('B',count)
+            run_stage('C',count)
+            status = 'complete'
+        except BaseException as error:
+            traceback.print_exc()
+            (OUT/'exception.txt').write_text(str(error))
+        finally:
+            if telemetry is not None: telemetry.terminate()
+            if h is not None: h['stop_gateway']()
+            result={'status':status,'source_commit':SOURCE_COMMIT,'model_revision':REVISION,'dtype':'float16',
+                    'seeds':SEEDS,'mode':MODE,'duration_seconds':time.time()-START,
+                    'general_asr':None,'general_bts':None,
+                    'limitation':'Positional scores are diagnostics; semantic review is required for general effectiveness/utility.'}
+            write_status(OUT/'job-status.json',result)
+            with zipfile.ZipFile(OUT/'campaign-evidence.zip','w',zipfile.ZIP_DEFLATED) as z:
+                for p in (OUT/'runs').rglob('*'):
+                    if p.is_file(): z.write(p,p.relative_to(OUT))
+            print('JOB_RESULT',json.dumps(result),flush=True)
+            print('EVIDENCE_SHA256',hashlib.sha256((OUT/'campaign-evidence.zip').read_bytes()).hexdigest(),flush=True)

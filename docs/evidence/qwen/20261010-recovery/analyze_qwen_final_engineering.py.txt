@@ -1,0 +1,71 @@
+"""Read-only matrix and engineering analysis. Never derives semantic ASR/BTS."""
+import collections,csv,hashlib,json,pathlib,statistics
+BASE=pathlib.Path(__file__).resolve().parent
+REPO=BASE/'aegisgraph-runtime-fix'
+SOURCE='b130776a0a3797a41f93435d51d7597825a381f4'
+REV='b968826d9c46dd6066d109eabc6255188de91218'
+SEEDS=[1729,2741,3253,4253,5527]
+ABLATIONS=['provenance_enforcement','trust_ceiling','strict_confirmation','rewrite_revalidation']
+A={'ent_direct_injection_vendor_note_attack','ent_direct_injection_vendor_note_control','fin_memory_poisoning_standing_release_attack','fin_memory_poisoning_standing_release_control','soc_replay_tampering_grant_attack','soc_replay_tampering_grant_control'}
+def read(p):return json.loads(p.read_text(encoding='utf-8-sig'))
+def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
+def times(v):
+ v=sorted(v)
+ def q(p):
+  if not v:return None
+  i=(len(v)-1)*p;lo=int(i);hi=min(lo+1,len(v)-1);return v[lo]+(v[hi]-v[lo])*(i-lo)
+ return {'n':len(v),'mean':statistics.mean(v) if v else None,'p50':q(.5),'p95':q(.95),'min':min(v) if v else None,'max':max(v) if v else None}
+def summarize(root,mode):
+ ds={}
+ for d in ('enterprise','finance','soc'):
+  for p in (REPO/'benchmark/data/scenarios'/d).glob('*.json'):
+   s=read(p)
+   if s['split'] in ('development','validation'):ds[s['id']]=s
+ sets={'A':A,'B':{k for k,v in ds.items() if v['split']=='development'},'C':{k for k,v in ds.items() if v['split']=='validation'}}
+ assert len(ds)==60 and len(sets['B'])==42 and len(sets['C'])==18
+ expected={(stage,seed,arm) for stage in ('A','B','C') for seed in ([1729] if stage=='A' else SEEDS) for arm in ('control','defence')} if mode=='public' else {('B',seed,a) for seed in SEEDS for a in ABLATIONS}
+ job=read(root/'job-status.json');assert job['status']=='complete' and job['source_commit']==SOURCE and job['model_revision']==REV and job['dtype']=='float16' and job['seeds']==SEEDS
+ verify=read(root/'download-verification.json');assert verify['integrity_and_completeness_ok'] and verify['total_errored_episodes']==0
+ groups=collections.defaultdict(list);seen=set();rawcount=0;matrix=[]
+ for run in sorted(p for p in (root/'runs').iterdir() if p.is_dir()):
+  m=read(run/'manifest.json');c=m['campaign'];co=c['condition'];arm=co['ablation'] or co['name'];key=(c['stage'],c['seed'],arm)
+  assert key not in seen and key in expected;seen.add(key)
+  assert m['code']['commit']==SOURCE and not m['code']['dirty']
+  mp=m['model']['parameters'];assert mp['resolved_revision']==REV and mp['dtype']=='float16' and mp['quantization']=='4bit' and mp['seed']==c['seed'] and mp['temperature']==0
+  assert mp['chat_template_sha256']=='a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8'
+  assert mp['prompt_schema_sha256']=='965f6be213c43665e2902cad372d6d02726521b57ec47e218747d83ad2eaac89'
+  assert c['status']=='complete' and c['scenarios_errored']==0 and c['scenarios_remaining']==0
+  cps=[read(p) for p in (run/'checkpoints').glob('*.json')]
+  assert len(cps)==len(sets[c['stage']])==c['scenarios_total']==c['scenarios_completed']
+  assert len({e['scenario_id'] for e in cps})==len(cps) and {e['scenario_id'] for e in cps}==sets[c['stage']]
+  for e in cps:
+   assert e['status']=='ok' and not e['failures'] and e['seed']==c['seed'] and e['stage']==c['stage']
+   if mode!='public':
+    for d in e['decisions']:
+     if d['arm']=='treatment':assert d['payload']['metadata']['ablation']==arm
+  rawcount+=len(cps);groups[(c['stage'],arm)].extend(cps)
+  matrix.append({'run':run.name,'stage':c['stage'],'seed':c['seed'],'condition':arm,'episodes':len(cps),'manifest_sha256':sha(run/'manifest.json')})
+ assert seen==expected and rawcount==(612 if mode=='public' else 840)
+ if mode!='public':
+  for a in ABLATIONS:assert read(root/f'gateway-version-{a}.json')['ablation']==a
+ rows=[]
+ for (stage,arm),eps in sorted(groups.items()):
+  dec=[d for e in eps for d in e['decisions'] if d['arm']=='treatment'];gen=[g for e in eps for g in e['generations']]
+  rows.append({'stage':stage,'condition':arm,'episodes':len(eps),'scenario_errors':0,'gateway_requests':len(dec),'decisions':dict(collections.Counter(d['decision'] for d in dec)),'http_status':dict(collections.Counter(str(d['http_status']) for d in dec)),'episode_duration_ms':times([e['duration_ms'] for e in eps]),'gateway_client_latency_ms':times([d['latency_ms'] for d in dec]),'generation_records':len(gen),'unparsed_generation_records':sum(not g['parsed'] for g in gen),'episodes_with_format_retry':sum(any(not g['parsed'] for g in e['generations']) for e in eps),'by_seed':dict(collections.Counter(str(e['seed']) for e in eps))})
+ telemetry=[]
+ with (root/'gpu-telemetry.csv').open(encoding='utf-8-sig') as f:
+  samples=list(csv.DictReader(f))
+ for gpu in ('0','1'):
+  vals=[r for r in samples if r[' index'].strip()==gpu]
+  def numbers(col,unit):
+   out=[]
+   for r in vals:
+    try:out.append(float(r[col].replace(unit,'').strip()))
+    except ValueError:pass
+   return out
+  telemetry.append({'gpu_index':int(gpu),'sample_interval_seconds':10,'utilization_percent':times(numbers(' utilization.gpu [%]','%')),'memory_mib':times(numbers(' memory.used [MiB]','MiB')),'power_watts':times(numbers(' power.draw [W]','W'))})
+ result={'version':'qwen-matrix-engineering-final/v1','mode':mode,'source_commit':SOURCE,'model_revision':REV,'complete_matrix':True,'runs':len(matrix),'episodes':rawcount,'episode_errors':0,'job_duration_seconds':job['duration_seconds'],'archive_sha256':sha(root/'campaign-evidence.zip'),'matrix':matrix,'measurements':rows,'telemetry':telemetry,'quantile_method':'linear interpolation, Hyndman-Fan type 7','general_asr':None,'general_bts':None,'semantic_review_status':'pending complete annotation/adjudication; packet available','limitations':['Authorization only; no actual external tool execution.','Greedy seeds and volatile receipt feedback prevent independent-replicate/causal interpretation.','Gateway build revision unknown; clean runner checkout is attested.','Client gateway latency is loopback round-trip, not service load capacity.','Decoded output lacks actual generated-token counts; no token throughput/cost claims.']}
+ (root/'final-engineering-analysis.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+ print(json.dumps({k:v for k,v in result.items() if k!='matrix'},indent=2))
+if __name__=='__main__':
+ for slug,mode in [('public','public'),('ablations','exploratory-ablations')]:summarize(BASE/f'kaggle-{slug}-v1-output',mode)
