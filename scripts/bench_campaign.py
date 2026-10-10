@@ -15,13 +15,14 @@ Usage::
       --model qwen --adapter-json '{"revision": "<sha>", "quantization": "4bit"}'
 
     # See exactly what a command would run, touching nothing
-    python scripts/bench_campaign.py --stage B --seed 1729 --seed 42 --seed 7 --dry-run
+    python scripts/bench_campaign.py --stage B --seed 1729 --seed 2741 --seed 3253 --dry-run
 
     # Resume an interrupted stage (skips verified checkpoints), then package it
     python scripts/bench_campaign.py --stage A --seed 1729 --resume --bundle ...
 
-Exit codes: 0 ran (complete or cleanly stopped early), 1 failed, 2 refused,
-130 interrupted. The last line is always a ``RESULT:`` marker.
+Exit codes: 0 completed with zero scenario errors or stopped early cleanly,
+1 retained one or more model/scenario failures, 2 refused the plan, and 130 was
+interrupted. The last line is always a ``RESULT:`` marker.
 """
 
 from __future__ import annotations
@@ -84,7 +85,8 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "JSON object of QwenConfig fields (model_id, revision, quantization, dtype, seed, "
-            "temperature, top_p, max_new_tokens, thinking, device)"
+            "temperature, top_p, max_new_tokens, thinking, device, format_retries). The "
+            "per-run --seed is authoritative over an embedded adapter seed."
         ),
     )
     parser.add_argument(
@@ -215,17 +217,23 @@ def _print_result(result: CampaignResult) -> None:
         print(f"zip sha256:    {bundle_sha256(result.bundle)}")
 
 
-def _print_summary(results: list[CampaignResult]) -> None:
+def _print_summary(results: list[CampaignResult]) -> bool:
     completed = [result for result in results if result.status == "complete"]
     errored = sum(result.errored for result in results)
+    failures = sum(result.failures for result in results)
     if errored:
         print(f"errored scenarios: {errored}")
-    if len(completed) == len(results):
+    if failures:
+        print(f"retained failure records: {failures}")
+    if errored:
+        print("RESULT: CAMPAIGN COMPLETED WITH ERRORS")
+    elif len(completed) == len(results):
         print("RESULT: CAMPAIGN COMPLETE")
     else:
         print("RESULT: CAMPAIGN INCOMPLETE")
     if results and all(result.bundle is not None for result in results):
         print("RESULT: BUNDLE OK")
+    return not errored
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -256,8 +264,8 @@ def main(argv: list[str] | None = None) -> int:
         _print_result(result)
     if args.json:
         print(json.dumps([result.to_json() for result in results], indent=2, sort_keys=True))
-    _print_summary(results)
-    return 0
+    succeeded = _print_summary(results)
+    return 0 if succeeded else FAILED
 
 
 if __name__ == "__main__":

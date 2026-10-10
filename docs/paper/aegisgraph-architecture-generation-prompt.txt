@@ -1,0 +1,11 @@
+Create a publication-quality landscape architecture diagram for an AI security research paper titled "AegisGraph: Action-Bound Policy and Evidence Gateway for Reliable LLM Tool Use." Use a clean arXiv/NeurIPS paper aesthetic: white background, restrained navy, cobalt, teal, and amber accents, crisp vector-like shapes, thin directional arrows, compact sans-serif labels, high contrast, and no decorative illustration, product logos, watermark, or unsupported claim.
+
+The diagram must show the runtime path from left to right. Begin with "GPU Experiment Runner" feeding a "Frozen Scenario Harness," then "Qwen3-8B Agent Runtime." From the model, show an "Authenticated API" entering the AegisGraph trust boundary. Inside that boundary, show these ordered components: "Context & Provenance Normalization," "Policy Decision Kernel," the four possible decisions "ALLOW | BLOCK | ESCALATE | REWRITE," "Action-Bound Receipt," and "Enforcement SDK." End the runtime path at an "Integrator-Owned Tool Adapter." Make the execution boundary explicit: the real tool may execute only after authorization and receipt verification.
+
+Show three supporting data systems beneath the gateway: "Versioned Policy Store," "PostgreSQL Receipts & Grants," and "Evidence Inspector." Show an observability branch using dotted arrows from the gateway to "OpenTelemetry," then "Prometheus / Grafana." Distinguish solid runtime arrows from dotted observability arrows in a small legend.
+
+Add concise callouts explaining: provenance labels travel with context; the decision is derived from normalized context and a versioned policy; the receipt binds the authorized action and arguments to the execution attempt; the integrator owns the actual tool boundary.
+
+Add a verified-evidence card containing exactly: "745 tests," "96.83% backend coverage," "1,452 Qwen3-8B GPU episodes," "0 episode errors," and "4 mechanism ablations." Do not invent attack-success rates, task-success rates, deployment scale, or production claims.
+
+Make all text large enough to remain readable when the figure spans two columns in a research paper. Use a 16:9 landscape composition at approximately 2200x1238 pixels.

@@ -1,0 +1,79 @@
+"""Read-only engineering summary from real campaign checkpoints.
+
+No positional efficacy statistics are exposed. Control replay is excluded from
+gateway timing: only requests that affected the generated episode are included.
+"""
+import argparse
+import collections
+import hashlib
+import json
+import pathlib
+import statistics
+
+
+def quantile(values, p):
+    values = sorted(values)
+    if not values:
+        return None
+    index = (len(values) - 1) * p
+    lo = int(index)
+    hi = min(lo + 1, len(values) - 1)
+    return values[lo] + (values[hi] - values[lo]) * (index - lo)
+
+
+def timing(values):
+    return {
+        "n": len(values), "mean": statistics.mean(values) if values else None,
+        "p50": quantile(values, .5), "p95": quantile(values, .95),
+        "min": min(values) if values else None, "max": max(values) if values else None,
+    }
+
+
+def summarize(root):
+    rows = []
+    for run in sorted(root.glob("runs/*")):
+        if not run.is_dir():
+            continue
+        checkpoints = sorted((run / "checkpoints").glob("*.json"))
+        episodes = [json.loads(p.read_text(encoding="utf-8")) for p in checkpoints]
+        decisions = [d for e in episodes for d in e.get("decisions", []) if d.get("arm") == "treatment"]
+        generations = [g for e in episodes for g in e.get("generations", [])]
+        rows.append({
+            "run": run.name,
+            "condition": episodes[0].get("condition") if episodes else None,
+            "stage": episodes[0].get("stage") if episodes else None,
+            "seed": episodes[0].get("seed") if episodes else None,
+            "episodes": len(episodes),
+            "episode_status": dict(collections.Counter(e.get("status") for e in episodes)),
+            "episode_duration_ms": timing([e["duration_ms"] for e in episodes]),
+            "gateway_requests": len(decisions),
+            "gateway_decisions": dict(collections.Counter(d.get("decision") for d in decisions)),
+            "gateway_http_status": dict(collections.Counter(str(d.get("http_status")) for d in decisions)),
+            "gateway_roundtrip_latency_ms": timing([d["latency_ms"] for d in decisions if d.get("latency_ms") is not None]),
+            "generation_records": len(generations),
+            "unparsed_generation_records": sum(not g.get("parsed", False) for g in generations),
+            "episode_failures": sum(len(e.get("failures", [])) for e in episodes),
+            "token_counts_available": all(g.get("total_tokens") is not None for g in generations) if generations else False,
+            "checkpoint_manifest": [{"path": str(p.relative_to(root)), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()} for p in checkpoints],
+        })
+    return {
+        "summary_version": "aegisgraph-raw-engineering/v1", "runs": rows,
+        "general_asr": None, "general_bts": None,
+        "limitations": [
+            "Latency is observed client HTTP round-trip on this runtime, not a production load-test SLO.",
+            "Episode duration includes generation and orchestration, not pure GPU compute.",
+            "Diagnostic positional outcome/score files are excluded from effectiveness claims.",
+            "Actual external tools never execute; authorization and semantic utility require separate review.",
+            "Greedy seed repeats are not independent random samples; do not pool for significance.",
+        ],
+    }
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("root", type=pathlib.Path)
+    parser.add_argument("--out", type=pathlib.Path, required=True)
+    args = parser.parse_args()
+    report = summarize(args.root)
+    args.out.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(json.dumps({"runs": [{k: v for k, v in r.items() if k != "checkpoint_manifest"} for r in report["runs"]]}, indent=2))

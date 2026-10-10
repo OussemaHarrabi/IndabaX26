@@ -302,3 +302,12 @@ test or command.
 5. Quote no coverage, latency or digest number without the commit it was measured
    at: the M1–M5 rounds showed three different coverage baselines (P15) and a
    moved image ID (P16) for exactly that reason.
+
+## Native GPU recovery and evaluation, 10 October 2026
+
+| # | Claim | Type | Status | Artifact | Digest | Command | Commit | Limitation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| P88 | Public native FP16 matrix complete: 612 episodes, 22 runs, zero errors | engineering | verified | public-final-engineering-analysis.json | evidence register `8d830ee0def67c4bfa6675a4b7bb87bf1dd911f41a345852df4a75053e0c2404` (CI has independent run identity) | Verify archive and expected A/B/C matrix; frozen analysis tools retained | `b130776a0a3797a41f93435d51d7597825a381f4` | Authorization-only; general ASR/BTS null; clean runner attestation, server build unknown |
+| P89 | Four native mechanism ablations complete: 840 episodes, 20 runs, zero errors | engineering | verified | ablations-final-engineering-analysis.json | evidence register `8d830ee0def67c4bfa6675a4b7bb87bf1dd911f41a345852df4a75053e0c2404` (CI has independent run identity) | Verify archive, matrix and gateway-version/response ablation fields | `b130776a0a3797a41f93435d51d7597825a381f4` | Exploratory; decision differences are not causal effect sizes |
+| P90 | Fresh source CI: 745 tests, 12 database tests, 96.83% coverage, all five jobs pass | industrial | verified | https://github.com/OussemaHarrabi/IndabaX26/actions/runs/38017403788 | evidence register `8d830ee0def67c4bfa6675a4b7bb87bf1dd911f41a345852df4a75053e0c2404` (CI has independent run identity) | Hosted quality/test and deployment validation jobs | `b130776a0a3797a41f93435d51d7597825a381f4` | Container/manifest validation, no cloud rollout or running Kubernetes cluster |
+| P91 | General native attack-success and task-success conclusions | research | pending | docs/research/qwen-gpu-results-20261010.md | evidence register `8d830ee0def67c4bfa6675a4b7bb87bf1dd911f41a345852df4a75053e0c2404` (CI has independent run identity) | Complete semantic review then new deterministic-feedback/executor protocol | `b130776a0a3797a41f93435d51d7597825a381f4` | Original positional metrics invalid; greedy repeats not independent; selected trace review shows residual output-integrity failures |

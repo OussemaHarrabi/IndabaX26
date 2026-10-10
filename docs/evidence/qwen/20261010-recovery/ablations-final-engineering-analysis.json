@@ -1,0 +1,410 @@
+{
+  "archive_sha256": "ac53341a7740cfc72fee580ff426aa3d5a3d5cdfa0b3b2ea9496d3c08957ae6c",
+  "complete_matrix": true,
+  "episode_errors": 0,
+  "episodes": 840,
+  "general_asr": null,
+  "general_bts": null,
+  "job_duration_seconds": 6789.420376062393,
+  "limitations": [
+    "Authorization only; no actual external tool execution.",
+    "Greedy seeds and volatile receipt feedback prevent independent-replicate/causal interpretation.",
+    "Gateway build revision unknown; clean runner checkout is attested.",
+    "Client gateway latency is loopback round-trip, not service load capacity.",
+    "Decoded output lacks actual generated-token counts; no token throughput/cost claims."
+  ],
+  "matrix": [
+    {
+      "condition": "provenance_enforcement",
+      "episodes": 42,
+      "manifest_sha256": "1a1c24d7c57b1fca3566fcc9b60a59a8ec19932a03eed9d1403b0db56b04e31b",
+      "run": "20261010T024406Z-qwen3-8b-b-ablation-provenance-enforcement-s1729",
+      "seed": 1729,
+      "stage": "B"
+    },
+    {
+      "condition": "provenance_enforcement",
+      "episodes": 42,
+      "manifest_sha256": "2c54af234ee6749bfcca39d294e23f1f64c2979333cbcec35da8d96025010c1e",
+      "run": "20261010T024406Z-qwen3-8b-b-ablation-provenance-enforcement-s2741",
+      "seed": 2741,
+      "stage": "B"
+    },
+    {
+      "condition": "provenance_enforcement",
+      "episodes": 42,
+      "manifest_sha256": "e35a6b6e8e77c0566b9b5c08af1a92e6a0292d46806e2d25223ad5eb8b4d562f",
+      "run": "20261010T025238Z-qwen3-8b-b-ablation-provenance-enforcement-s4253",
+      "seed": 4253,
+      "stage": "B"
+    },
+    {
+      "condition": "provenance_enforcement",
+      "episodes": 42,
+      "manifest_sha256": "982ad7335deb36d5fe1dda4865ce2fa85c8e8ae44a846c499cffce560a32b571",
+      "run": "20261010T025302Z-qwen3-8b-b-ablation-provenance-enforcement-s3253",
+      "seed": 3253,
+      "stage": "B"
+    },
+    {
+      "condition": "provenance_enforcement",
+      "episodes": 42,
+      "manifest_sha256": "6a167a3bbc13686322bc7fcc532306ed919fe5314bc0d58f43be3234ad6cc287",
+      "run": "20261010T030211Z-qwen3-8b-b-ablation-provenance-enforcement-s5527",
+      "seed": 5527,
+      "stage": "B"
+    },
+    {
+      "condition": "trust_ceiling",
+      "episodes": 42,
+      "manifest_sha256": "1b280deef80f75a2071b435c2a085252363d72c6a185fe215bf5331bfcddf6e3",
+      "run": "20261010T031138Z-qwen3-8b-b-ablation-trust-ceiling-s1729",
+      "seed": 1729,
+      "stage": "B"
+    },
+    {
+      "condition": "trust_ceiling",
+      "episodes": 42,
+      "manifest_sha256": "db20b2281e1447c5198341e657f1e6713166c37ba99bf7b50e3237e7d660a131",
+      "run": "20261010T031138Z-qwen3-8b-b-ablation-trust-ceiling-s2741",
+      "seed": 2741,
+      "stage": "B"
+    },
+    {
+      "condition": "trust_ceiling",
+      "episodes": 42,
+      "manifest_sha256": "65996bf782f6eeee7d0b9104320f173bc7e8474a44209c1aad2a97df567ac8f6",
+      "run": "20261010T032019Z-qwen3-8b-b-ablation-trust-ceiling-s4253",
+      "seed": 4253,
+      "stage": "B"
+    },
+    {
+      "condition": "trust_ceiling",
+      "episodes": 42,
+      "manifest_sha256": "8c317934bac1a202e682386ab2d5e709155f1fa59f1f5f6e6a875232c36b92d7",
+      "run": "20261010T032032Z-qwen3-8b-b-ablation-trust-ceiling-s3253",
+      "seed": 3253,
+      "stage": "B"
+    },
+    {
+      "condition": "trust_ceiling",
+      "episodes": 42,
+      "manifest_sha256": "aa1df94402bce7777b6729f94a9cbedb60eb6f9d227e61add34d5d645c106ea3",
+      "run": "20261010T032949Z-qwen3-8b-b-ablation-trust-ceiling-s5527",
+      "seed": 5527,
+      "stage": "B"
+    },
+    {
+      "condition": "strict_confirmation",
+      "episodes": 42,
+      "manifest_sha256": "fb31f15c00c5ceb9ef9798be1443828ed22159616a26906202bba29cf69c7401",
+      "run": "20261010T033917Z-qwen3-8b-b-ablation-strict-confirmation-s1729",
+      "seed": 1729,
+      "stage": "B"
+    },
+    {
+      "condition": "strict_confirmation",
+      "episodes": 42,
+      "manifest_sha256": "4a4ac026024ed38e260d3cccc219d239179b9cba349fa44236e1ca34cd82940e",
+      "run": "20261010T033917Z-qwen3-8b-b-ablation-strict-confirmation-s2741",
+      "seed": 2741,
+      "stage": "B"
+    },
+    {
+      "condition": "strict_confirmation",
+      "episodes": 42,
+      "manifest_sha256": "961a3381132717d595c17776d37d8cb2c5cbb12ad96b5911951fd444ffeb402a",
+      "run": "20261010T034726Z-qwen3-8b-b-ablation-strict-confirmation-s4253",
+      "seed": 4253,
+      "stage": "B"
+    },
+    {
+      "condition": "strict_confirmation",
+      "episodes": 42,
+      "manifest_sha256": "6de4f598b755810f4388587f0f62fa7c5c6503129a9fd3efe4a9c63ca887cb6f",
+      "run": "20261010T034804Z-qwen3-8b-b-ablation-strict-confirmation-s3253",
+      "seed": 3253,
+      "stage": "B"
+    },
+    {
+      "condition": "strict_confirmation",
+      "episodes": 42,
+      "manifest_sha256": "f1c90611a9c56b7202604b4e4d670afb63fb7c07c08c1e300f811160f4088792",
+      "run": "20261010T035656Z-qwen3-8b-b-ablation-strict-confirmation-s5527",
+      "seed": 5527,
+      "stage": "B"
+    },
+    {
+      "condition": "rewrite_revalidation",
+      "episodes": 42,
+      "manifest_sha256": "53a82fb8d4b2326ce7e9f81829e9810083d26ef5139105dfa3aee7f0c5b87efe",
+      "run": "20261010T040559Z-qwen3-8b-b-ablation-rewrite-revalidation-s1729",
+      "seed": 1729,
+      "stage": "B"
+    },
+    {
+      "condition": "rewrite_revalidation",
+      "episodes": 42,
+      "manifest_sha256": "2006dde09eeb6aa9eb0b89a87f1d2fdeeea48df777aeb0dad9d78ac7ab16b5c4",
+      "run": "20261010T040559Z-qwen3-8b-b-ablation-rewrite-revalidation-s2741",
+      "seed": 2741,
+      "stage": "B"
+    },
+    {
+      "condition": "rewrite_revalidation",
+      "episodes": 42,
+      "manifest_sha256": "ab8e3f34a5ad9d7574ed7faf07690386bc9e1f025491d70a39d987fbc592d5fb",
+      "run": "20261010T041440Z-qwen3-8b-b-ablation-rewrite-revalidation-s4253",
+      "seed": 4253,
+      "stage": "B"
+    },
+    {
+      "condition": "rewrite_revalidation",
+      "episodes": 42,
+      "manifest_sha256": "d3cc95836068d472b5d1e3d883674263d8e4df12017960d4546cb90edb14359c",
+      "run": "20261010T041506Z-qwen3-8b-b-ablation-rewrite-revalidation-s3253",
+      "seed": 3253,
+      "stage": "B"
+    },
+    {
+      "condition": "rewrite_revalidation",
+      "episodes": 42,
+      "manifest_sha256": "eb317745c826e21076486a5d1537abbe1d784ef192ed9288ad48c9c237cb0173",
+      "run": "20261010T042426Z-qwen3-8b-b-ablation-rewrite-revalidation-s5527",
+      "seed": 5527,
+      "stage": "B"
+    }
+  ],
+  "measurements": [
+    {
+      "by_seed": {
+        "1729": 42,
+        "2741": 42,
+        "3253": 42,
+        "4253": 42,
+        "5527": 42
+      },
+      "condition": "provenance_enforcement",
+      "decisions": {
+        "allow": 520,
+        "escalate": 32
+      },
+      "episode_duration_ms": {
+        "max": 28058.63,
+        "mean": 12126.562085714286,
+        "min": 4723.715,
+        "n": 210,
+        "p50": 11271.4055,
+        "p95": 22010.002849999997
+      },
+      "episodes": 210,
+      "episodes_with_format_retry": 19,
+      "gateway_client_latency_ms": {
+        "max": 52.7303789999678,
+        "mean": 6.35282575361639,
+        "min": 4.7930320001796645,
+        "n": 552,
+        "p50": 5.771029500124314,
+        "p95": 8.089939699982551
+      },
+      "gateway_requests": 552,
+      "generation_records": 571,
+      "http_status": {
+        "200": 552
+      },
+      "scenario_errors": 0,
+      "stage": "B",
+      "unparsed_generation_records": 19
+    },
+    {
+      "by_seed": {
+        "1729": 42,
+        "2741": 42,
+        "3253": 42,
+        "4253": 42,
+        "5527": 42
+      },
+      "condition": "rewrite_revalidation",
+      "decisions": {
+        "allow": 492,
+        "block": 25,
+        "escalate": 30,
+        "rewrite": 3
+      },
+      "episode_duration_ms": {
+        "max": 29378.525,
+        "mean": 12366.485852380953,
+        "min": 4787.757,
+        "n": 210,
+        "p50": 11404.928,
+        "p95": 21520.377799999995
+      },
+      "episodes": 210,
+      "episodes_with_format_retry": 17,
+      "gateway_client_latency_ms": {
+        "max": 55.26067200025864,
+        "mean": 6.659799821794547,
+        "min": 4.641147000256751,
+        "n": 550,
+        "p50": 6.0506444997372455,
+        "p95": 8.442244250272777
+      },
+      "gateway_requests": 550,
+      "generation_records": 567,
+      "http_status": {
+        "200": 550
+      },
+      "scenario_errors": 0,
+      "stage": "B",
+      "unparsed_generation_records": 17
+    },
+    {
+      "by_seed": {
+        "1729": 42,
+        "2741": 42,
+        "3253": 42,
+        "4253": 42,
+        "5527": 42
+      },
+      "condition": "strict_confirmation",
+      "decisions": {
+        "allow": 509,
+        "block": 37,
+        "rewrite": 3
+      },
+      "episode_duration_ms": {
+        "max": 24478.203,
+        "mean": 11749.066080952382,
+        "min": 4821.316,
+        "n": 210,
+        "p50": 10581.68,
+        "p95": 20568.03
+      },
+      "episodes": 210,
+      "episodes_with_format_retry": 16,
+      "gateway_client_latency_ms": {
+        "max": 57.40598400007002,
+        "mean": 6.599970515497871,
+        "min": 5.084008999801881,
+        "n": 549,
+        "p50": 6.046112999683828,
+        "p95": 8.317824199730241
+      },
+      "gateway_requests": 549,
+      "generation_records": 566,
+      "http_status": {
+        "200": 549
+      },
+      "scenario_errors": 0,
+      "stage": "B",
+      "unparsed_generation_records": 17
+    },
+    {
+      "by_seed": {
+        "1729": 42,
+        "2741": 42,
+        "3253": 42,
+        "4253": 42,
+        "5527": 42
+      },
+      "condition": "trust_ceiling",
+      "decisions": {
+        "allow": 491,
+        "block": 26,
+        "escalate": 28,
+        "rewrite": 4
+      },
+      "episode_duration_ms": {
+        "max": 28754.449,
+        "mean": 12202.892071428572,
+        "min": 4827.62,
+        "n": 210,
+        "p50": 10765.9535,
+        "p95": 22439.46539999999
+      },
+      "episodes": 210,
+      "episodes_with_format_retry": 17,
+      "gateway_client_latency_ms": {
+        "max": 56.89636299985068,
+        "mean": 6.616046916203938,
+        "min": 4.732031999992614,
+        "n": 549,
+        "p50": 5.979197999749886,
+        "p95": 8.435186600036104
+      },
+      "gateway_requests": 549,
+      "generation_records": 566,
+      "http_status": {
+        "200": 549
+      },
+      "scenario_errors": 0,
+      "stage": "B",
+      "unparsed_generation_records": 17
+    }
+  ],
+  "mode": "exploratory-ablations",
+  "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+  "quantile_method": "linear interpolation, Hyndman-Fan type 7",
+  "runs": 20,
+  "semantic_review_status": "pending complete annotation/adjudication; packet available",
+  "source_commit": "b130776a0a3797a41f93435d51d7597825a381f4",
+  "telemetry": [
+    {
+      "gpu_index": 0,
+      "memory_mib": {
+        "max": 13663.0,
+        "mean": 10732.20771513353,
+        "min": 3.0,
+        "n": 674,
+        "p50": 12571.0,
+        "p95": 13663.0
+      },
+      "power_watts": {
+        "max": 108.29,
+        "mean": 63.18792284866469,
+        "min": 12.13,
+        "n": 674,
+        "p50": 65.72,
+        "p95": 70.024
+      },
+      "sample_interval_seconds": 10,
+      "utilization_percent": {
+        "max": 100.0,
+        "mean": 74.20474777448071,
+        "min": 0.0,
+        "n": 674,
+        "p50": 76.0,
+        "p95": 100.0
+      }
+    },
+    {
+      "gpu_index": 1,
+      "memory_mib": {
+        "max": 12571.0,
+        "mean": 6149.694362017804,
+        "min": 3.0,
+        "n": 674,
+        "p50": 7091.0,
+        "p95": 12571.0
+      },
+      "power_watts": {
+        "max": 109.7,
+        "mean": 45.267804154302674,
+        "min": 11.34,
+        "n": 674,
+        "p50": 64.97999999999999,
+        "p95": 71.177
+      },
+      "sample_interval_seconds": 10,
+      "utilization_percent": {
+        "max": 100.0,
+        "mean": 42.454005934718104,
+        "min": 0.0,
+        "n": 674,
+        "p50": 56.0,
+        "p95": 100.0
+      }
+    }
+  ],
+  "version": "qwen-matrix-engineering-final/v1"
+}

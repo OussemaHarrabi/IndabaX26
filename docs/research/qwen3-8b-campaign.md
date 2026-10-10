@@ -22,8 +22,9 @@ Results are reported in three classes, kept separate and never merged:
    challenge package (`code reading`:
    [`../legacy/sentinel-challenge.md`](../legacy/sentinel-challenge.md)); quoted
    where used, with its limitations.
-3. **Native real-model campaign — not yet run.** This protocol produces class 3.
-   The class is **empty today**.
+3. **Native real-model campaign — no successful run yet.** A failed smoke attempt
+   is retained as engineering evidence but supplies no metric. This protocol and
+   freeze block 2 govern the next attempt.
 
 This document does not restate or merge the numbers of classes 1 and 2, and it
 does not restate the freeze block's objectives — it references them. The
@@ -48,9 +49,8 @@ check, not an intention.
    (`../benchmark/holdout.md` §6).
 5. The repository is checked out at the gateway commit recorded in the freeze
    declaration, with a clean tree.
-6. **No real-model result has been looked at.** If a result has been seen, the
-   configuration is no longer preregistered and a new freeze block is required
-   (`../evidence/qwen-campaign-freeze.md` §7).
+6. The current dated freeze block predates the run it governs. The failed block-1
+   smoke attempt is why block 2 was appended; no successful outcome was observed.
 
 ## 2. Order of operations, in one list
 
@@ -90,14 +90,11 @@ runs before B and C are complete (`../evidence/qwen-campaign-freeze.md` §2, §9
   external inference API is used (`code reading`:
   [`../../COLAB_QWEN_RUN.md`](../../COLAB_QWEN_RUN.md)).
 
-The real-model adapter is the injectable seam in
-[`../../benchmark/runner.py`](../../benchmark/runner.py) (`ModelAdapter.plan`);
-the native runner currently declares `ollama` as **unavailable** and fails closed
-(`code reading`: `runner.py` `model_adapter`). The campaign adapter that makes the
-cell real is a separate deliverable under `notebooks/`, which imports the tested
-modules rather than hiding evaluation logic in cells
-([`../../README.md`](../../README.md) §"Repository layout"). This protocol fixes
-the requirements that adapter must meet; it does not claim the adapter exists.
+The real-model adapter is implemented and tested in
+[`../../benchmark/qwen.py`](../../benchmark/qwen.py), behind the injectable
+`ModelAdapter.plan` seam. The notebooks import it and call the campaign CLI; they
+do not hide evaluation logic in cells. The adapter uses the versioned exact-shape
+prompt, records every format attempt, and fails closed after the bounded retry.
 
 ## 4. Record the environment (`environment.json`, `pip-freeze.txt`)
 
@@ -109,8 +106,8 @@ the minimum; a missing field is a blocked run, not a blank cell.
 | Host | OS build, architecture, CPU model, RAM |
 | Python | interpreter version, `pip freeze` output written to `pip-freeze.txt` |
 | GPU | GPU model, total VRAM, driver/CUDA versions, GPU count |
-| Model runtime | server name and version, model tag, quantization report, artifact digest |
-| Model | revision SHA / tag digest, chat-template digest, dtype, context window |
+| Model runtime | Transformers, Accelerate and bitsandbytes versions, quantization backend |
+| Model | exact Hugging Face revision SHA, chat-template digest, dtype, context window |
 | Timing | run start/end UTC, wall-clock seconds |
 | Cost | GPU-hours (wall-clock × GPU count), the published notebook rate and currency, estimated cost — the rate is named, never a bare number |
 | Token counts | prompt tokens, completion tokens, total tokens per run and per scenario |
@@ -249,7 +246,7 @@ which this protocol requires to meet the layout.
 | `manifest.json` | everything needed to reproduce the run: code commit, policy set and `policy.blob_sha256`, dataset hash, scenario-set hash, model identity and parameters, seed, temperature, max tokens, hardware, dependency-lock hash, artifact hashes, `limitations[]` | runner |
 | `environment.json` | the §4 record (host, GPU, runtime, timing, cost, token counts) | campaign |
 | `configuration.json` | the frozen configuration closed from the freeze block §3, the stage, the seed, the splits and the commit | campaign |
-| `raw_generations.jsonl` | one record per model generation: prompt digest, output, prompt/completion tokens, stop reason, seed, temperature | campaign |
+| `raw_generations.jsonl` | one record per model attempt, including schema-retry attempts: prompt digest, raw output, parsed flag, format-attempt index, prompt/completion tokens, stop reason, seed, temperature | campaign |
 | `proposed_actions.jsonl` | the action each generation resolved to, per step | campaign |
 | `decisions.jsonl` | the gateway verdict (verb, reason codes, receipt id) per proposed action, raw | campaign |
 | `outcomes.jsonl` | one judged outcome per scenario against the defence | runner |

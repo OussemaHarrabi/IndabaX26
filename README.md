@@ -1,6 +1,10 @@
 # AegisGraph
 
 [![ci](https://github.com/OussemaHarrabi/IndabaX26/actions/workflows/ci.yml/badge.svg)](https://github.com/OussemaHarrabi/IndabaX26/actions/workflows/ci.yml)
+[![tests](https://img.shields.io/badge/tests-745%20passed-07875D)](https://github.com/OussemaHarrabi/IndabaX26/actions/runs/38017403788)
+[![coverage](https://img.shields.io/badge/backend%20coverage-96.83%25-155EEF)](docs/research/qwen-gpu-results-20261010.md)
+[![Qwen3--8B](https://img.shields.io/badge/Qwen3--8B-1%2C452%20GPU%20episodes-7F56D9)](docs/research/qwen-gpu-results-20261010.md)
+[![paper](https://img.shields.io/badge/technical%20report-PDF-0BA5EC)](output/pdf/AegisGraph_Technical_Report_2026.pdf)
 
 AegisGraph is a **pre-execution decision gateway for agentic systems**. Given one
 proposed agent action and the inert facts around it — the conversation so far, the
@@ -11,9 +15,39 @@ it evaluated. **It never executes the proposed action, and it never calls a
 model.** An integrator enforces each decision and binds it to the candidate action;
 the receipt carries the digest needed to refuse a mismatch.
 
-> **Release `v0.1.0-industrial`** (`eb33d2c`). Industrial platform and native
-> evaluation harness **implemented**; the empirical campaign so far is
-> **scripted-only**, and the real-model campaign is **not yet run** — see
+![AegisGraph system architecture](docs/paper/figures/aegisgraph-architecture.png)
+
+**Read the complete paper:** [AegisGraph: An Action-Bound Policy and Evidence
+Gateway for Reliable LLM Tool Use](output/pdf/AegisGraph_Technical_Report_2026.pdf)
+([LaTeX source](docs/paper/aegisgraph-paper.tex) ·
+[system-architecture prompt](docs/paper/aegisgraph-architecture-generation-prompt.txt) ·
+[evaluation-pipeline prompt](docs/paper/aegisgraph-evaluation-generation-prompt.txt)).
+The paper follows a two-column AI research-paper structure and embeds both generated
+figure results, the experimental protocol, ablations, industrial evidence,
+reproducibility statement and references. Exact image-generation prompts remain
+versioned beside the paper source as separate reproducibility artifacts.
+
+## Current measured evidence — 10 October 2026
+
+- **Engineering:** hosted CI on source `b130776` passed 745 tests, including all
+  12 PostgreSQL tests; backend coverage 96.83%.
+- **Real model:** 1,452 completed Qwen3-8B GPU episodes across 22 public runs and
+  20 runs covering four mechanism ablations; zero episode errors. NF4/FP16 on
+  Kaggle Tesla T4 GPUs, five declared greedy seeds, 60 public synthetic scenarios.
+- **Gateway timing:** full-defence client loopback HTTP p95 8.43 ms on development
+  and 8.54 ms on validation. These are low-load round-trip measurements.
+- **Research evidence:** frozen source, model revision, scenario splits, seeds,
+  manifests, artifact hashes, review packets, and four mechanism ablations are
+  preserved for reproducible analysis; semantic outcome review remains a distinct
+  evidence layer.
+
+[Measurements, raw artifact hashes and research scope](docs/research/qwen-gpu-results-20261010.md)
+· [Evidence register](docs/evidence/qwen/20261010-recovery/register.json)
+· [Small next research milestone](docs/research/next-validity-milestone-prompt.md)
+
+> **Historical release snapshot `v0.1.0-industrial`** (`eb33d2c`). Industrial
+> platform and native evaluation harness implemented; native experiments at that
+> release were scripted-only. Current real-model evidence is reported below — see
 > [Measured results, by evidence class](#measured-results-by-evidence-class).
 > Release identity and every artifact digest:
 > [`docs/release-notes.md`](docs/release-notes.md) and the 39-entry
@@ -152,9 +186,9 @@ runs the preregistered component ablations · `03` verifies and analyses a bundl
 **on CPU against the committed scripted run too**. Kaggle needs no per-file badge:
 import a notebook and follow [`notebooks/README.md`](notebooks/README.md), which
 documents the GPU memory expectations, secret handling, Drive checkpoints, resume
-and the local hash verification of a downloaded bundle. **No real-model result
-exists yet** — the campaign is prepared, not run; see
-[the evidence classes](#measured-results-by-evidence-class).
+and local hash verification of downloaded bundles. Completed Kaggle measurements
+are in [the GPU results report](docs/research/qwen-gpu-results-20261010.md); use
+its experimental limitations when interpreting the original positional scores.
 
 ## Architecture
 
@@ -240,16 +274,25 @@ kit's 0.5 self-test gate, and relaxing the consequential `email_send` confirmati
 to fix that would weaken the boundary. What the challenge was, and where every
 legacy artifact lives: [`docs/legacy/`](docs/legacy/sentinel-challenge.md).
 
-### 3. Native real-model campaign — **not yet run**
+### 3. Native real-model campaign — completed exploratory measurements
 
-No native real-model result exists in this repository, and none is claimed. The
-model cells are `blocked` on a runtime: the local machine has no suitable GPU, so
-the campaign is prepared for Google Colab / Kaggle (notebook interfaces under
-`notebooks/`, which import the tested modules rather than hiding evaluation logic
-in cells), with the inference configuration, seeds, ablations and analysis fixed in
-advance. The preregistered plan and its statistics live in
-[`docs/research/`](docs/research/report.md); the blocked cells name the exact
-enabling action.
+The FP16 public campaign completed 612 episodes (A 12, B 420, C 180), and four
+single-mechanism ablations completed 840 episodes (210 each). All expected runs,
+scenario sets, source/configuration identities and artifact hashes were verified.
+All 3,792 treatment HTTP requests returned 200; 116 unparsed generation attempts
+were recovered with bounded retries. Canonical action/execution correspondence
+was checked for 2,985 defence/ablation decisions, without claiming receipt
+signature verification or actual tool execution.
+
+These are native Qwen3-8B measurements at source `b130776`, separate from the BF16
+engineering smoke, scripted results and historical SENTINEL tests. Complete
+semantic annotation is pending. Original positional scores are invalid for
+interpreting generated-action security/utility; greedy seeds are not independent
+samples, and receipt UUID/timestamps/control labels confound later prompts.
+
+[Full results and negative findings](docs/research/qwen-gpu-results-20261010.md)
+include source, model/hardware, runtime, archive hashes and reproducibility limits.
+The 20-scenario holdout remains sealed.
 
 ## API surface
 
@@ -313,9 +356,10 @@ manifests are validated but **not** cluster-smoke-tested here (no `kind`).
 
 ## Known limitations
 
-1. **No native real-model result.** The scripted campaign validates the platform
-   and the scorer; it says nothing about model behaviour. The real-model campaign
-   is prepared but not executed (`blocked` on GPU/cloud runtime).
+1. **Native experiments remain exploratory.** The 1,452 FP16 episodes are
+   completed, but positional scores do not validate semantic effectiveness. The
+   harness authorizes inert actions; volatile/treatment-identifying feedback and
+   false completion claims require a new protocol before confirmatory conclusions.
 2. **The sealed holdout is closed.** 20 scenarios remain unopened; opening it
    requires the frozen configuration, the completed development/validation runs
    and the custodian's authorization. No generalization claim is made.
